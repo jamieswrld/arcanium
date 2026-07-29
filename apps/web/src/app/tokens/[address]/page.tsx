@@ -5,7 +5,7 @@ import { formatQuoteUnits } from "@/lib/onchain";
 import { TradePanel } from "@/components/TradePanel";
 import { MarketPanels } from "@/components/MarketPanels";
 
-export const revalidate = 15;
+export const dynamic = "force-dynamic";
 
 interface TokenPageProps {
   readonly params: Promise<{ address: string }>;

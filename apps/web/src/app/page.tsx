@@ -9,7 +9,9 @@ import { formatQuoteUnits, getLiveBridgeData } from "@/lib/onchain";
  * Base→Arc, and burn→release tracking for Arc→Base. The network status card
  * below proves solvency with live reads from both chains.
  */
-export const revalidate = 30;
+// Rendered per-request: the live-status card reads both chains, and build-time
+// prerendering would block on RPC latency (and serve stale numbers anyway).
+export const dynamic = "force-dynamic";
 
 export default async function BridgePage() {
   const live = await getLiveBridgeData();

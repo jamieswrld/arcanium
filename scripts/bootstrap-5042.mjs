@@ -88,6 +88,42 @@ if (cmd === "deposit") {
   const net = amountUsdc - (amountUsdc * fee) / 10000n;
   console.log(`deposit tx: ${h}`);
   console.log(`Envelope will mint ~${formatUnits(net,6)} eUSD to ${OP} on 5042 (async, ~1 min). Run: node scripts/bootstrap-5042.mjs status`);
+} else if (cmd === "gas") {
+  // Convert eUSD -> native USDC gas via Envelope's gas station (175x markup,
+  // one-time bootstrap only). actionId: 0=swap(small), 1=launch(bigger).
+  const actionId = Number(process.argv[3] ?? "1");
+  const GS = "0x5f69aCF1544B381157fa4Df6f0695fb121ab2b02"; // Envelope gas station (5042)
+  const permitAbi = parseAbi(["function nonces(address) view returns (uint256)"]);
+  const q = await (await fetch("https://api.envelope.trade/gas-relayer/api/gas/quote", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action_id: actionId }),
+  })).json();
+  const eusdIn = BigInt(q.eusd_in), nativeOut = BigInt(q.native_out);
+  const bal = await arc.readContract({ address: ENV_EUSD, abi: erc20, functionName: "balanceOf", args: [OP] });
+  console.log(`action ${actionId}: pay ${formatUnits(eusdIn,6)} eUSD -> get ${formatUnits(nativeOut,18)} native USDC | eUSD bal ${formatUnits(bal,6)}`);
+  if (bal < eusdIn) throw new Error(`not enough eUSD (need ${formatUnits(eusdIn,6)})`);
+
+  const nonce = await arc.readContract({ address: ENV_EUSD, abi: permitAbi, functionName: "nonces", args: [OP] });
+  const deadline = BigInt(Math.floor(Date.now() / 1000) + 900);
+  const sig = await account.signTypedData({
+    domain: { name: "Envelope USD", version: "1", chainId: 5042, verifyingContract: ENV_EUSD },
+    types: { Permit: [
+      { name: "owner", type: "address" }, { name: "spender", type: "address" }, { name: "value", type: "uint256" },
+      { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" },
+    ] },
+    primaryType: "Permit",
+    message: { owner: OP, spender: GS, value: eusdIn, nonce, deadline },
+  });
+  const r = sig.slice(0, 66), s = "0x" + sig.slice(66, 130), yParity = parseInt(sig.slice(130, 132), 16);
+  const v = yParity < 27 ? 27 + yParity : yParity;
+  const resp = await fetch("https://api.envelope.trade/gas-relayer/api/gas/drip", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ user: OP, action_id: actionId, native_out: nativeOut.toString(), deadline: deadline.toString(), v, r, s }),
+  });
+  const out = await resp.text();
+  console.log(`drip response (${resp.status}): ${out.slice(0, 300)}`);
+  await sleep(4000);
+  const gasBal = await arc.getBalance({ address: OP });
+  console.log(`operator 5042 native gas now: ${formatUnits(gasBal,18)} USDC`);
 } else if (cmd === "status") {
   const [eusd, gas] = await Promise.all([
     arc.readContract({ address: ENV_EUSD, abi: erc20, functionName: "balanceOf", args: [OP] }),

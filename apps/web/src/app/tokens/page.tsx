@@ -8,7 +8,7 @@ import {
 } from "@/lib/launchpad";
 import { formatQuoteUnits } from "@/lib/onchain";
 
-export const revalidate = 30;
+export const dynamic = "force-dynamic";
 
 interface TokensPageProps {
   readonly searchParams: Promise<{ sort?: string; q?: string }>;
@@ -22,7 +22,10 @@ interface TokensPageProps {
  */
 export default async function TokensPage({ searchParams }: TokensPageProps) {
   const { sort = "newest", q = "" } = await searchParams;
-  let tokens = await fetchAllTokens(arcPublicClient()).catch(() => []);
+  let tokens = await Promise.race([
+    fetchAllTokens(arcPublicClient()).catch(() => []),
+    new Promise<Awaited<ReturnType<typeof fetchAllTokens>>>((r) => setTimeout(() => r([]), 8000)),
+  ]);
 
   const query = q.trim().toLowerCase();
   if (query.length > 0) {

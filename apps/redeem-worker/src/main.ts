@@ -57,7 +57,7 @@ function loadWorkerConfig(): WorkerConfig {
     confirmations: BigInt(env.ARC_TESTNET_CONFIRMATIONS),
     keeperKey: requireEnv("BASE_KEEPER_PRIVATE_KEY") as Hex,
     pollMs: 20_000,
-    lookbackBlocks: 1_500n,
+    lookbackBlocks: 600n,
     maxRangePerQuery: 900n,
   };
 }

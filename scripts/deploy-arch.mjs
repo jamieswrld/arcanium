@@ -144,56 +144,60 @@ async function main() {
   const relayer = env.GAS_RELAYER_ADDRESS || account.address;
 
   const splitterArt = art("ArchFeeSplitter", "ArchFeeSplitter");
-  const out = {};
+  // Resume support: reuse anything already deployed (saves gas on retries).
+  const bookPath = join(root, `deployed-addresses.${ARC.id}.json`);
+  let out = {};
+  try { out = JSON.parse(readFileSync(bookPath, "utf8")); console.log("resuming from existing address book\n"); } catch { /* fresh */ }
+  const have = (k) => typeof out[k] === "string" && out[k].length === 42;
 
   // ---- Base side ----
   console.log("== Base");
-  out.baseSplitter = await deploy(BASE, "ArchFeeSplitter (Base)", splitterArt,
+  if (!have("baseSplitter")) out.baseSplitter = await deploy(BASE, "ArchFeeSplitter (Base)", splitterArt,
     [A("address"), A("address[]"), A("uint256[]")], [account.address, feeRecipients, feeWeights]);
-  out.vault = await deploy(BASE, "ArchVaultBase", art("ArchVaultBase", "ArchVaultBase"),
+  if (!have("vault")) out.vault = await deploy(BASE, "ArchVaultBase", art("ArchVaultBase", "ArchVaultBase"),
     [A("address"), A("address"), A("address"), A("uint256"), A("uint256"), A("uint256"), A("uint256"), A("uint256"), A("uint256")],
     [BASE.usdc, account.address, out.baseSplitter, BigInt(req("BRIDGE_DEPOSIT_FEE_BPS")),
      BigInt(req("BRIDGE_MIN_DEPOSIT_UNITS")), BigInt(req("BRIDGE_MAX_DEPOSIT_UNITS")),
      BigInt(req("BRIDGE_MAX_RELEASE_PER_TX_UNITS")), BigInt(req("BRIDGE_MAX_RELEASE_PER_WINDOW_UNITS")),
      BigInt(req("BRIDGE_RELEASE_WINDOW_SECONDS"))]);
   const vaultAbi = art("ArchVaultBase", "ArchVaultBase").abi;
-  await call(BASE, "vault.setKeeper", out.vault, vaultAbi, "setKeeper", [keeper, true]);
+  if (!have("vault")) await call(BASE, "vault.setKeeper", out.vault, vaultAbi, "setKeeper", [keeper, true]);
 
   // ---- Arc/5042 side ----
   console.log("== Arc");
-  out.arcSplitter = await deploy(ARC, "ArchFeeSplitter (Arc)", splitterArt,
+  if (!have("arcSplitter")) out.arcSplitter = await deploy(ARC, "ArchFeeSplitter (Arc)", splitterArt,
     [A("address"), A("address[]"), A("uint256[]")], [account.address, feeRecipients, feeWeights]);
-  out.ausd = await deploy(ARC, "ArchUSD", art("ArchUSD", "ArchUSD"), [A("address")], [account.address]);
+  if (!have("ausd")) out.ausd = await deploy(ARC, "ArchUSD", art("ArchUSD", "ArchUSD"), [A("address")], [account.address]);
   const ausdAbi = art("ArchUSD", "ArchUSD").abi;
 
-  out.bridge = await deploy(ARC, "ArchBridgeArc", art("ArchBridgeArc", "ArchBridgeArc"),
+  if (!have("bridge")) out.bridge = await deploy(ARC, "ArchBridgeArc", art("ArchBridgeArc", "ArchBridgeArc"),
     [A("address"), A("address"), A("uint256"), A("uint256"), A("uint256"), A("uint256")],
     [out.ausd, account.address, BigInt(req("BRIDGE_MIN_REDEEM_UNITS")),
      BigInt(req("BRIDGE_MAX_MINT_PER_TX_UNITS")), BigInt(req("BRIDGE_MAX_MINT_PER_WINDOW_UNITS")), BigInt(req("BRIDGE_MINT_WINDOW_SECONDS"))]);
   const bridgeAbi = art("ArchBridgeArc", "ArchBridgeArc").abi;
-  await call(ARC, "ausd.grantRole(BRIDGE_ROLE, bridge)", out.ausd, ausdAbi, "grantRole", [BRIDGE_ROLE, out.bridge]);
-  await call(ARC, "bridge.setKeeper", out.bridge, bridgeAbi, "setKeeper", [arcKeeper, true]);
+  if (!have("bridge")) await call(ARC, "ausd.grantRole(BRIDGE_ROLE, bridge)", out.ausd, ausdAbi, "grantRole", [BRIDGE_ROLE, out.bridge]);
+  if (!have("bridge")) await call(ARC, "bridge.setKeeper", out.bridge, bridgeAbi, "setKeeper", [arcKeeper, true]);
 
-  out.gasStation = await deploy(ARC, "ArchGasStation", art("ArchGasStation", "ArchGasStation"),
+  if (!have("gasStation")) out.gasStation = await deploy(ARC, "ArchGasStation", art("ArchGasStation", "ArchGasStation"),
     [A("address"), A("address"), A("uint256"), A("uint256")],
     [out.ausd, account.address, BigInt(env.GAS_STATION_MARGIN_BPS ?? "500"), BigInt(env.GAS_STATION_COOLDOWN_SECONDS ?? "30")]);
   const gsAbi = art("ArchGasStation", "ArchGasStation").abi;
-  await call(ARC, "gasStation.setRelayer", out.gasStation, gsAbi, "setRelayer", [relayer, true]);
-  await call(ARC, "gasStation.configureAction(swap)", out.gasStation, gsAbi, "configureAction", [0, 400000n, 1000000000000000000n]);
-  await call(ARC, "gasStation.configureAction(launch)", out.gasStation, gsAbi, "configureAction", [1, 6000000n, 10000000000000000000n]);
-  await call(ARC, "gasStation.configureAction(redeem)", out.gasStation, gsAbi, "configureAction", [2, 300000n, 1000000000000000000n]);
-  await call(ARC, "gasStation.configureAction(approve)", out.gasStation, gsAbi, "configureAction", [3, 120000n, 500000000000000000n]);
+  if (!have("gasStation")) await call(ARC, "gasStation.setRelayer", out.gasStation, gsAbi, "setRelayer", [relayer, true]);
+  if (!have("gasStation")) await call(ARC, "gasStation.configureAction(swap)", out.gasStation, gsAbi, "configureAction", [0, 400000n, 1000000000000000000n]);
+  if (!have("gasStation")) await call(ARC, "gasStation.configureAction(launch)", out.gasStation, gsAbi, "configureAction", [1, 6000000n, 10000000000000000000n]);
+  if (!have("gasStation")) await call(ARC, "gasStation.configureAction(redeem)", out.gasStation, gsAbi, "configureAction", [2, 300000n, 1000000000000000000n]);
+  if (!have("gasStation")) await call(ARC, "gasStation.configureAction(approve)", out.gasStation, gsAbi, "configureAction", [3, 120000n, 500000000000000000n]);
 
-  out.liquidityVault = await deploy(ARC, "ArchLiquidityVault", art("ArchLiquidityVault", "ArchLiquidityVault"),
+  if (!have("liquidityVault")) out.liquidityVault = await deploy(ARC, "ArchLiquidityVault", art("ArchLiquidityVault", "ArchLiquidityVault"),
     [A("address"), A("address")], [req("UNISWAP_V3_POSITION_MANAGER_ADDRESS"), account.address]);
-  out.factory = await deploy(ARC, "ArchLaunchpadFactory", art("ArchLaunchpadFactory", "ArchLaunchpadFactory"),
+  if (!have("factory")) out.factory = await deploy(ARC, "ArchLaunchpadFactory", art("ArchLaunchpadFactory", "ArchLaunchpadFactory"),
     [A("address"), A("address"), A("address"), A("address"), A("address"), A("uint256"), A("address")],
     [req("UNISWAP_V3_POSITION_MANAGER_ADDRESS"), req("UNISWAP_V3_SWAP_ROUTER_ADDRESS"), out.liquidityVault,
      account.address, out.ausd, BigInt(req("LAUNCH_FEE_QUOTE_UNITS")), out.arcSplitter]);
-  out.distributor = await deploy(ARC, "ArchFeeDistributor", art("ArchFeeDistributor", "ArchFeeDistributor"),
+  if (!have("distributor")) out.distributor = await deploy(ARC, "ArchFeeDistributor", art("ArchFeeDistributor", "ArchFeeDistributor"),
     [A("address"), A("address"), A("address"), A("uint256"), A("address")],
     [out.factory, out.liquidityVault, account.address, BigInt(req("PAIR_FEE_CREATOR_SHARE_BPS")), out.arcSplitter]);
-  out.graduation = await deploy(ARC, "GraduationRegistry", art("GraduationRegistry", "GraduationRegistry"),
+  if (!have("graduation")) out.graduation = await deploy(ARC, "GraduationRegistry", art("GraduationRegistry", "GraduationRegistry"),
     [A("address"), A("uint256")], [out.factory, BigInt(req("GRADUATION_QUOTE_UNITS"))]);
   const lvAbi = art("ArchLiquidityVault", "ArchLiquidityVault").abi;
   await call(ARC, "liquidityVault.setFeeDistributor", out.liquidityVault, lvAbi, "setFeeDistributor", [out.distributor]);

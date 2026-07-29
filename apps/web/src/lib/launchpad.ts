@@ -17,8 +17,8 @@ const Q192 = 2n ** 192n;
 export function arcPublicClient(): PublicClient {
   return createPublicClient({
     transport: fallback([
-      http(process.env["NEXT_PUBLIC_ARC_RPC_URL"] ?? "https://5042002.rpc.thirdweb.com"),
-      http("https://arc-testnet.drpc.org"),
+      http(process.env["NEXT_PUBLIC_ARC_RPC_URL"] ?? "https://5042002.rpc.thirdweb.com", { timeout: 8000 }),
+      http("https://arc-testnet.drpc.org", { timeout: 8000 }),
       http("https://rpc.testnet.arc.network"),
     ]),
   });

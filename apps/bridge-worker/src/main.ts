@@ -62,8 +62,8 @@ function loadWorkerConfig(): WorkerConfig {
     confirmations: BigInt(env.BASE_SEPOLIA_CONFIRMATIONS),
     keeperKey: requireEnv("ARC_KEEPER_PRIVATE_KEY") as Hex,
     pollMs: 15_000,
-    lookbackBlocks: 10_000n,
-    maxRangePerQuery: 1_900n,
+    lookbackBlocks: 600n,
+    maxRangePerQuery: 500n,
   };
 }
 

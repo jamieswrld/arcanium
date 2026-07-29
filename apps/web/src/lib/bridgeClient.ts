@@ -4,7 +4,7 @@ import {
   keccak256,
   type Hex,
 } from "viem";
-import { baseSepolia } from "viem/chains";
+import { base, baseSepolia } from "viem/chains";
 
 /**
  * Client-side bridge constants and helpers. All financial math is bigint.
@@ -12,8 +12,8 @@ import { baseSepolia } from "viem/chains";
  */
 
 export const arcTestnet = defineChain({
-  id: 5042002,
-  name: "Arc Testnet",
+  id: Number(process.env["NEXT_PUBLIC_ARC_CHAIN_ID"] ?? "5042002"),
+  name: process.env["NEXT_PUBLIC_ARC_CHAIN_NAME"] ?? "Arc",
   nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
   rpcUrls: {
     default: {
@@ -21,12 +21,12 @@ export const arcTestnet = defineChain({
     },
   },
   blockExplorers: {
-    default: { name: "Arcscan", url: "https://testnet.arcscan.app" },
+    default: { name: "Arc Explorer", url: process.env["NEXT_PUBLIC_ARC_EXPLORER_URL"] ?? "https://testnet.arcscan.app" },
   },
-  testnet: true,
+  testnet: process.env["NEXT_PUBLIC_ARC_CHAIN_ID"] !== "5042",
 });
 
-export const baseChain = baseSepolia;
+export const baseChain = process.env["NEXT_PUBLIC_BASE_CHAIN_ID"] === "8453" ? base : baseSepolia;
 
 function addr(name: string): Hex | undefined {
   const v = process.env[name];
@@ -39,8 +39,8 @@ export const BRIDGE_ADDRESS = addr("NEXT_PUBLIC_ARCH_BRIDGE_ARC_ADDRESS");
 export const USDC_ADDRESS: Hex =
   addr("NEXT_PUBLIC_BASE_USDC_ADDRESS") ?? "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
 
-export const BASE_EXPLORER = "https://sepolia.basescan.org";
-export const ARC_EXPLORER = "https://testnet.arcscan.app";
+export const BASE_EXPLORER = process.env["NEXT_PUBLIC_BASE_EXPLORER_URL"] ?? "https://sepolia.basescan.org";
+export const ARC_EXPLORER = process.env["NEXT_PUBLIC_ARC_EXPLORER_URL"] ?? "https://testnet.arcscan.app";
 
 export const vaultAbi = [
   { type: "function", name: "feeBps", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },

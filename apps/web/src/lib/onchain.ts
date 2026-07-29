@@ -58,7 +58,7 @@ const erc20SupplyAbi = [
 ] as const;
 
 function rpc(url: string): PublicClient {
-  return createPublicClient({ transport: http(url, { timeout: 8_000 }) });
+  return createPublicClient({ transport: http(url, { timeout: 4_000, retryCount: 1 }) });
 }
 
 function envAddress(name: string): Address | undefined {
@@ -105,7 +105,17 @@ async function chainStatus(client: PublicClient): Promise<ChainStatus> {
   }
 }
 
+const EMPTY: LiveBridgeData = { base: { ok: false, blockNumber: null }, arc: { ok: false, blockNumber: null }, vault: null, ausd: null };
+
+/** Never let a slow RPC hang a page render. */
 export async function getLiveBridgeData(): Promise<LiveBridgeData> {
+  return await Promise.race([
+    getLiveBridgeDataInner(),
+    new Promise<LiveBridgeData>((resolve) => setTimeout(() => resolve(EMPTY), 6_000)),
+  ]);
+}
+
+async function getLiveBridgeDataInner(): Promise<LiveBridgeData> {
   const baseClient = rpc(BASE_RPC);
   const arcClient = rpc(ARC_RPC);
   const vaultAddress = envAddress("NEXT_PUBLIC_ARCH_VAULT_BASE_ADDRESS");
