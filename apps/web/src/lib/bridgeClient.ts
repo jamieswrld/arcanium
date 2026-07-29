@@ -28,16 +28,21 @@ export const arcTestnet = defineChain({
 
 export const baseChain = process.env["NEXT_PUBLIC_BASE_CHAIN_ID"] === "8453" ? base : baseSepolia;
 
-function addr(name: string): Hex | undefined {
-  const v = process.env[name];
+// IMPORTANT: each NEXT_PUBLIC_* var must be read with a STATIC literal key so
+// Next.js inlines its value into the client bundle at build time. Reading via
+// a variable key (process.env[name]) is NOT statically analyzable — it stays
+// `process.env[...]` in the browser and evaluates to undefined, which silently
+// unconfigures every contract address. Do not refactor these into a loop/helper
+// that passes the key as a variable.
+function validAddr(v: string | undefined): Hex | undefined {
   return v !== undefined && /^0x[0-9a-fA-F]{40}$/.test(v) ? (v as Hex) : undefined;
 }
 
-export const VAULT_ADDRESS = addr("NEXT_PUBLIC_ARCH_VAULT_BASE_ADDRESS");
-export const AUSD_ADDRESS = addr("NEXT_PUBLIC_ARCH_USD_ADDRESS");
-export const BRIDGE_ADDRESS = addr("NEXT_PUBLIC_ARCH_BRIDGE_ARC_ADDRESS");
+export const VAULT_ADDRESS = validAddr(process.env["NEXT_PUBLIC_ARCH_VAULT_BASE_ADDRESS"]);
+export const AUSD_ADDRESS = validAddr(process.env["NEXT_PUBLIC_ARCH_USD_ADDRESS"]);
+export const BRIDGE_ADDRESS = validAddr(process.env["NEXT_PUBLIC_ARCH_BRIDGE_ARC_ADDRESS"]);
 export const USDC_ADDRESS: Hex =
-  addr("NEXT_PUBLIC_BASE_USDC_ADDRESS") ?? "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+  validAddr(process.env["NEXT_PUBLIC_BASE_USDC_ADDRESS"]) ?? "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
 
 export const BASE_EXPLORER = process.env["NEXT_PUBLIC_BASE_EXPLORER_URL"] ?? "https://sepolia.basescan.org";
 export const ARC_EXPLORER = process.env["NEXT_PUBLIC_ARC_EXPLORER_URL"] ?? "https://arc.exploreme.pro";
