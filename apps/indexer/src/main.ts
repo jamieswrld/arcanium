@@ -31,7 +31,8 @@ const swapEvent = parseAbiItem(
 
 const CANDLE_INTERVALS = [60, 300, 900, 3600, 14400, 86400];
 const CHUNK = 900n;
-const POLL_MS = 8_000;
+const POLL_MS = 15_000;
+const CHUNK_DELAY_MS = 400;
 
 interface IndexerConfig {
   readonly arc: PublicClient;
@@ -82,6 +83,7 @@ async function indexLaunches(cfg: IndexerConfig): Promise<void> {
   for (let start = from; start <= tip; start += CHUNK) {
     const end = start + CHUNK - 1n < tip ? start + CHUNK - 1n : tip;
     const logs = await arc.getLogs({ address: factory, event: launchedEvent, fromBlock: start, toBlock: end });
+    await new Promise((r) => setTimeout(r, CHUNK_DELAY_MS));
     for (const l of logs) {
       if (l.args.token === undefined || l.transactionHash === null) continue;
       const block = await arc.getBlock({ blockNumber: l.blockNumber ?? end });
@@ -135,6 +137,7 @@ async function indexSwaps(cfg: IndexerConfig): Promise<void> {
     for (let start = from; start <= tip; start += CHUNK) {
       const end = start + CHUNK - 1n < tip ? start + CHUNK - 1n : tip;
       const logs = await arc.getLogs({ address: poolHex, event: swapEvent, fromBlock: start, toBlock: end });
+      await new Promise((r) => setTimeout(r, CHUNK_DELAY_MS));
       for (const l of logs) {
         if (l.transactionHash === null || l.logIndex === null || l.args.sqrtPriceX96 === undefined) continue;
         const block = await arc.getBlock({ blockNumber: l.blockNumber ?? end });
