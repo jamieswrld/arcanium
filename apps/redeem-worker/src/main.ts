@@ -147,6 +147,7 @@ async function main(): Promise<void> {
             abi: archVaultBaseAbi,
             functionName: "release",
             args: [entry.transactionHash, BigInt(entry.logIndex), baseRecipient, amount],
+            gas: 250_000n,
           });
           const releaseReceipt = await base.waitForTransactionReceipt({ hash: txHash });
           log.info(

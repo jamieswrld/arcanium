@@ -153,6 +153,7 @@ async function main(): Promise<void> {
             abi: archBridgeArcAbi,
             functionName: "mintDeposit",
             args: [entry.transactionHash, BigInt(entry.logIndex), arcRecipient, netAmount],
+            gas: 300_000n,
           });
           const mintReceipt = await arc.waitForTransactionReceipt({ hash: txHash });
           log.info(
