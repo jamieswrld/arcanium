@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAccount, useBalance, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
 import type { Hex } from "viem";
-import { arcTestnet, erc20Abi, formatQuoteUnits, parseQuoteUnits } from "@/lib/bridgeClient";
+import { arcTestnet, erc20Abi, formatQuoteUnits, parseQuoteUnits, ARC_EXPLORER } from "@/lib/bridgeClient";
 import { useToast } from "@/components/ui/Toast";
 import { ConnectButton } from "@/components/ConnectButton";
 import { ROUTER_ADDRESS, routerAbi } from "@/lib/launchpad";
@@ -192,7 +192,7 @@ export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
       }
       setState({ step: "done", txHash });
       setAmountText("");
-      toast({ tone: "success", title: side === "buy" ? `Bought ${symbol}` : `Sold ${symbol}`, description: "Swap confirmed on Arc.", href: `https://testnet.arcscan.app/tx/${txHash}`, hrefLabel: "View transaction" });
+      toast({ tone: "success", title: side === "buy" ? `Bought ${symbol}` : `Sold ${symbol}`, description: "Swap confirmed on Arc.", href: `${ARC_EXPLORER}/tx/${txHash}`, hrefLabel: "View transaction" });
     } catch (err) {
       const message = err instanceof Error ? (err.message.split("\n")[0] ?? "failed") : "failed";
       setState({
@@ -242,7 +242,7 @@ export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
       <GasRows />
 
       <p className="arch-note">
-        Trades route through the standard Uniswap v3 pool at its 1% fee tier — Arch adds no router fee. Token-side fees are burned; quote-side fees split 30% creator / 70% Arch.
+        Trades route through the standard Uniswap v3 pool at its 1% fee tier — Arcanium adds no router fee. Token-side fees are burned; quote-side fees split 30% creator / 70% Arcanium.
       </p>
 
       {!isConnected ? (
@@ -267,7 +267,7 @@ export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
       {state.step === "done" ? (
         <p className="arch-note" style={{ color: "var(--arch-positive)" }}>
           ✓ Swap confirmed.{" "}
-          <a href={`https://testnet.arcscan.app/tx/${state.txHash}`} target="_blank" rel="noreferrer" style={{ textDecoration: "underline" }}>
+          <a href={`${ARC_EXPLORER}/tx/${state.txHash}`} target="_blank" rel="noreferrer" style={{ textDecoration: "underline" }}>
             View transaction
           </a>
         </p>

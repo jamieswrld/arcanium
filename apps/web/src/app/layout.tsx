@@ -5,7 +5,7 @@ import { Providers } from "./providers";
 import { NetworkPill, WalletButton } from "@/components/WalletButton";
 
 export const metadata: Metadata = {
-  title: "Arch — Bridge and launch on Arc",
+  title: "Arcanium — Bridge and launch on Arc",
   description:
     "Bridge USDC to Arc. Launch a token. Trade immediately through permanently locked Uniswap liquidity.",
 };
@@ -18,8 +18,10 @@ export default function RootLayout({
       <body>
         <Providers>
           <header className="arch-header">
-            <Link href="/" className="arch-logo">
-              Arch
+            <Link href="/" className="arch-logo" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/arcanium-mark.png" alt="" width={28} height={28} style={{ borderRadius: 7 }} />
+              Arcanium
             </Link>
             <nav className="arch-nav" aria-label="Primary">
               <Link href="/">Bridge</Link>

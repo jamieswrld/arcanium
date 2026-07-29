@@ -42,7 +42,7 @@ export default async function BridgePage() {
           value={live.arc.ok ? `connected · block ${live.arc.blockNumber}` : "unreachable"}
         />
         <StatRow
-          label="Arch vault (Base)"
+          label="Arcanium vault (Base)"
           value={live.vault !== null ? live.vault.address : "not deployed yet"}
         />
         {live.vault !== null ? (
@@ -63,8 +63,8 @@ export default async function BridgePage() {
 
       <Card title="What is aUSD?">
         <p className="arch-note" style={{ margin: 0 }}>
-          aUSD is issued by Arch, not Circle, and is not native USDC. Every aUSD
-          is backed one-for-one by USDC held in the Arch vault on Base after the
+          aUSD is issued by Arcanium, not Circle, and is not native USDC. Every aUSD
+          is backed one-for-one by USDC held in the Arcanium vault on Base after the
           deposit fee, and the reserve and supply above are read live from both
           chains. When Circle&apos;s native USDC bridge reaches Arc, aUSD
           becomes exchangeable one-for-one for native USDC with no deadline.

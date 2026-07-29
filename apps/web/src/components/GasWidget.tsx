@@ -215,7 +215,7 @@ export function GasWidget() {
             <span>{formatQuoteUnits(BigInt(quote.networkFee))} aUSD</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", padding: "0.2rem 0" }}>
-            <span style={{ color: "var(--arch-text-muted)" }}>Arch service margin (5%)</span>
+            <span style={{ color: "var(--arch-text-muted)" }}>Arcanium service margin (5%)</span>
             <span>{formatQuoteUnits(BigInt(quote.serviceMargin))} aUSD</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", padding: "0.2rem 0" }}>

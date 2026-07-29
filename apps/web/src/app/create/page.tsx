@@ -25,7 +25,7 @@ export default function CreateTokenPage() {
         <StatRow label="Token-side trading fees" value="100% burned" />
         <p className="arch-note" style={{ marginBottom: 0 }}>
           No bonding curve, no pre-market: your token trades on real Uniswap
-          from its first block. Nobody — including Arch — can ever withdraw the
+          from its first block. Nobody — including Arcanium — can ever withdraw the
           launch liquidity. Prices can go down as well as up.
         </p>
       </Card>

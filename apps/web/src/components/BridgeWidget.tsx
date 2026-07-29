@@ -127,8 +127,8 @@ export function BridgeWidget() {
   const sourceBalance = direction === "deposit" ? usdcBalance.data : ausdBalance.data;
   const sourceSymbol = direction === "deposit" ? "USDC" : "aUSD";
   const destSymbol = direction === "deposit" ? "aUSD" : "USDC";
-  const sourceChainName = direction === "deposit" ? "Base Sepolia" : "Arc Testnet";
-  const destChainName = direction === "deposit" ? "Arc Testnet" : "Base Sepolia";
+  const sourceChainName = direction === "deposit" ? baseChain.name : arcTestnet.name;
+  const destChainName = direction === "deposit" ? arcTestnet.name : baseChain.name;
   const requiredChainId = direction === "deposit" ? baseChain.id : arcTestnet.id;
 
   const validationError = useMemo<string | null>(() => {
@@ -417,7 +417,7 @@ export function BridgeWidget() {
             </span>
           </div>
           <div className="flex justify-between py-1.5">
-            <span className="text-muted-foreground">Arch fee</span>
+            <span className="text-muted-foreground">Arcanium fee</span>
             <span className="font-medium">
               {direction === "redeem"
                 ? "Free"

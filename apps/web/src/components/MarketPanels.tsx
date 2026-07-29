@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePublicClient } from "wagmi";
 import { parseAbiItem, type Hex } from "viem";
-import { arcTestnet } from "@/lib/bridgeClient";
+import { arcTestnet, ARC_EXPLORER } from "@/lib/bridgeClient";
 import { formatPriceE18, priceUsdE18 } from "@/lib/launchpad";
 import { formatQuoteUnits } from "@/lib/onchain";
 
@@ -192,7 +192,7 @@ function TradesTable({ swaps, symbol }: { readonly swaps: SwapPoint[]; readonly 
       {rows.map((s) => (
         <a
           key={`${s.txHash}-${s.block}`}
-          href={`https://testnet.arcscan.app/tx/${s.txHash}`}
+          href={`${ARC_EXPLORER}/tx/${s.txHash}`}
           target="_blank"
           rel="noreferrer"
           style={{ display: "grid", gridTemplateColumns: "56px 1fr 110px 90px", gap: "0.5rem", fontSize: "0.85rem", padding: "0.25rem 0", borderBottom: "1px solid var(--arch-border)" }}
@@ -222,7 +222,7 @@ function HoldersTable({ holders, pool, symbol }: { readonly holders: Array<{ wal
         const isPool = h.wallet.toLowerCase() === pool.toLowerCase();
         const pctBps = Number((h.balance * 10_000n) / SUPPLY);
         return (
-          <a key={h.wallet} href={`https://testnet.arcscan.app/address/${h.wallet}`} target="_blank" rel="noreferrer"
+          <a key={h.wallet} href={`${ARC_EXPLORER}/address/${h.wallet}`} target="_blank" rel="noreferrer"
             style={{ display: "grid", gridTemplateColumns: "32px 1fr 140px 70px", gap: "0.5rem", fontSize: "0.85rem", padding: "0.25rem 0", borderBottom: "1px solid var(--arch-border)" }}>
             <span className="arch-note">{i + 1}</span>
             <span style={{ fontFamily: "monospace" }}>

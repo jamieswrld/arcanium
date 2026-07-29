@@ -2,6 +2,7 @@ import { Badge, Card, StatRow } from "@arch/ui";
 import type { Hex } from "viem";
 import { arcPublicClient, fetchToken, formatPriceE18, GRADUATION_UNITS } from "@/lib/launchpad";
 import { formatQuoteUnits } from "@/lib/onchain";
+import { ARC_EXPLORER } from "@/lib/bridgeClient";
 import { TradePanel } from "@/components/TradePanel";
 import { MarketPanels } from "@/components/MarketPanels";
 
@@ -31,7 +32,7 @@ export default async function TokenPage({ params }: TokenPageProps) {
     return (
       <Card title="Not a launchpad token">
         <p className="arch-note">
-          That address isn&apos;t an Arch launch on Arc. <a href="/tokens" style={{ textDecoration: "underline" }}>Browse tokens</a>.
+          That address isn&apos;t an Arcanium launch on Arc. <a href="/tokens" style={{ textDecoration: "underline" }}>Browse tokens</a>.
         </p>
       </Card>
     );
@@ -81,7 +82,7 @@ export default async function TokenPage({ params }: TokenPageProps) {
           <StatRow label="Creator" value={`${detail.creator.slice(0, 8)}…`} />
           <p className="arch-note" style={{ marginBottom: 0 }}>
             <a
-              href={`https://testnet.arcscan.app/address/${detail.token}`}
+              href={`${ARC_EXPLORER}/address/${detail.token}`}
               target="_blank"
               rel="noreferrer"
               style={{ textDecoration: "underline" }}
@@ -90,7 +91,7 @@ export default async function TokenPage({ params }: TokenPageProps) {
             </a>{" "}
             ·{" "}
             <a
-              href={`https://testnet.arcscan.app/address/${detail.pool}`}
+              href={`${ARC_EXPLORER}/address/${detail.pool}`}
               target="_blank"
               rel="noreferrer"
               style={{ textDecoration: "underline" }}
@@ -118,10 +119,10 @@ export default async function TokenPage({ params }: TokenPageProps) {
       <Card title="Permanent liquidity">
         <p className="arch-note" style={{ margin: 0 }}>
           The full launch supply sits in Uniswap v3 position #{detail.positionId.toString()},
-          owned by the Arch liquidity vault. It can never be withdrawn or
-          transferred — by anyone, including Arch. Trading fees are the only
+          owned by the Arcanium liquidity vault. It can never be withdrawn or
+          transferred — by anyone, including Arcanium. Trading fees are the only
           outflow: token-side fees are burned; quote-side fees split 30% to the
-          creator and 70% to the Arch protocol. Fee distribution is
+          creator and 70% to the Arcanium protocol. Fee distribution is
           permissionless. Graduation at 9,000 aUSD is a permanent label only.
         </p>
       </Card>

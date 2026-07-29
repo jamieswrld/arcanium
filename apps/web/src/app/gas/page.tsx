@@ -12,7 +12,7 @@ export default function GasPage() {
         <h1 style={{ margin: "0 0 0.25rem", fontSize: "1.5rem" }}>⛽ Gas</h1>
         <p className="arch-note" style={{ margin: 0 }}>
           Arc charges gas in native USDC. Buy a little with aUSD — you sign a
-          gas-free permit and an Arch relayer delivers native USDC to your
+          gas-free permit and an Arcanium relayer delivers native USDC to your
           wallet.
         </p>
       </div>
@@ -22,7 +22,7 @@ export default function GasPage() {
       </Card>
 
       <p className="arch-note" style={{ textAlign: "center" }}>
-        Gas is priced from the live network rate plus a visible 5% Arch service
+        Gas is priced from the live network rate plus a visible 5% Arcanium service
         margin, which covers fronting native USDC through the relayer. If you
         can bridge USDC directly, that is cheaper.
       </p>
