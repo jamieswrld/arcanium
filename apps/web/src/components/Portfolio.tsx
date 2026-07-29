@@ -16,6 +16,7 @@ interface Row {
   readonly chain: string;
   readonly amount: string;
   readonly usd: number;
+  readonly pending: boolean;
 }
 
 /**
@@ -62,10 +63,13 @@ export function Portfolio() {
     );
   }
 
-  const rows: Row[] = [];
-  if (usdc.data !== undefined) rows.push({ asset: "USDC", chain: "Base", amount: formatQuoteUnits(usdc.data), usd: Number(usdc.data) / 1e6 });
-  if (ausd.data !== undefined) rows.push({ asset: "aUSD", chain: "Arc", amount: formatQuoteUnits(ausd.data), usd: Number(ausd.data) / 1e6 });
-  if (arcGas.data !== undefined) rows.push({ asset: "USDC (gas)", chain: "Arc", amount: fmtNative(arcGas.data.value), usd: Number(arcGas.data.value) / 1e18 });
+  // Always show every asset row — 0.00 when empty, "…" while a read is in
+  // flight — so a slow or failed RPC never makes a balance silently vanish.
+  const rows: Row[] = [
+    { asset: "USDC", chain: "Base", amount: usdc.data !== undefined ? formatQuoteUnits(usdc.data) : (usdc.isLoading ? "…" : "0"), usd: usdc.data !== undefined ? Number(usdc.data) / 1e6 : 0, pending: usdc.data === undefined && usdc.isLoading },
+    { asset: "aUSD", chain: "Arc", amount: ausd.data !== undefined ? formatQuoteUnits(ausd.data) : (ausd.isLoading ? "…" : "0"), usd: ausd.data !== undefined ? Number(ausd.data) / 1e6 : 0, pending: ausd.data === undefined && ausd.isLoading },
+    { asset: "USDC (gas)", chain: "Arc", amount: arcGas.data !== undefined ? fmtNative(arcGas.data.value) : (arcGas.isLoading ? "…" : "0"), usd: arcGas.data !== undefined ? Number(arcGas.data.value) / 1e18 : 0, pending: arcGas.data === undefined && arcGas.isLoading },
+  ];
 
   const total = rows.reduce((a, r) => a + r.usd, 0);
   const loading = usdc.isLoading || ausd.isLoading || arcGas.isLoading;

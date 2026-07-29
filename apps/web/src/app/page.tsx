@@ -17,7 +17,6 @@ export default async function BridgePage() {
   return (
     <div style={{ maxWidth: 620, margin: "0 auto" }}>
       <div className="arch-hero">
-        <span className="arch-eyebrow">◆ Bridge · Launch · Trade on Arc</span>
         <h1>
           Move USDC to Arc.
           <br />
@@ -35,7 +34,7 @@ export default async function BridgePage() {
         </Card>
 
         {/* Solvency proof strip */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "0.75rem" }}>
           <div className="arch-stat-tile">
             <div className="arch-stat-label">USDC reserve</div>
             <div className="arch-stat-value">

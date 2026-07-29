@@ -70,6 +70,20 @@ export default async function TokenPage({ params }: TokenPageProps) {
             )}
           </span>
         </div>
+
+        {!detail.graduated ? (
+          <div style={{ marginTop: "1rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.4rem" }}>
+              <span className="arch-note">Graduation progress</span>
+              <span className="arch-note" style={{ fontVariantNumeric: "tabular-nums" }}>
+                {formatQuoteUnits(detail.quoteBalance)} / 9,000 aUSD
+              </span>
+            </div>
+            <div className="arch-progress" aria-hidden>
+              <span style={{ width: `${Math.min(progressPct, 100)}%` }} />
+            </div>
+          </div>
+        ) : null}
       </Card>
 
       <div className="arch-two-col">
