@@ -11,6 +11,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { archBridgeArcAbi } from "@arch/abis";
 import { bridgeActionId } from "@arch/sdk";
 import { loadEnv } from "@arch/config";
+import { transportFor, withRetry } from "./rpc.js";
 
 /**
  * Base→Arc deposit worker.
@@ -93,14 +94,13 @@ async function getLogsChunked(
 
 async function main(): Promise<void> {
   const cfg = loadWorkerConfig();
-  const base = createPublicClient({ transport: http(cfg.baseRpc, { timeout: 15_000, retryCount: 2 }) });
-  const arc = createPublicClient({ transport: http(cfg.arcRpc, { timeout: 15_000, retryCount: 2 }) });
+  const baseTransport = transportFor(cfg.baseRpc, process.env["BASE_RPC_URLS"]);
+  const arcTransport = transportFor(cfg.arcRpc, process.env["ARC_RPC_URLS"]);
+  const base = createPublicClient({ transport: baseTransport });
+  const arc = createPublicClient({ transport: arcTransport });
   const keeper = privateKeyToAccount(cfg.keeperKey);
-  const arcWallet = createWalletClient({
-    account: keeper,
-    transport: http(cfg.arcRpc, { timeout: 15_000, retryCount: 2 }),
-  });
-  const arcChainId = await arc.getChainId();
+  const arcWallet = createWalletClient({ account: keeper, transport: arcTransport });
+  const arcChainId = await withRetry(() => arc.getChainId());
 
   log.info(
     { vault: cfg.vault, bridge: cfg.bridge, keeper: keeper.address, confirmations: cfg.confirmations.toString() },
@@ -147,19 +147,61 @@ async function main(): Promise<void> {
             { actionId, recipient: arcRecipient, net: netAmount.toString(), gross: grossAmount?.toString(), fee: feeAmount?.toString(), nonce: nonce?.toString() },
             "minting confirmed deposit",
           );
-          const txHash = await arcWallet.writeContract({
-            chain: null,
-            address: cfg.bridge,
-            abi: archBridgeArcAbi,
-            functionName: "mintDeposit",
-            args: [entry.transactionHash, BigInt(entry.logIndex), arcRecipient, netAmount],
-            gas: 300_000n,
-          });
-          const mintReceipt = await arc.waitForTransactionReceipt({ hash: txHash });
-          log.info(
-            { actionId, arcTx: txHash, status: mintReceipt.status, chainId: arcChainId },
-            mintReceipt.status === "success" ? "mint confirmed" : "mint reverted (on-chain guard)",
+          // Explicit nonce + gas: never depend on a racy estimate, and never
+          // let a stale pending-nonce read collide with an in-flight tx.
+          const nextNonce = await withRetry(() =>
+            arc.getTransactionCount({ address: keeper.address, blockTag: "pending" }),
           );
+          const txHash = await withRetry(() =>
+            arcWallet.writeContract({
+              chain: null,
+              address: cfg.bridge,
+              abi: archBridgeArcAbi,
+              functionName: "mintDeposit",
+              args: [entry.transactionHash, BigInt(entry.logIndex), arcRecipient, netAmount],
+              gas: 300_000n,
+              nonce: nextNonce,
+            }),
+          );
+
+          // Bounded receipt wait. A hung RPC previously wedged this loop
+          // forever; now we time out, log, and let the next cycle re-check the
+          // on-chain processed mapping (which is the real source of truth).
+          let confirmed = false;
+          try {
+            const mintReceipt = await arc.waitForTransactionReceipt({
+              hash: txHash,
+              timeout: 90_000,
+              pollingInterval: 3_000,
+            });
+            confirmed = mintReceipt.status === "success";
+            log.info(
+              { actionId, arcTx: txHash, status: mintReceipt.status, chainId: arcChainId },
+              confirmed ? "mint confirmed" : "mint reverted (on-chain guard)",
+            );
+          } catch (waitErr) {
+            log.warn(
+              { actionId, arcTx: txHash, err: waitErr instanceof Error ? waitErr.message : String(waitErr) },
+              "receipt wait timed out; verifying against chain state",
+            );
+          }
+
+          if (!confirmed) {
+            // Verify by state rather than by receipt: the tx may well have
+            // landed even though the RPC never returned the receipt.
+            const nowProcessed = await withRetry(() =>
+              arc.readContract({
+                address: cfg.bridge,
+                abi: archBridgeArcAbi,
+                functionName: "processedDeposits",
+                args: [actionId],
+              }),
+            ).catch(() => false);
+            log.info(
+              { actionId, arcTx: txHash, processed: nowProcessed },
+              nowProcessed ? "mint landed (verified on-chain)" : "mint not yet on-chain; will retry next cycle",
+            );
+          }
         }
         scannedTo = confirmedTip;
       }

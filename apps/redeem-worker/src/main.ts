@@ -11,6 +11,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { archVaultBaseAbi } from "@arch/abis";
 import { bridgeActionId } from "@arch/sdk";
 import { loadEnv } from "@arch/config";
+import { transportFor, withRetry } from "./rpc.js";
 
 /**
  * Arc→Base redemption worker.
@@ -88,13 +89,12 @@ async function getLogsChunked(
 
 async function main(): Promise<void> {
   const cfg = loadWorkerConfig();
-  const arc = createPublicClient({ transport: http(cfg.arcRpc, { timeout: 15_000, retryCount: 2 }) });
-  const base = createPublicClient({ transport: http(cfg.baseRpc, { timeout: 15_000, retryCount: 2 }) });
+  const arcTransport = transportFor(cfg.arcRpc, process.env["ARC_RPC_URLS"]);
+  const baseTransport = transportFor(cfg.baseRpc, process.env["BASE_RPC_URLS"]);
+  const arc = createPublicClient({ transport: arcTransport });
+  const base = createPublicClient({ transport: baseTransport });
   const keeper = privateKeyToAccount(cfg.keeperKey);
-  const baseWallet = createWalletClient({
-    account: keeper,
-    transport: http(cfg.baseRpc, { timeout: 15_000, retryCount: 2 }),
-  });
+  const baseWallet = createWalletClient({ account: keeper, transport: baseTransport });
 
   log.info(
     { vault: cfg.vault, bridge: cfg.bridge, keeper: keeper.address, confirmations: cfg.confirmations.toString() },
@@ -149,7 +149,7 @@ async function main(): Promise<void> {
             args: [entry.transactionHash, BigInt(entry.logIndex), baseRecipient, amount],
             gas: 250_000n,
           });
-          const releaseReceipt = await base.waitForTransactionReceipt({ hash: txHash });
+          const releaseReceipt = await base.waitForTransactionReceipt({ hash: txHash, timeout: 90_000, pollingInterval: 3_000 });
           log.info(
             { actionId, baseTx: txHash, status: releaseReceipt.status },
             releaseReceipt.status === "success" ? "release confirmed" : "release reverted (on-chain guard)",
