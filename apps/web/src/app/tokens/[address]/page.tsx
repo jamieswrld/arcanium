@@ -50,7 +50,7 @@ export default async function TokenPage({ params }: TokenPageProps) {
           <a href="/tokens" aria-label="Back to tokens" style={{ fontSize: "1.25rem", padding: "0 0.25rem" }}>‹</a>
           <div
             aria-hidden
-            style={{ width: 48, height: 48, borderRadius: 12, background: "var(--arch-surface-muted)", border: "1px solid var(--arch-border)", display: "grid", placeItems: "center", fontWeight: 700 }}
+            style={{ width: 52, height: 52, borderRadius: 14, background: "var(--brand-gradient)", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, flexShrink: 0 }}
           >
             {detail.symbol.slice(0, 2)}
           </div>
@@ -121,8 +121,8 @@ export default async function TokenPage({ params }: TokenPageProps) {
           The full launch supply sits in Uniswap v3 position #{detail.positionId.toString()},
           owned by the Arcanium liquidity vault. It can never be withdrawn or
           transferred — by anyone, including Arcanium. Trading fees are the only
-          outflow: token-side fees are burned; quote-side fees split 30% to the
-          creator and 70% to the Arcanium protocol. Fee distribution is
+          outflow: token-side fees are burned; quote-side fees split 10% to the
+          creator and 90% to the Arcanium protocol. Fee distribution is
           permissionless. Graduation at 9,000 aUSD is a permanent label only.
         </p>
       </Card>
