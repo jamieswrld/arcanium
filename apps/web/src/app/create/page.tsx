@@ -25,8 +25,7 @@ export default function CreateTokenPage() {
           <StatRow label="Starting market cap" value="≈ $3,000" />
           <StatRow label="Pool" value="Uniswap v3 · 1% fee tier" />
           <StatRow label="Liquidity" value="Permanently locked" />
-          <StatRow label="Your share of quote-side trading fees" value="10%, forever" />
-          <StatRow label="Token-side trading fees" value="100% burned" />
+          <StatRow label="Creator rewards" value="A share of trading fees, forever" />
           <p className="arch-note" style={{ marginBottom: 0 }}>
             No bonding curve, no pre-market: your token trades on real Uniswap from its
             first block. Nobody — including Arcanium — can ever withdraw the launch

@@ -120,10 +120,9 @@ export default async function TokenPage({ params }: TokenPageProps) {
         <p className="arch-note" style={{ margin: 0 }}>
           The full launch supply sits in Uniswap v3 position #{detail.positionId.toString()},
           owned by the Arcanium liquidity vault. It can never be withdrawn or
-          transferred — by anyone, including Arcanium. Trading fees are the only
-          outflow: token-side fees are burned; quote-side fees split 10% to the
-          creator and 90% to the Arcanium protocol. Fee distribution is
-          permissionless. Graduation at 9,000 aUSD is a permanent label only.
+          transferred — by anyone, including Arcanium. The creator earns a share of
+          trading fees for the life of the pool. Graduation at 9,000 aUSD is a
+          permanent label only.
         </p>
       </Card>
     </div>

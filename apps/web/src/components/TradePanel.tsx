@@ -242,7 +242,7 @@ export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
       <GasRows />
 
       <p className="arch-note">
-        Trades route through the standard Uniswap v3 pool at its 1% fee tier — Arcanium adds no router fee. Token-side fees are burned; quote-side fees split 10% creator / 90% Arcanium.
+        Trades route through the standard Uniswap v3 pool at its 1% fee tier. Arcanium adds no router fee.
       </p>
 
       {!isConnected ? (
