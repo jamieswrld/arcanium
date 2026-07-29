@@ -58,8 +58,14 @@ export default async function TokensPage({ searchParams }: TokensPageProps) {
 
   return (
     <div className="arch-stack">
-      <div className="arch-section-head">
-        <h1 style={{ margin: 0, fontSize: "1.5rem" }}>Tokens</h1>
+      <div>
+        <h1 style={{ margin: 0, fontSize: "1.75rem", fontWeight: 700, letterSpacing: "-0.02em" }}>Launchpad</h1>
+        <p className="arch-note" style={{ margin: "0.25rem 0 0" }}>
+          Every token trades from block one through permanently locked liquidity.
+        </p>
+      </div>
+
+      <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
         <div className="arch-pills">
           {pills.map((p) => (
             <Link
@@ -71,32 +77,40 @@ export default async function TokensPage({ searchParams }: TokensPageProps) {
             </Link>
           ))}
         </div>
+        <form action="/tokens" method="get" style={{ flex: "1 1 240px", minWidth: 200 }}>
+          <input type="hidden" name="sort" value={sort} />
+          <input
+            name="q"
+            defaultValue={q}
+            aria-label="Search tokens"
+            placeholder="Search name, ticker, or address…"
+            style={{ width: "100%", border: "1px solid var(--border)", borderRadius: 12, padding: "0.6rem 0.9rem", fontSize: "0.9rem", background: "var(--card)" }}
+          />
+        </form>
       </div>
 
-      <form action="/tokens" method="get" className="arch-form-row" style={{ marginBottom: 0 }}>
-        <input type="hidden" name="sort" value={sort} />
-        <input
-          name="q"
-          defaultValue={q}
-          aria-label="Search tokens"
-          placeholder="Search name, ticker, token address, or creator"
-        />
-      </form>
-
       <Card>
-        <div className="arch-token-list-head">
+        <div className="arch-token-list-head" style={{ gridTemplateColumns: "1fr 120px 130px" }}>
           <span>Token</span>
-          <span>Price</span>
-          <span>Market cap</span>
+          <span style={{ textAlign: "right" }}>Price</span>
+          <span style={{ textAlign: "right" }}>Market cap</span>
         </div>
         {tokens.length === 0 ? (
-          <p className="arch-note" style={{ margin: "1rem 0 0" }}>
-            {query.length > 0
-              ? "Nothing matches that search."
-              : "No tokens launched yet. Be the first — every launch trades instantly through permanently locked Uniswap liquidity."}
-          </p>
+          <div style={{ textAlign: "center", padding: "3rem 1rem" }}>
+            <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>◆</div>
+            <p className="arch-note" style={{ margin: 0 }}>
+              {query.length > 0
+                ? "Nothing matches that search."
+                : "No tokens launched yet. Be the first."}
+            </p>
+            {query.length === 0 ? (
+              <Link href="/create" className="arch-pill arch-pill-active" style={{ display: "inline-block", marginTop: "1rem", padding: "0.5rem 1.1rem" }}>
+                Launch a token
+              </Link>
+            ) : null}
+          </div>
         ) : (
-          <div style={{ display: "grid", gap: "0.25rem", marginTop: "0.5rem" }}>
+          <div style={{ display: "grid", marginTop: "0.35rem" }}>
             {tokens.map((t) => {
               const progressPct =
                 t.quoteBalance >= GRADUATION_UNITS
@@ -106,24 +120,22 @@ export default async function TokensPage({ searchParams }: TokensPageProps) {
                 <Link
                   key={t.token}
                   href={`/tokens/${t.token}`}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 120px 120px",
-                    gap: "0.75rem",
-                    padding: "0.6rem 0",
-                    borderBottom: "1px solid var(--arch-border)",
-                    alignItems: "center",
-                  }}
+                  className="arch-token-row"
                 >
-                  <span>
-                    <strong>{t.symbol}</strong>{" "}
-                    <span className="arch-note">
-                      {t.name}
-                      {t.graduated ? " · graduated" : ` · ${progressPct}% to graduation`}
+                  <span style={{ display: "flex", alignItems: "center", gap: "0.7rem", minWidth: 0 }}>
+                    <span aria-hidden style={{ width: 36, height: 36, borderRadius: 10, background: "var(--brand-gradient)", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, fontSize: "0.85rem", flexShrink: 0 }}>
+                      {t.symbol.slice(0, 2)}
+                    </span>
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ display: "block", fontWeight: 600 }}>{t.symbol}</span>
+                      <span className="arch-note" style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {t.name}
+                        {t.graduated ? " · graduated" : ` · ${progressPct}%`}
+                      </span>
                     </span>
                   </span>
-                  <span>{formatPriceE18(t.priceE18)}</span>
-                  <span>${formatQuoteUnits(t.marketCapUnits)}</span>
+                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{formatPriceE18(t.priceE18)}</span>
+                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>${formatQuoteUnits(t.marketCapUnits)}</span>
                 </Link>
               );
             })}
@@ -131,14 +143,10 @@ export default async function TokensPage({ searchParams }: TokensPageProps) {
         )}
       </Card>
 
-      <Card title="Graduation">
-        <p className="arch-note" style={{ margin: 0 }}>
-          <Badge label="ⓘ" /> A token graduates permanently when its pool holds
-          9,000 aUSD or USDC. Graduation is a milestone label only: it never
-          unlocks liquidity, never changes the token, and never moves the
-          market.
-        </p>
-      </Card>
+      <p className="arch-note" style={{ textAlign: "center", margin: 0 }}>
+        <Badge label="ⓘ" /> A token graduates permanently at 9,000 aUSD in its pool — a
+        milestone label only. It never unlocks liquidity or changes the market.
+      </p>
     </div>
   );
 }
