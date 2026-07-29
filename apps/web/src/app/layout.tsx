@@ -32,7 +32,7 @@ export default function RootLayout({
         <Providers>
           <header className="arch-header">
             <Link href="/" className="arch-logo" style={{ display: "flex", alignItems: "center", gap: "0.55rem" }}>
-              <Image src="/arcanium-mark.png" alt="" width={30} height={30} style={{ borderRadius: 8 }} priority />
+              <Image src="/arcanium-mark.png" alt="" width={34} height={27} priority />
               Arcanium
             </Link>
             <nav className="arch-nav" aria-label="Primary">

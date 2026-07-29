@@ -26,10 +26,13 @@ export default function CreateTokenPage() {
           <StatRow label="Pool" value="Uniswap v3 · 1% fee tier" />
           <StatRow label="Liquidity" value="Permanently locked" />
           <StatRow label="Creator rewards" value="A share of trading fees, forever" />
+          <StatRow label="Pay with" value="aUSD on Arc, or USDC on Base" />
           <p className="arch-note" style={{ marginBottom: 0 }}>
             No bonding curve, no pre-market: your token trades on real Uniswap from its
-            first block. Nobody — including Arcanium — can ever withdraw the launch
-            liquidity. Prices can go down as well as up.
+            first block. Pay with aUSD you already hold on Arc, or with USDC on Base —
+            we bridge just the shortfall for you, then launch. Nobody — including
+            Arcanium — can ever withdraw the launch liquidity. Prices can go down as
+            well as up.
           </p>
         </Card>
       </div>

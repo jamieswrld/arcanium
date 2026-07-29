@@ -12,16 +12,16 @@ import { base, baseSepolia } from "viem/chains";
  */
 
 export const arcTestnet = defineChain({
-  id: Number(process.env["NEXT_PUBLIC_ARC_CHAIN_ID"] ?? "5042002"),
+  id: Number(process.env["NEXT_PUBLIC_ARC_CHAIN_ID"] ?? "5042"),
   name: process.env["NEXT_PUBLIC_ARC_CHAIN_NAME"] ?? "Arc",
   nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
   rpcUrls: {
     default: {
-      http: [process.env["NEXT_PUBLIC_ARC_RPC_URL"] ?? "https://rpc.testnet.arc.network"],
+      http: [process.env["NEXT_PUBLIC_ARC_RPC_URL"] ?? "https://5042.rpc.thirdweb.com"],
     },
   },
   blockExplorers: {
-    default: { name: "Arc Explorer", url: process.env["NEXT_PUBLIC_ARC_EXPLORER_URL"] ?? "https://testnet.arcscan.app" },
+    default: { name: "Arc Explorer", url: process.env["NEXT_PUBLIC_ARC_EXPLORER_URL"] ?? "https://arc.exploreme.pro" },
   },
   testnet: process.env["NEXT_PUBLIC_ARC_CHAIN_ID"] !== "5042",
 });
@@ -40,7 +40,7 @@ export const USDC_ADDRESS: Hex =
   addr("NEXT_PUBLIC_BASE_USDC_ADDRESS") ?? "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
 
 export const BASE_EXPLORER = process.env["NEXT_PUBLIC_BASE_EXPLORER_URL"] ?? "https://sepolia.basescan.org";
-export const ARC_EXPLORER = process.env["NEXT_PUBLIC_ARC_EXPLORER_URL"] ?? "https://testnet.arcscan.app";
+export const ARC_EXPLORER = process.env["NEXT_PUBLIC_ARC_EXPLORER_URL"] ?? "https://arc.exploreme.pro";
 
 export const vaultAbi = [
   { type: "function", name: "feeBps", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },

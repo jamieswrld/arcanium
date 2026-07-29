@@ -25,9 +25,8 @@ const stationAbi = [
 ] as const;
 
 const arcTransport = fallback([
-  http(process.env["ARC_RPC_SERVER_URL"] ?? "https://5042002.rpc.thirdweb.com"),
-  http("https://arc-testnet.drpc.org"),
-  http("https://rpc.testnet.arc.network"),
+  http(process.env["ARC_RPC_SERVER_URL"] ?? process.env["NEXT_PUBLIC_ARC_RPC_URL"] ?? "https://5042.rpc.thirdweb.com"),
+  http("https://5042.rpc.thirdweb.com"),
 ]);
 const STATION = process.env["NEXT_PUBLIC_ARCH_GAS_STATION_ADDRESS"] as Hex | undefined;
 const QUOTE_TTL_SECONDS = 120;

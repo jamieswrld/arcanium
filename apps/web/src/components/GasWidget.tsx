@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAccount, usePublicClient, useReadContract, useSignTypedData } from "wagmi";
 import { ConnectButton } from "@/components/ConnectButton";
 import type { Hex } from "viem";
@@ -55,6 +55,15 @@ export function GasWidget() {
 
   const [actionId, setActionId] = useState<number>(0);
   const [flow, setFlow] = useState<GasFlow>({ step: "idle" });
+
+  // Auto-fetch the quote as soon as the widget is usable and whenever the
+  // action changes, so the amounts populate immediately instead of hiding
+  // behind a button that looks like it does nothing.
+  useEffect(() => {
+    if (STATION === undefined) return;
+    void getQuote();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actionId]);
 
   const ausdBalance = useReadContract({
     address: AUSD_ADDRESS,
@@ -176,6 +185,9 @@ export function GasWidget() {
             </option>
           ))}
         </select>
+        <span className="arch-note" style={{ marginTop: "0.35rem" }}>
+          We top up exactly enough native gas to cover one {ACTIONS[actionId]?.label.toLowerCase()} on Arc — the amounts below update live.
+        </span>
       </div>
 
       <div className="arch-panel">

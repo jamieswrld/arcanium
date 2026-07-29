@@ -31,12 +31,12 @@ const stationAbi = [
 ] as const;
 
 const arcTransport = fallback([
-  http(process.env["ARC_RPC_SERVER_URL"] ?? "https://5042002.rpc.thirdweb.com"),
-  http("https://arc-testnet.drpc.org"),
-  http("https://rpc.testnet.arc.network"),
+  http(process.env["ARC_RPC_SERVER_URL"] ?? process.env["NEXT_PUBLIC_ARC_RPC_URL"] ?? "https://5042.rpc.thirdweb.com"),
+  http("https://5042.rpc.thirdweb.com"),
 ]);
 const STATION = process.env["NEXT_PUBLIC_ARCH_GAS_STATION_ADDRESS"] as Hex | undefined;
 const RELAYER_KEY = process.env["RELAYER_PRIVATE_KEY"] as Hex | undefined;
+const ARC_EXPLORER = process.env["NEXT_PUBLIC_ARC_EXPLORER_URL"] ?? "https://arc.exploreme.pro";
 
 const inFlight = new Set<string>();
 
@@ -99,7 +99,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({
       txHash,
       status: receipt === null ? "submitted" : receipt.status === "success" ? "confirmed" : "reverted",
-      explorer: `https://testnet.arcscan.app/tx/${txHash}`,
+      explorer: `${ARC_EXPLORER}/tx/${txHash}`,
     });
   } catch (err) {
     const message = err instanceof Error ? (err.message.split("\n")[0] ?? "drip failed") : "drip failed";
