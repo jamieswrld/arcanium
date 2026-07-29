@@ -182,6 +182,67 @@ main {
   }
 }
 
+/* ---- Documentation ---- */
+@layer components {
+  .docs-shell {
+    @apply grid gap-8 max-[860px]:block;
+    grid-template-columns: 220px 1fr;
+    align-items: start;
+  }
+  .docs-sidebar {
+    @apply sticky top-20 max-[860px]:static max-[860px]:mb-6;
+    align-self: start;
+  }
+  .docs-nav-section {
+    @apply mb-5;
+  }
+  .docs-nav-heading {
+    @apply text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5;
+  }
+  .docs-nav-link {
+    @apply block text-sm text-muted-foreground rounded-md px-2.5 py-1.5 -mx-2.5 transition-colors hover:text-foreground hover:bg-muted;
+  }
+  .docs-content {
+    @apply max-w-[720px] min-w-0;
+  }
+  .docs-content h1 {
+    @apply text-[2rem] font-bold tracking-tight mt-0 mb-3;
+  }
+  .docs-content h2 {
+    @apply text-xl font-semibold mt-9 mb-3;
+  }
+  .docs-content p {
+    @apply text-[0.95rem] leading-7 text-foreground/90 my-3;
+  }
+  .docs-content .docs-lead {
+    @apply text-lg leading-8 text-muted-foreground mb-6;
+  }
+  .docs-content ul,
+  .docs-content ol {
+    @apply my-3 pl-5 flex flex-col gap-2 text-[0.95rem] leading-7 text-foreground/90;
+  }
+  .docs-content ul { @apply list-disc; }
+  .docs-content ol { @apply list-decimal; }
+  .docs-content a {
+    @apply text-primary underline underline-offset-2 hover:text-primary-hover;
+  }
+  .docs-mono {
+    @apply font-mono text-[0.8rem] bg-muted border border-border rounded px-1.5 py-0.5 break-all;
+  }
+  .docs-table {
+    @apply w-full my-4 text-sm border-collapse;
+  }
+  .docs-table th {
+    @apply text-left font-semibold text-muted-foreground border-b border-border pb-2 px-2;
+  }
+  .docs-table td {
+    @apply border-b border-border py-2.5 px-2 align-top;
+  }
+  .docs-callout {
+    @apply my-5 rounded-xl border border-primary/25 bg-primary/[0.04] px-4 py-3 text-sm leading-6;
+  }
+}
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
