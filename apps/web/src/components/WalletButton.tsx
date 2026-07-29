@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useAccount, useDisconnect } from "wagmi";
+import { useAccount, useDisconnect, useSwitchChain } from "wagmi";
 import { arcTestnet, baseChain } from "@/lib/bridgeClient";
 import { ConnectModal } from "@/components/ConnectModal";
 
@@ -11,24 +11,36 @@ function shortAddress(address: string): string {
 
 export function NetworkPill() {
   const { chainId, isConnected } = useAccount();
+  const { switchChain, isPending } = useSwitchChain();
   if (!isConnected) {
     return <span className="arch-network-pill">Not connected</span>;
   }
   if (chainId === baseChain.id) {
     return (
       <span className="arch-network-pill" style={{ color: "var(--positive)", borderColor: "var(--positive)" }}>
-        Base Sepolia
+        {baseChain.name}
       </span>
     );
   }
   if (chainId === arcTestnet.id) {
     return (
       <span className="arch-network-pill" style={{ color: "var(--positive)", borderColor: "var(--positive)" }}>
-        Arc Testnet
+        {arcTestnet.name}
       </span>
     );
   }
-  return <span className="arch-network-pill">Unsupported network</span>;
+  // Wrong network → the pill becomes a one-click fix.
+  return (
+    <button
+      className="arch-network-pill"
+      style={{ cursor: "pointer", background: "transparent" }}
+      disabled={isPending}
+      onClick={() => switchChain({ chainId: baseChain.id })}
+      title="Switch to Base"
+    >
+      {isPending ? "Switching…" : "Wrong network — switch"}
+    </button>
+  );
 }
 
 export function WalletButton() {
