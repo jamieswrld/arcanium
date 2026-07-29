@@ -1,0 +1,12 @@
+{
+  "baseSplitter": "0xaae52e24c64c5d1b6ae795cd2217ada95cc5264c",
+  "vault": "0xcc3906d55558bc0e091c65c92a6ea84a84fd64f9",
+  "arcSplitter": "0xdedbe5e41d9555a6cbd42b03f1c3e796a9df8ddc",
+  "ausd": "0x627a80970043b94359f71fb50c85fc56242ada3e",
+  "bridge": "0x2a4ffe09984143f6f11068669d2505c522555c40",
+  "gasStation": "0x6c20625ab17aa1d6383d8d80bda06c67f46a3b25",
+  "liquidityVault": "0x9ba45402010c54e23a518c2c2f0661ff8460f6b2",
+  "factory": "0x38896c67b9613f4e9dd41b2d1c1006b885912f32",
+  "distributor": "0x4ef31a032ca02570b1b98d68648826c70e352a21",
+  "graduation": "0xe1c4bafff2feef2a7a27846685f5d8dad07308f1"
+}

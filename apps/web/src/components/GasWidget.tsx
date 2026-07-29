@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useAccount, useConnect, usePublicClient, useReadContract, useSignTypedData } from "wagmi";
+import { useAccount, usePublicClient, useReadContract, useSignTypedData } from "wagmi";
+import { ConnectButton } from "@/components/ConnectButton";
 import type { Hex } from "viem";
 import {
   arcTestnet,
@@ -49,7 +50,6 @@ function formatNative(wei: bigint): string {
 
 export function GasWidget() {
   const { address, isConnected } = useAccount();
-  const { connectors, connect } = useConnect();
   const { signTypedDataAsync } = useSignTypedData();
   const arcPublic = usePublicClient({ chainId: arcTestnet.id });
 
@@ -226,16 +226,7 @@ export function GasWidget() {
       ) : null}
 
       {!isConnected ? (
-        <button
-          className="arch-primary-button"
-          style={{ cursor: "pointer", opacity: 1 }}
-          onClick={() => {
-            const c = connectors[0];
-            if (c !== undefined) connect({ connector: c });
-          }}
-        >
-          Connect wallet
-        </button>
+        <ConnectButton />
       ) : flow.step === "idle" || flow.step === "error" || flow.step === "done" ? (
         <button className="arch-primary-button" style={{ cursor: "pointer", opacity: 1 }} onClick={() => void getQuote()}>
           Get quote

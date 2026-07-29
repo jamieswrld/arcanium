@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAccount, useConnect, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
 import { decodeEventLog, parseAbiItem } from "viem";
 import { arcTestnet, AUSD_ADDRESS, erc20Abi, formatQuoteUnits, parseQuoteUnits } from "@/lib/bridgeClient";
 import { FACTORY_ADDRESS, factoryAbi } from "@/lib/launchpad";
 import { useToast } from "@/components/ui/Toast";
+import { ConnectButton } from "@/components/ConnectButton";
 
 const launchedEvent = parseAbiItem(
   "event Launched(address indexed token, address indexed creator, address pairToken, address pool, uint256 positionId, string metadataUri)",
@@ -27,7 +28,6 @@ type CreateState =
 export function CreateForm() {
   const router = useRouter();
   const { address, isConnected, chainId } = useAccount();
-  const { connectors, connect } = useConnect();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
   const arcPublic = usePublicClient({ chainId: arcTestnet.id });
@@ -225,13 +225,7 @@ export function CreateForm() {
       ) : null}
 
       {!isConnected ? (
-        <button
-          className="arch-primary-button"
-          style={{ cursor: "pointer", opacity: 1 }}
-          onClick={() => { const c = connectors[0]; if (c !== undefined) connect({ connector: c }); }}
-        >
-          Connect wallet
-        </button>
+        <ConnectButton />
       ) : (
         <button
           className="arch-primary-button"

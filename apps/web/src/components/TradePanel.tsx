@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useAccount, useBalance, useConnect, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
+import { useAccount, useBalance, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
 import type { Hex } from "viem";
 import { arcTestnet, erc20Abi, formatQuoteUnits, parseQuoteUnits } from "@/lib/bridgeClient";
 import { useToast } from "@/components/ui/Toast";
+import { ConnectButton } from "@/components/ConnectButton";
 import { ROUTER_ADDRESS, routerAbi } from "@/lib/launchpad";
 
 interface TradePanelProps {
@@ -83,7 +84,6 @@ function parseToken18(value: string): bigint {
  */
 export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
   const { address, isConnected, chainId } = useAccount();
-  const { connectors, connect } = useConnect();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
   const arcPublic = usePublicClient({ chainId: arcTestnet.id });
@@ -203,23 +203,13 @@ export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
     }
   }
 
+  const bal = side === "buy" ? quoteBalance.data : tokenBalance.data;
+
   return (
     <div>
       <div className="arch-pills" style={{ display: "inline-flex", marginBottom: "0.75rem" }}>
-        <button
-          className={side === "buy" ? "arch-pill arch-pill-active" : "arch-pill"}
-          style={{ border: "none", background: side === "buy" ? "var(--arch-positive)" : "transparent", cursor: "pointer" }}
-          onClick={() => { setSide("buy"); setState({ step: "idle" }); }}
-        >
-          Buy
-        </button>
-        <button
-          className={side === "sell" ? "arch-pill arch-pill-active" : "arch-pill"}
-          style={{ border: "none", background: side === "sell" ? "var(--arch-negative)" : "transparent", cursor: "pointer" }}
-          onClick={() => { setSide("sell"); setState({ step: "idle" }); }}
-        >
-          Sell
-        </button>
+        <button className={side === "buy" ? "arch-pill arch-pill-active" : "arch-pill"} onClick={() => { setSide("buy"); setState({ step: "idle" }); }}>Buy</button>
+        <button className={side === "sell" ? "arch-pill arch-pill-active" : "arch-pill"} onClick={() => { setSide("sell"); setState({ step: "idle" }); }}>Sell</button>
       </div>
 
       <div className="arch-panel">
@@ -228,76 +218,35 @@ export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
           <span className="arch-asset-chip">{side === "buy" ? "aUSD" : symbol}</span>
         </div>
         <div className="arch-amount-row">
-          <input
-            className="arch-amount-input"
-            placeholder="0.00"
-            inputMode="decimal"
-            value={amountText}
-            onChange={(e) => setAmountText(e.target.value)}
-            disabled={busy}
-            aria-label="Trade amount"
-          />
+          <input className="arch-amount-input" placeholder="0.00" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)} disabled={busy} aria-label="Trade amount" />
         </div>
         <div className="arch-panel-foot">
-          <span>
-            Balance:{" "}
-            {side === "buy"
-              ? quoteBalance.data !== undefined ? `${formatQuoteUnits(quoteBalance.data)} aUSD` : "—"
-              : tokenBalance.data !== undefined ? `${formatToken18(tokenBalance.data)} ${symbol}` : "—"}
-          </span>
+          <span>Balance: {bal !== undefined ? (side === "buy" ? `${formatQuoteUnits(bal)} aUSD` : `${formatToken18(bal)} ${symbol}`) : "—"}</span>
         </div>
         <div className="arch-pct-chips">
           {[25, 50, 75, 100].map((pct) => (
-            <button
-              key={pct}
-              className="arch-pct-chip"
-              disabled={busy}
-              onClick={() => {
-                const bal = side === "buy" ? quoteBalance.data : tokenBalance.data;
-                if (bal === undefined) return;
-                const portion = (bal * BigInt(pct)) / 100n;
-                setAmountText(
-                  side === "buy"
-                    ? formatQuoteUnits(portion).replace(/,/g, "")
-                    : (portion / 10n ** 18n).toString(),
-                );
-              }}
-            >
-              {pct === 100 ? "Max" : `${pct}%`}
-            </button>
+            <button key={pct} className="arch-pct-chip" disabled={busy || bal === undefined} onClick={() => {
+              if (bal === undefined) return;
+              const portion = (bal * BigInt(pct)) / 100n;
+              setAmountText(side === "buy" ? formatQuoteUnits(portion).replace(/,/g, "") : (portion / 10n ** 18n).toString());
+            }}>{pct === 100 ? "Max" : `${pct}%`}</button>
           ))}
         </div>
       </div>
 
       <div className="arch-form-row" style={{ marginTop: "0.75rem" }}>
         <label htmlFor="trade-slippage">Slippage tolerance (%)</label>
-        <input
-          id="trade-slippage"
-          value={slippagePct}
-          onChange={(e) => setSlippagePct(e.target.value)}
-          inputMode="decimal"
-          disabled={busy}
-        />
+        <input id="trade-slippage" value={slippagePct} onChange={(e) => setSlippagePct(e.target.value)} inputMode="decimal" disabled={busy} />
       </div>
 
       <GasRows />
 
-
       <p className="arch-note">
-        Trades route through the standard Uniswap v3 pool at its 1% fee tier —
-        Arch adds no router fee. Pool fees accrue to the locked position:
-        token-side fees are burned, quote-side fees split 30% to the creator
-        and 70% to Arch.
+        Trades route through the standard Uniswap v3 pool at its 1% fee tier — Arch adds no router fee. Token-side fees are burned; quote-side fees split 30% creator / 70% Arch.
       </p>
 
       {!isConnected ? (
-        <button
-          className="arch-primary-button"
-          style={{ cursor: "pointer", opacity: 1 }}
-          onClick={() => { const c = connectors[0]; if (c !== undefined) connect({ connector: c }); }}
-        >
-          Connect wallet
-        </button>
+        <ConnectButton />
       ) : (
         <button
           className="arch-primary-button"

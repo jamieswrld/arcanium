@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   useAccount,
-  useConnect,
   usePublicClient,
   useReadContract,
   useSwitchChain,
@@ -11,6 +10,7 @@ import {
 } from "wagmi";
 import type { Hex } from "viem";
 import { useToast } from "@/components/ui/Toast";
+import { ConnectButton } from "@/components/ConnectButton";
 import { Dialog } from "@/components/ui/Dialog";
 import {
   applyBps,
@@ -46,7 +46,6 @@ const DESTINATION_POLL_MS = 5_000;
 
 export function BridgeWidget() {
   const { address, isConnected, chainId } = useAccount();
-  const { connectors, connect } = useConnect();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
   const basePublic = usePublicClient({ chainId: baseChain.id });
@@ -327,7 +326,6 @@ export function BridgeWidget() {
             Balance: {sourceBalance !== undefined ? formatQuoteUnits(sourceBalance) : "—"} {sourceSymbol}{" "}
             <button
               className="arch-max-chip"
-              style={{ cursor: "pointer" }}
               disabled={sourceBalance === undefined || busy}
               onClick={() => {
                 if (sourceBalance !== undefined) setAmountText(formatQuoteUnits(sourceBalance).replace(/,/g, ""));
@@ -342,12 +340,12 @@ export function BridgeWidget() {
       <div className="arch-switch-row">
         <button
           className="arch-switch-button"
-          style={{ cursor: "pointer" }}
           aria-label="Switch bridge direction"
           disabled={busy}
           onClick={() => {
             setDirection(direction === "deposit" ? "redeem" : "deposit");
             setFlow({ step: "idle" });
+            setAmountText("");
           }}
         >
           ⇅
@@ -360,9 +358,7 @@ export function BridgeWidget() {
           <span className="arch-chain-chip">{destChainName}</span>
         </div>
         <div className="arch-amount-row">
-          <span className="arch-amount-output">
-            {outputAmount !== null ? formatQuoteUnits(outputAmount) : "0.00"}
-          </span>
+          <span className="arch-amount-output">{outputAmount !== null ? formatQuoteUnits(outputAmount) : "0.00"}</span>
           <span className="arch-asset-chip">{destSymbol}</span>
         </div>
         <div className="arch-panel-foot">
@@ -370,44 +366,19 @@ export function BridgeWidget() {
         </div>
       </div>
 
-      <div style={{ padding: "0.75rem 0 0.25rem", fontSize: "0.875rem" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", padding: "0.25rem 0" }}>
-          <span style={{ color: "var(--arch-text-muted)" }}>Rate</span>
-          <span>
-            {direction === "redeem"
-              ? "1 aUSD = 1 USDC"
-              : fee !== null
-                ? `1 USDC = ${formatQuoteUnits(1_000_000n - applyBps(1_000_000n, fee))} aUSD`
-                : "—"}
-          </span>
+      <div style={{ padding: "0.75rem 0 0.25rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "0.25rem 0", fontSize: "0.875rem" }}>
+          <span style={{ color: "var(--muted-foreground)" }}>Rate</span>
+          <span>{direction === "redeem" ? "1 aUSD = 1 USDC" : fee !== null ? `1 USDC = ${formatQuoteUnits(1_000_000n - applyBps(1_000_000n, fee))} aUSD` : "—"}</span>
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", padding: "0.25rem 0" }}>
-          <span style={{ color: "var(--arch-text-muted)" }}>Fee</span>
-          <span>
-            {direction === "redeem"
-              ? "Free"
-              : fee !== null
-                ? `${(fee / 100n).toString()}%${parsedAmount !== null ? ` (${formatQuoteUnits(applyBps(parsedAmount, fee))} USDC)` : ""}`
-                : "—"}
-          </span>
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", padding: "0.25rem 0" }}>
-          <span style={{ color: "var(--arch-text-muted)" }}>Estimated time</span>
-          <span>≈ 1 min</span>
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "0.25rem 0", fontSize: "0.875rem" }}>
+          <span style={{ color: "var(--muted-foreground)" }}>Fee</span>
+          <span>{direction === "redeem" ? "Free" : fee !== null ? `${(fee / 100n).toString()}%` : "—"}</span>
         </div>
       </div>
 
       {!isConnected ? (
-        <button
-          className="arch-primary-button"
-          style={{ cursor: "pointer", opacity: 1 }}
-          onClick={() => {
-            const connector = connectors[0];
-            if (connector !== undefined) connect({ connector });
-          }}
-        >
-          Connect wallet
-        </button>
+        <ConnectButton />
       ) : (
         <button
           className="arch-primary-button"
