@@ -20,9 +20,9 @@ contract ArchFeeDistributor is Ownable2Step, ReentrancyGuard {
 
     uint256 public constant BPS_DENOMINATOR = 10_000;
     address public constant BURN_ADDRESS = 0x000000000000000000000000000000000000dEaD;
-    /// @notice Creator share can never be set below 10% nor above 50% —
-    ///         compiled-in bounds protecting both sides.
-    uint256 public constant MIN_CREATOR_SHARE_BPS = 1_000;
+    /// @notice Creator share bounds. Floor is 1% (protocol keeps the rest);
+    ///         ceiling 50%. Compiled-in so even the owner cannot exceed them.
+    uint256 public constant MIN_CREATOR_SHARE_BPS = 100;
     uint256 public constant MAX_CREATOR_SHARE_BPS = 5_000;
 
     ArchLaunchpadFactory public immutable factory;

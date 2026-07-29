@@ -288,9 +288,10 @@ contract ArchLaunchpadTest is Test {
     function test_creatorShareBounds() public {
         vm.startPrank(admin);
         vm.expectRevert(ArchFeeDistributor.ShareOutOfBounds.selector);
-        distributor.setCreatorShare(999);
+        distributor.setCreatorShare(99); // below 1% floor
         vm.expectRevert(ArchFeeDistributor.ShareOutOfBounds.selector);
         distributor.setCreatorShare(5_001);
+        distributor.setCreatorShare(100); // 1% is allowed
         distributor.setCreatorShare(3_500);
         vm.stopPrank();
     }
