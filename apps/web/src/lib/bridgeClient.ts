@@ -1,0 +1,161 @@
+import {
+  defineChain,
+  encodeAbiParameters,
+  keccak256,
+  type Hex,
+} from "viem";
+import { baseSepolia } from "viem/chains";
+
+/**
+ * Client-side bridge constants and helpers. All financial math is bigint.
+ * Addresses come from NEXT_PUBLIC env (set in Vercel), never hardcoded.
+ */
+
+export const arcTestnet = defineChain({
+  id: 5042002,
+  name: "Arc Testnet",
+  nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
+  rpcUrls: {
+    default: {
+      http: [process.env["NEXT_PUBLIC_ARC_RPC_URL"] ?? "https://rpc.testnet.arc.network"],
+    },
+  },
+  blockExplorers: {
+    default: { name: "Arcscan", url: "https://testnet.arcscan.app" },
+  },
+  testnet: true,
+});
+
+export const baseChain = baseSepolia;
+
+function addr(name: string): Hex | undefined {
+  const v = process.env[name];
+  return v !== undefined && /^0x[0-9a-fA-F]{40}$/.test(v) ? (v as Hex) : undefined;
+}
+
+export const VAULT_ADDRESS = addr("NEXT_PUBLIC_ARCH_VAULT_BASE_ADDRESS");
+export const AUSD_ADDRESS = addr("NEXT_PUBLIC_ARCH_USD_ADDRESS");
+export const BRIDGE_ADDRESS = addr("NEXT_PUBLIC_ARCH_BRIDGE_ARC_ADDRESS");
+export const USDC_ADDRESS: Hex =
+  addr("NEXT_PUBLIC_BASE_USDC_ADDRESS") ?? "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+
+export const BASE_EXPLORER = "https://sepolia.basescan.org";
+export const ARC_EXPLORER = "https://testnet.arcscan.app";
+
+export const vaultAbi = [
+  { type: "function", name: "feeBps", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "minDeposit", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "maxDeposit", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "depositsPaused", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
+  {
+    type: "function",
+    name: "deposit",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "amount", type: "uint256" },
+      { name: "arcRecipient", type: "address" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "processedRedemptions",
+    stateMutability: "view",
+    inputs: [{ type: "bytes32" }],
+    outputs: [{ type: "bool" }],
+  },
+  {
+    type: "event",
+    name: "Deposited",
+    inputs: [
+      { name: "sender", type: "address", indexed: true },
+      { name: "arcRecipient", type: "address", indexed: true },
+      { name: "grossAmount", type: "uint256", indexed: false },
+      { name: "feeAmount", type: "uint256", indexed: false },
+      { name: "netAmount", type: "uint256", indexed: false },
+      { name: "nonce", type: "uint256", indexed: false },
+    ],
+  },
+] as const;
+
+export const bridgeAbi = [
+  { type: "function", name: "minRedeem", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "redeemsPaused", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
+  {
+    type: "function",
+    name: "redeem",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "amount", type: "uint256" },
+      { name: "baseRecipient", type: "address" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "processedDeposits",
+    stateMutability: "view",
+    inputs: [{ type: "bytes32" }],
+    outputs: [{ type: "bool" }],
+  },
+  {
+    type: "event",
+    name: "Redeemed",
+    inputs: [
+      { name: "sender", type: "address", indexed: true },
+      { name: "baseRecipient", type: "address", indexed: true },
+      { name: "amount", type: "uint256", indexed: false },
+      { name: "nonce", type: "uint256", indexed: false },
+    ],
+  },
+] as const;
+
+export const erc20Abi = [
+  { type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ type: "address" }], outputs: [{ type: "uint256" }] },
+  {
+    type: "function",
+    name: "allowance",
+    stateMutability: "view",
+    inputs: [{ type: "address" }, { type: "address" }],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "approve",
+    stateMutability: "nonpayable",
+    inputs: [{ type: "address" }, { type: "uint256" }],
+    outputs: [{ type: "bool" }],
+  },
+] as const;
+
+/** keccak256(abi.encode(txHash, logIndex)) — must match the contracts. */
+export function bridgeActionId(sourceTxHash: Hex, logIndex: bigint): Hex {
+  return keccak256(
+    encodeAbiParameters(
+      [{ type: "bytes32" }, { type: "uint256" }],
+      [sourceTxHash, logIndex],
+    ),
+  );
+}
+
+/** Parse a human decimal string to 6-decimal units. Throws on bad input. */
+export function parseQuoteUnits(value: string): bigint {
+  const match = /^(\d+)(?:\.(\d{1,6}))?$/.exec(value.trim());
+  if (match === null) throw new SyntaxError("invalid amount");
+  const whole = match[1] ?? "0";
+  const frac = (match[2] ?? "").padEnd(6, "0");
+  return BigInt(whole) * 1_000_000n + BigInt(frac === "" ? "0" : frac);
+}
+
+/** Format 6-decimal units as a plain decimal string (exact). */
+export function formatQuoteUnits(units: bigint): string {
+  const whole = units / 1_000_000n;
+  const frac = units % 1_000_000n;
+  if (frac === 0n) return whole.toLocaleString("en-US");
+  return `${whole.toLocaleString("en-US")}.${frac.toString().padStart(6, "0").replace(/0+$/, "")}`;
+}
+
+/** amount × bps / 10000, truncating. */
+export function applyBps(amount: bigint, bps: bigint): bigint {
+  return (amount * bps) / 10_000n;
+}

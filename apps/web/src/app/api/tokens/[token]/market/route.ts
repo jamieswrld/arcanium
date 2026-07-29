@@ -1,0 +1,62 @@
+import { NextResponse } from "next/server";
+import { getDb } from "@/lib/db";
+
+/**
+ * Persistent market data for a token: full candle history (per interval) and
+ * recent trades, from the indexer's Postgres. Falls back to 503 if the DB is
+ * unset (the client then reads a bounded window from chain).
+ */
+const INTERVALS: Record<string, number> = { "1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400 };
+
+export async function GET(
+  request: Request,
+  context: { params: Promise<{ token: string }> },
+): Promise<NextResponse> {
+  const { token } = await context.params;
+  if (!/^0x[0-9a-fA-F]{40}$/.test(token)) {
+    return NextResponse.json({ error: "invalid token" }, { status: 400 });
+  }
+  const sql = getDb();
+  if (sql === null) {
+    return NextResponse.json({ error: "database not configured" }, { status: 503 });
+  }
+  const interval = INTERVALS[new URL(request.url).searchParams.get("interval") ?? "5m"] ?? 300;
+  const tokenBuf = Buffer.from(token.slice(2), "hex");
+  try {
+    const [candles, trades] = await Promise.all([
+      sql<Record<string, string>[]>`
+        SELECT bucket_start, open_usd_e18, high_usd_e18, low_usd_e18, close_usd_e18, volume_usd_e6, trade_count
+        FROM candles WHERE token_address = ${tokenBuf} AND interval_seconds = ${interval}
+        ORDER BY bucket_start ASC LIMIT 1000
+      `,
+      sql<Record<string, unknown>[]>`
+        SELECT tx_hash, block_time, is_buy, amount_token, volume_usd_e6, recipient
+        FROM swaps WHERE token_address = ${tokenBuf}
+        ORDER BY block_time DESC LIMIT 100
+      `,
+    ]);
+    return NextResponse.json({
+      interval,
+      candles: candles.map((c) => ({
+        time: c["bucket_start"],
+        open: c["open_usd_e18"],
+        high: c["high_usd_e18"],
+        low: c["low_usd_e18"],
+        close: c["close_usd_e18"],
+        volumeUsdE6: c["volume_usd_e6"],
+      })),
+      trades: trades.map((t) => ({
+        txHash: `0x${(t["tx_hash"] as Buffer).toString("hex")}`,
+        time: t["block_time"],
+        side: (t["is_buy"] as boolean) ? "buy" : "sell",
+        amountToken: String(t["amount_token"]),
+        valueUsdE6: String(t["volume_usd_e6"]),
+        wallet: `0x${(t["recipient"] as Buffer).toString("hex")}`,
+      })),
+      source: "indexer",
+    });
+  } catch (err) {
+    const message = err instanceof Error ? (err.message.split("\n")[0] ?? "failed") : "failed";
+    return NextResponse.json({ error: message }, { status: 502 });
+  }
+}

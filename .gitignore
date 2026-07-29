@@ -1,0 +1,21 @@
+node_modules/
+dist/
+.next/
+.turbo/
+out/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+packages/contracts/cache/
+packages/contracts/out/
+packages/contracts/broadcast/
+.DS_Store
+
+.vercel
+.wallets.testnet.json
+*.log
+
+# Vendored Foundry libs (restore with: forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts)
+packages/contracts/lib/

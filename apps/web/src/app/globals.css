@@ -1,0 +1,218 @@
+@import "tailwindcss";
+
+@source "../../../../packages/ui/src";
+
+/* Arch design tokens — shadcn-convention names, Arch palette. */
+:root {
+  --background: oklch(0.977 0.002 90);
+  --foreground: oklch(0.235 0.006 60);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.235 0.006 60);
+  --primary: oklch(0.4 0.16 277);
+  --primary-hover: oklch(0.35 0.16 277);
+  --primary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.955 0.003 90);
+  --muted-foreground: oklch(0.5 0.01 70);
+  --border: oklch(0.91 0.004 80);
+  --ring: oklch(0.4 0.16 277);
+  --positive: oklch(0.52 0.14 150);
+  --negative: oklch(0.5 0.19 25);
+  --warning: oklch(0.55 0.13 65);
+  --radius: 0.75rem;
+
+  /* Legacy aliases still referenced by inline styles. */
+  --arch-primary: var(--primary);
+  --arch-primary-hover: var(--primary-hover);
+  --arch-surface: var(--card);
+  --arch-surface-muted: var(--muted);
+  --arch-border: var(--border);
+  --arch-text: var(--foreground);
+  --arch-text-muted: var(--muted-foreground);
+  --arch-positive: var(--positive);
+  --arch-negative: var(--negative);
+  --arch-warning: var(--warning);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --color-warning: var(--warning);
+  --radius-card: var(--radius);
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2rem 1rem 4rem;
+}
+
+/* ---- Arch component classes, rebuilt on Tailwind ---- */
+@layer components {
+  .arch-header {
+    @apply flex items-center gap-6 px-5 py-3.5 bg-card border-b border-border flex-wrap sticky top-0 z-20;
+  }
+  .arch-logo {
+    @apply font-extrabold text-lg tracking-wide text-primary;
+  }
+  .arch-nav {
+    @apply flex gap-1 flex-wrap text-sm;
+  }
+  .arch-nav a {
+    @apply text-muted-foreground px-2.5 py-1.5 rounded-lg transition-colors hover:text-foreground hover:bg-muted;
+  }
+  .arch-header-right {
+    @apply ml-auto flex gap-3 items-center;
+  }
+  .arch-network-pill {
+    @apply text-xs font-semibold text-warning border border-warning rounded-full px-2.5 py-0.5;
+  }
+  .arch-wallet-button {
+    @apply bg-primary text-primary-foreground rounded-lg px-4 py-2 text-sm font-semibold transition-colors hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+  .arch-stack {
+    @apply grid gap-4;
+  }
+  .arch-card {
+    @apply bg-card border border-border rounded-xl p-5 shadow-[0_1px_2px_rgb(0_0_0/0.04),0_4px_16px_rgb(0_0_0/0.04)];
+  }
+  .arch-form-row {
+    @apply grid gap-1.5 mb-3.5;
+  }
+  .arch-form-row label {
+    @apply text-xs text-muted-foreground font-semibold;
+  }
+  .arch-form-row input,
+  .arch-form-row select,
+  .arch-form-row textarea {
+    @apply border border-border rounded-lg px-3 py-2.5 text-[0.95rem] bg-card transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:border-transparent disabled:opacity-60;
+  }
+  .arch-primary-button {
+    @apply w-full bg-primary text-primary-foreground rounded-lg px-4 py-3 text-base font-semibold transition-all hover:enabled:bg-primary-hover active:enabled:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer;
+  }
+  .arch-note {
+    @apply text-[0.8rem] text-muted-foreground leading-relaxed;
+  }
+  .arch-panel {
+    @apply bg-muted border border-border rounded-xl px-4 py-3.5 transition-colors focus-within:border-ring;
+  }
+  .arch-panel-head {
+    @apply flex justify-between items-center text-xs text-muted-foreground mb-1.5;
+  }
+  .arch-chain-chip,
+  .arch-asset-chip {
+    @apply bg-card border border-border rounded-full px-3 py-1 text-sm font-semibold text-foreground shadow-sm;
+  }
+  .arch-amount-row {
+    @apply flex items-center justify-between gap-3;
+  }
+  .arch-amount-input,
+  .arch-amount-output {
+    @apply text-[2rem] font-semibold border-0 bg-transparent w-full min-w-0 text-foreground focus:outline-none disabled:text-muted-foreground;
+  }
+  .arch-panel-foot {
+    @apply flex justify-between text-xs text-muted-foreground mt-1.5;
+  }
+  .arch-max-chip {
+    @apply border border-border bg-card rounded-full px-2 py-0.5 text-[0.7rem] font-semibold cursor-pointer transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  .arch-pct-chips {
+    @apply flex gap-1.5 mt-2;
+  }
+  .arch-pct-chip {
+    @apply flex-1 border border-border bg-card rounded-full py-1.5 text-xs font-semibold cursor-pointer text-muted-foreground transition-colors hover:enabled:border-primary hover:enabled:text-primary disabled:opacity-60;
+  }
+  .arch-switch-row {
+    @apply flex justify-center -my-2 relative z-10;
+  }
+  .arch-switch-button {
+    @apply w-10 h-10 rounded-full border-[3px] border-card bg-primary text-primary-foreground text-base cursor-pointer transition-transform hover:enabled:scale-105 disabled:cursor-not-allowed shadow-md;
+  }
+  .arch-section-head {
+    @apply flex justify-between items-baseline gap-4 flex-wrap mb-2;
+  }
+  .arch-section-head h1,
+  .arch-section-head h2 {
+    @apply m-0 text-lg font-semibold;
+  }
+  .arch-steps {
+    @apply grid grid-cols-3 gap-3;
+  }
+  .arch-step {
+    @apply text-sm text-muted-foreground border-t-[3px] border-border pt-2;
+  }
+  .arch-step-active {
+    @apply text-foreground font-semibold border-t-primary;
+  }
+  .arch-pills {
+    @apply flex gap-1 flex-wrap bg-card border border-border rounded-full p-1 shadow-sm;
+  }
+  .arch-pill {
+    @apply rounded-full px-3.5 py-1.5 text-[0.8rem] text-muted-foreground transition-colors hover:text-foreground;
+  }
+  .arch-pill-active {
+    @apply bg-primary text-primary-foreground font-semibold hover:text-primary-foreground;
+  }
+  .arch-token-list-head {
+    @apply grid grid-cols-[1fr_120px_120px] gap-3 text-[0.8rem] text-muted-foreground border-b border-border pb-2 max-[640px]:grid-cols-[1fr_90px_90px];
+  }
+  .arch-two-col {
+    @apply grid grid-cols-2 gap-4 max-[640px]:grid-cols-1;
+  }
+  .arch-token-price-big {
+    @apply text-[1.75rem] font-bold text-right leading-tight;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Skeleton shimmer for loading states */
+.arch-skeleton {
+  background: linear-gradient(90deg, var(--muted) 25%, color-mix(in oklch, var(--muted), var(--border)) 50%, var(--muted) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease infinite;
+  border-radius: 0.5rem;
+}
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@media (max-width: 640px) {
+  .arch-header {
+    gap: 0.75rem;
+  }
+  .arch-nav {
+    order: 3;
+    width: 100%;
+  }
+}
