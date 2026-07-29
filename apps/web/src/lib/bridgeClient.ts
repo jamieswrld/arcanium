@@ -44,6 +44,23 @@ export const BRIDGE_ADDRESS = validAddr(process.env["NEXT_PUBLIC_ARCH_BRIDGE_ARC
 export const USDC_ADDRESS: Hex =
   validAddr(process.env["NEXT_PUBLIC_BASE_USDC_ADDRESS"]) ?? "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
 
+/** Native Arc USDC (ERC-20 precompile view, 6 decimals) — the money tokens
+ *  pair with once USDC launches are enabled. */
+export const ARC_USDC_ADDRESS =
+  validAddr(process.env["NEXT_PUBLIC_ARC_USDC_ADDRESS"]) ?? "0x3600000000000000000000000000000000000000";
+
+/**
+ * The launch/trade pair token and its display symbol. Defaults to aUSD so
+ * nothing changes until the factory allows native USDC and this env var is
+ * pointed at ARC_USDC_ADDRESS (the DYOR/Envelope "pair with the chain's money"
+ * model). Both aUSD and the USDC ERC-20 view are 6 decimals, so quote math is
+ * identical either way.
+ */
+export const PAIR_TOKEN_ADDRESS: Hex | undefined =
+  validAddr(process.env["NEXT_PUBLIC_ARCH_PAIR_TOKEN_ADDRESS"]) ?? AUSD_ADDRESS;
+export const PAIR_TOKEN_SYMBOL: string =
+  process.env["NEXT_PUBLIC_ARCH_PAIR_TOKEN_SYMBOL"] ?? "aUSD";
+
 export const BASE_EXPLORER = process.env["NEXT_PUBLIC_BASE_EXPLORER_URL"] ?? "https://sepolia.basescan.org";
 export const ARC_EXPLORER = process.env["NEXT_PUBLIC_ARC_EXPLORER_URL"] ?? "https://arc.exploreme.pro";
 
