@@ -19,3 +19,5 @@ packages/contracts/broadcast/
 
 # Vendored Foundry libs (restore with: forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts)
 packages/contracts/lib/
+
+.env*

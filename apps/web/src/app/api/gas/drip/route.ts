@@ -40,6 +40,18 @@ const ARC_EXPLORER = process.env["NEXT_PUBLIC_ARC_EXPLORER_URL"] ?? "https://arc
 
 const inFlight = new Set<string>();
 
+/** Translate known gas-station reverts into plain, honest user-facing text. */
+function friendlyDripError(raw: string): string {
+  if (/InsufficientInventory/i.test(raw)) {
+    return "Arc gas inventory is temporarily depleted. Native USDC on Arc is scarce until official Arc mainnet — please try a smaller action or check back soon.";
+  }
+  if (/CooldownActive/i.test(raw)) return "You recently topped up gas for this action. Please wait a moment before requesting more.";
+  if (/UnderpricedDrip/i.test(raw)) return "Gas price moved — please refresh the quote and try again.";
+  if (/ExceedsActionCap/i.test(raw)) return "That exceeds the per-drip gas limit for this action.";
+  if (/StationPaused/i.test(raw)) return "The gas station is paused for maintenance. Please check back soon.";
+  return raw.split("\n")[0] ?? "drip failed";
+}
+
 interface DripBody {
   readonly user?: string;
   readonly actionId?: number;
@@ -102,8 +114,8 @@ export async function POST(request: Request): Promise<NextResponse> {
       explorer: `${ARC_EXPLORER}/tx/${txHash}`,
     });
   } catch (err) {
-    const message = err instanceof Error ? (err.message.split("\n")[0] ?? "drip failed") : "drip failed";
-    return NextResponse.json({ error: message }, { status: 502 });
+    const raw = err instanceof Error ? err.message : "drip failed";
+    return NextResponse.json({ error: friendlyDripError(raw) }, { status: 502 });
   } finally {
     inFlight.delete(key);
   }
