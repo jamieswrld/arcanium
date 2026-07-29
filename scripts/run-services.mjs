@@ -12,6 +12,7 @@ const services = [
   { name: "bridge-worker", entry: "apps/bridge-worker/dist/main.js" },
   { name: "redeem-worker", entry: "apps/redeem-worker/dist/main.js" },
   { name: "indexer", entry: "apps/indexer/dist/main.js" },
+  { name: "monitor", entry: "apps/admin/dist/monitor.js" },
 ];
 
 function start(svc) {
