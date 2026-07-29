@@ -88,12 +88,12 @@ async function getLogsChunked(
 
 async function main(): Promise<void> {
   const cfg = loadWorkerConfig();
-  const arc = createPublicClient({ transport: http(cfg.arcRpc) });
-  const base = createPublicClient({ transport: http(cfg.baseRpc) });
+  const arc = createPublicClient({ transport: http(cfg.arcRpc, { timeout: 15_000, retryCount: 2 }) });
+  const base = createPublicClient({ transport: http(cfg.baseRpc, { timeout: 15_000, retryCount: 2 }) });
   const keeper = privateKeyToAccount(cfg.keeperKey);
   const baseWallet = createWalletClient({
     account: keeper,
-    transport: http(cfg.baseRpc),
+    transport: http(cfg.baseRpc, { timeout: 15_000, retryCount: 2 }),
   });
 
   log.info(
@@ -104,8 +104,10 @@ async function main(): Promise<void> {
   const head = await arc.getBlockNumber();
   let scannedTo = head > cfg.lookbackBlocks ? head - cfg.lookbackBlocks : 0n;
 
+  let cycle = 0;
   for (;;) {
     try {
+      cycle++;
       const tip = await arc.getBlockNumber();
       const confirmedTip = tip - cfg.confirmations;
       if (confirmedTip > scannedTo) {
@@ -154,6 +156,7 @@ async function main(): Promise<void> {
         }
         scannedTo = confirmedTip;
       }
+      if (cycle % 5 === 1) log.info({ cycle, scannedTo: scannedTo.toString() }, "scan cycle ok");
     } catch (err) {
       log.error({ err }, "poll cycle failed; retrying after interval");
     }
