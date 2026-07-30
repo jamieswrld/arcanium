@@ -6,6 +6,7 @@ import { ARC_EXPLORER, PAIR_TOKEN_SYMBOL } from "@/lib/bridgeClient";
 import { TradePanel } from "@/components/TradePanel";
 import { MarketPanels } from "@/components/MarketPanels";
 import { TokenAvatar } from "@/components/TokenAvatar";
+import { LivePrice } from "@/components/LivePrice";
 import { fetchTokenImage } from "@/lib/tokenImages";
 
 export const dynamic = "force-dynamic";
@@ -60,7 +61,9 @@ export default async function TokenPage({ params }: TokenPageProps) {
             </div>
           </div>
           <span style={{ marginLeft: "auto", display: "grid", justifyItems: "end", gap: "0.25rem" }}>
-            <span className="arch-token-price-big">{formatPriceE18(detail.priceE18)}</span>
+            <span className="arch-token-price-big">
+              <LivePrice pool={detail.pool} tokenIsToken0={detail.token.toLowerCase() < detail.pairToken.toLowerCase()} initial={formatPriceE18(detail.priceE18)} />
+            </span>
             {detail.graduated ? (
               <Badge label="Graduated" tone="positive" />
             ) : (

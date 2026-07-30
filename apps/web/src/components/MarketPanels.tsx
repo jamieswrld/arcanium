@@ -25,6 +25,12 @@ interface SwapPoint {
   readonly txHash: Hex;
 }
 
+interface RawSwapLog {
+  readonly transactionHash: Hex | null;
+  readonly blockNumber: bigint | null;
+  readonly args: { sqrtPriceX96?: bigint; amount0?: bigint; amount1?: bigint; recipient?: string };
+}
+
 interface MarketPanelsProps {
   readonly pool: Hex;
   readonly token: Hex;
@@ -37,6 +43,8 @@ interface MarketPanelsProps {
  * the persistent indexer extends history once its VPS lands). Price series
  * uses exact bigint math; pixels are the only place numbers become floats.
  */
+const LOOKBACK = 200_000n; // one wide getLogs; Arc's sub-second blocks make this ~a day
+
 export function MarketPanels({ pool, token, pairToken, symbol }: MarketPanelsProps) {
   const arcPublic = usePublicClient({ chainId: arcTestnet.id });
   const [swaps, setSwaps] = useState<SwapPoint[] | null>(null);
@@ -46,70 +54,93 @@ export function MarketPanels({ pool, token, pairToken, symbol }: MarketPanelsPro
 
   const tokenIsToken0 = token.toLowerCase() < pairToken.toLowerCase();
 
+  const toPoint = (l: RawSwapLog, timeMs: number): SwapPoint | null => {
+    if (l.transactionHash === null || l.args.sqrtPriceX96 === undefined) return null;
+    const amount0 = l.args.amount0 ?? 0n;
+    const amount1 = l.args.amount1 ?? 0n;
+    const quoteDelta = tokenIsToken0 ? amount1 : amount0;
+    const tokenDelta = tokenIsToken0 ? amount0 : amount1;
+    return {
+      block: l.blockNumber ?? 0n,
+      timeMs,
+      priceE18: priceUsdE18(l.args.sqrtPriceX96, tokenIsToken0),
+      quoteVolume: quoteDelta < 0n ? -quoteDelta : quoteDelta,
+      isBuy: quoteDelta > 0n,
+      wallet: (l.args.recipient ?? "0x") as Hex,
+      tokenAmount: tokenDelta < 0n ? -tokenDelta : tokenDelta,
+      txHash: l.transactionHash,
+    };
+  };
+
+  // Fast initial load (one getLogs) + light incremental polling so the chart
+  // and trades keep up in near-real-time without re-scanning history.
   useEffect(() => {
     if (arcPublic === undefined) return;
     let cancelled = false;
-    const load = async (): Promise<void> => {
-      const tip = await arcPublic.getBlockNumber();
-      const lookback = 45_000n;
-      const from = tip > lookback ? tip - lookback : 0n;
-      const collected: SwapPoint[] = [];
-      const tipBlock = await arcPublic.getBlock({ blockNumber: tip });
-      const tipTimeMs = Number(tipBlock.timestamp) * 1000;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let cursor = 0n;
 
-      for (let start = from; start <= tip && !cancelled; start += 900n) {
-        const end = start + 899n < tip ? start + 899n : tip;
-        const logs = await arcPublic
-          .getLogs({ address: pool, event: swapEvent, fromBlock: start, toBlock: end })
-          .catch(() => []);
-        for (const l of logs) {
-          if (l.transactionHash === null || l.args.sqrtPriceX96 === undefined) continue;
-          const amount0 = l.args.amount0 ?? 0n;
-          const amount1 = l.args.amount1 ?? 0n;
-          const quoteDelta = tokenIsToken0 ? amount1 : amount0;
-          const tokenDelta = tokenIsToken0 ? amount0 : amount1;
-          collected.push({
-            block: l.blockNumber ?? 0n,
-            // Sub-second Arc blocks: approximate log time from block delta.
-            timeMs: tipTimeMs - Number(tip - (l.blockNumber ?? tip)) * 500,
-            priceE18: priceUsdE18(l.args.sqrtPriceX96, tokenIsToken0),
-            quoteVolume: quoteDelta < 0n ? -quoteDelta : quoteDelta,
-            isBuy: quoteDelta > 0n,
-            wallet: (l.args.recipient ?? "0x") as Hex,
-            tokenAmount: tokenDelta < 0n ? -tokenDelta : tokenDelta,
-            txHash: l.transactionHash,
-          });
+    const initial = async (): Promise<void> => {
+      const tip = await arcPublic.getBlockNumber();
+      const from = tip > LOOKBACK ? tip - LOOKBACK : 0n;
+      const nowMs = Date.now();
+      const logs = await arcPublic.getLogs({ address: pool, event: swapEvent, fromBlock: from, toBlock: tip }).catch(() => []);
+      if (cancelled) return;
+      const pts = logs
+        .map((l) => toPoint(l as unknown as RawSwapLog, nowMs - Number(tip - (l.blockNumber ?? tip)) * 500))
+        .filter((p): p is SwapPoint => p !== null);
+      setSwaps(pts);
+      cursor = tip;
+      timer = setTimeout(() => void poll(), 4_000);
+    };
+
+    const poll = async (): Promise<void> => {
+      try {
+        const tip = await arcPublic.getBlockNumber();
+        if (tip > cursor) {
+          const logs = await arcPublic.getLogs({ address: pool, event: swapEvent, fromBlock: cursor + 1n, toBlock: tip }).catch(() => []);
+          if (!cancelled && logs.length > 0) {
+            const nowMs = Date.now();
+            const pts = logs.map((l) => toPoint(l as unknown as RawSwapLog, nowMs)).filter((p): p is SwapPoint => p !== null);
+            if (pts.length > 0) setSwaps((prev) => [...(prev ?? []), ...pts]);
+          }
+          cursor = tip;
         }
-        await new Promise((r) => setTimeout(r, 150));
-      }
-      if (!cancelled) setSwaps(collected);
-      // Best-effort holders from the same bounded window (complete for young tokens).
-      const balances = new Map();
-      for (let start = from; start <= tip && !cancelled; start += 900n) {
-        const end = start + 899n < tip ? start + 899n : tip;
-        const logs = await arcPublic
-          .getLogs({ address: token, event: transferEvent, fromBlock: start, toBlock: end })
-          .catch(() => []);
-        for (const l of logs) {
-          const fromA = (l.args.from ?? "0x").toLowerCase();
-          const toA = (l.args.to ?? "0x").toLowerCase();
-          const v = l.args.value ?? 0n;
-          balances.set(fromA, (balances.get(fromA) ?? 0n) - v);
-          balances.set(toA, (balances.get(toA) ?? 0n) + v);
-        }
-        await new Promise((r) => setTimeout(r, 150));
+      } catch { /* transient — try again next tick */ }
+      if (!cancelled) timer = setTimeout(() => void poll(), 4_000);
+    };
+
+    initial().catch(() => { if (!cancelled) setFailed(true); });
+    return () => { cancelled = true; if (timer !== undefined) clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arcPublic, pool, token, tokenIsToken0]);
+
+  // Holders load lazily — only when the tab is opened, and only once.
+  useEffect(() => {
+    if (arcPublic === undefined || tab !== "holders" || holders !== null) return;
+    let cancelled = false;
+    (async () => {
+      const tip = await arcPublic.getBlockNumber();
+      const from = tip > LOOKBACK ? tip - LOOKBACK : 0n;
+      const logs = await arcPublic.getLogs({ address: token, event: transferEvent, fromBlock: from, toBlock: tip }).catch(() => []);
+      const balances = new Map<string, bigint>();
+      for (const l of logs) {
+        const fromA = (l.args.from ?? "0x").toLowerCase();
+        const toA = (l.args.to ?? "0x").toLowerCase();
+        const v = l.args.value ?? 0n;
+        balances.set(fromA, (balances.get(fromA) ?? 0n) - v);
+        balances.set(toA, (balances.get(toA) ?? 0n) + v);
       }
       balances.delete("0x0000000000000000000000000000000000000000");
       const list = [...balances.entries()]
         .filter(([, b]) => b > 0n)
         .sort((a, b) => (b[1] > a[1] ? 1 : -1))
         .slice(0, 20)
-        .map(([wallet, balance]) => ({ wallet, balance }));
+        .map(([wallet, balance]) => ({ wallet: wallet as Hex, balance }));
       if (!cancelled) setHolders(list);
-    };
-    load().catch(() => { if (!cancelled) setFailed(true); });
+    })().catch(() => undefined);
     return () => { cancelled = true; };
-  }, [arcPublic, pool, token, tokenIsToken0]);
+  }, [arcPublic, tab, holders, token]);
 
   if (failed) return <p className="arch-note">Couldn&apos;t load market data from the RPC just now.</p>;
   if (swaps === null) return <p className="arch-note">Reading swaps from the pool…</p>;
@@ -119,19 +150,14 @@ export function MarketPanels({ pool, token, pairToken, symbol }: MarketPanelsPro
 
   return (
     <div>
-      <div className="arch-pills" style={{ display: "inline-flex", marginBottom: "0.75rem" }}>
-        <button className={tab === "chart" ? "arch-pill arch-pill-active" : "arch-pill"} style={{ border: "none", cursor: "pointer" }} onClick={() => setTab("chart")}>
-          Chart
-        </button>
-        <button className={tab === "trades" ? "arch-pill arch-pill-active" : "arch-pill"} style={{ border: "none", cursor: "pointer" }} onClick={() => setTab("trades")}>
-          Trades
-        </button>
-        <button className={tab === "holders" ? "arch-pill arch-pill-active" : "arch-pill"} style={{ border: "none", cursor: "pointer" }} onClick={() => setTab("holders")}>
-          Holders
-        </button>
-        <span className="arch-note" style={{ alignSelf: "center", padding: "0 0.5rem" }}>
-          {swaps.length} recent trades · {buys} buys / {swaps.length - buys} sells · $
-          {formatQuoteUnits(volume)} volume
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.6rem", marginBottom: "0.85rem" }}>
+        <div className="arch-pills" style={{ display: "inline-flex" }}>
+          <button className={tab === "chart" ? "arch-pill arch-pill-active" : "arch-pill"} style={{ border: "none", cursor: "pointer" }} onClick={() => setTab("chart")}>Chart</button>
+          <button className={tab === "trades" ? "arch-pill arch-pill-active" : "arch-pill"} style={{ border: "none", cursor: "pointer" }} onClick={() => setTab("trades")}>Trades</button>
+          <button className={tab === "holders" ? "arch-pill arch-pill-active" : "arch-pill"} style={{ border: "none", cursor: "pointer" }} onClick={() => setTab("holders")}>Holders</button>
+        </div>
+        <span className="arch-note" style={{ fontVariantNumeric: "tabular-nums" }}>
+          {swaps.length} trades · <span style={{ color: "var(--positive)" }}>{buys} buys</span> / <span style={{ color: "var(--negative)" }}>{swaps.length - buys} sells</span> · ${formatQuoteUnits(volume)} vol
         </span>
       </div>
 
@@ -148,11 +174,15 @@ export function MarketPanels({ pool, token, pairToken, symbol }: MarketPanelsPro
 
 function PriceSvg({ swaps }: { readonly swaps: SwapPoint[] }) {
   if (swaps.length === 0) {
-    return <p className="arch-note">No trades in the recent window yet — the chart begins with the first swap.</p>;
+    return (
+      <div style={{ height: 220, display: "grid", placeItems: "center", background: "var(--muted)", borderRadius: 14, border: "1px solid var(--border)" }}>
+        <p className="arch-note" style={{ margin: 0, textAlign: "center", maxWidth: 320 }}>No trades yet — the chart begins with the first swap.</p>
+      </div>
+    );
   }
   const W = 640;
   const H = 220;
-  const PAD = 8;
+  const PAD = 14;
   let min = swaps[0]?.priceE18 ?? 0n;
   let max = min;
   for (const s of swaps) {
@@ -161,19 +191,40 @@ function PriceSvg({ swaps }: { readonly swaps: SwapPoint[] }) {
   }
   if (max === min) max = min + 1n;
   const span = max - min;
-  const points = swaps.map((s, i) => {
-    const x = PAD + (i * (W - 2 * PAD)) / Math.max(1, swaps.length - 1);
+  const n = swaps.length;
+  const xy = swaps.map((s, i) => {
+    const x = PAD + (i * (W - 2 * PAD)) / Math.max(1, n - 1);
     // Display-only float conversion of a bounded ratio (never money math).
     const ratio = Number(((s.priceE18 - min) * 10_000n) / span) / 10_000;
     const y = H - PAD - ratio * (H - 2 * PAD);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
+    return { x, y };
   });
+  // A single trade renders as a flat baseline across the width.
+  const pts = n === 1 ? [{ x: PAD, y: xy[0]!.y }, { x: W - PAD, y: xy[0]!.y }] : xy;
+  const line = pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const area = `${PAD},${H - PAD} ${line} ${(W - PAD).toFixed(1)},${H - PAD}`;
+  const up = (swaps[n - 1]?.priceE18 ?? 0n) >= (swaps[0]?.priceE18 ?? 0n);
+  const stroke = up ? "var(--positive)" : "var(--negative)";
+
   return (
-    <div style={{ overflowX: "auto" }}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", minWidth: 320 }} role="img" aria-label="Price chart">
-        <polyline points={points.join(" ")} fill="none" stroke="var(--arch-primary)" strokeWidth="2" />
-      </svg>
-      <div style={{ display: "flex", justifyContent: "space-between" }} className="arch-note">
+    <div>
+      <div style={{ overflowX: "auto", background: "var(--muted)", borderRadius: 14, border: "1px solid var(--border)", padding: "0.5rem" }}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", minWidth: 320, display: "block" }} role="img" aria-label="Price chart" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="arch-price-fill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={stroke} stopOpacity="0.28" />
+              <stop offset="100%" stopColor={stroke} stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          {[0.25, 0.5, 0.75].map((g) => (
+            <line key={g} x1={PAD} x2={W - PAD} y1={PAD + g * (H - 2 * PAD)} y2={PAD + g * (H - 2 * PAD)} stroke="var(--border)" strokeWidth="1" strokeDasharray="3 5" opacity="0.6" />
+          ))}
+          <polygon points={area} fill="url(#arch-price-fill)" />
+          <polyline points={line} fill="none" stroke={stroke} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+          <circle cx={pts[pts.length - 1]!.x} cy={pts[pts.length - 1]!.y} r="4" fill={stroke} />
+        </svg>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.4rem" }} className="arch-note">
         <span>low {formatPriceE18(min)}</span>
         <span>high {formatPriceE18(max)}</span>
       </div>
