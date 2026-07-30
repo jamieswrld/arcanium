@@ -2,6 +2,7 @@ import Link from "next/link";
 import { TokenAvatar } from "@/components/TokenAvatar";
 import { formatPriceE18, formatUsdCompact, GRADUATION_UNITS, type LaunchpadToken } from "@/lib/launchpad";
 import { ARC_EXPLORER } from "@/lib/bridgeClient";
+import { ArcaneWandIcon, DiviumBillsIcon } from "@/components/ModeIcons";
 
 /**
  * Launch-grid card: logo, identity, live price/mcap, graduation progress, and
@@ -29,8 +30,19 @@ export function TokenCard({ token, image }: { readonly token: LaunchpadToken; re
             {token.name}
           </div>
         </div>
+        {token.mode === 1 || token.mode === 2 ? (
+          <span
+            title={token.mode === 1 ? "Divium — creator fees paid to holders" : "Arcane Mode — creator fees buy and burn"}
+            style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0, border: "1px solid var(--border)", borderRadius: 999, padding: "0.15rem 0.45rem", background: "var(--muted)" }}
+          >
+            {token.mode === 1 ? <DiviumBillsIcon size={14} /> : <ArcaneWandIcon size={14} />}
+            <span style={{ fontSize: "0.6rem", fontWeight: 700, letterSpacing: "0.04em" }}>
+              {token.mode === 1 ? "DIVIUM" : "ARCANE"}
+            </span>
+          </span>
+        ) : null}
         {token.graduated ? (
-          <span style={{ marginLeft: "auto", fontSize: "0.68rem", fontWeight: 700, color: "var(--positive)", border: "1px solid color-mix(in oklch, var(--positive) 45%, transparent)", borderRadius: 999, padding: "0.15rem 0.5rem", flexShrink: 0 }}>
+          <span style={{ marginLeft: token.mode === 1 || token.mode === 2 ? "0.35rem" : "auto", fontSize: "0.68rem", fontWeight: 700, color: "var(--positive)", border: "1px solid color-mix(in oklch, var(--positive) 45%, transparent)", borderRadius: 999, padding: "0.15rem 0.5rem", flexShrink: 0 }}>
             GRAD
           </span>
         ) : null}

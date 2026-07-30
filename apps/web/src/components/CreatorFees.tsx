@@ -115,7 +115,7 @@ export function CreatorFees({
             {pending !== null ? `${formatQuoteUnits(pending)} ${PAIR_TOKEN_SYMBOL}` : "…"}
           </div>
           <div className="arch-note">
-            Claimable now · {shareBps !== null ? `${(Number(shareBps) / 100).toFixed(0)}%` : "your share"} of this pool&apos;s trading fees, forever
+            Your share of this token&apos;s trading rewards, earned for as long as it trades
           </div>
         </div>
         <button

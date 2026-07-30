@@ -26,7 +26,7 @@ export const ROUTER_ADDRESS = process.env["NEXT_PUBLIC_UNISWAP_SWAP_ROUTER_ADDRE
 /** Mode distributor (v4): routes creator fees by launch mode. */
 export const MODE_DISTRIBUTOR_ADDRESS =
   (process.env["NEXT_PUBLIC_ARCH_MODE_DISTRIBUTOR_ADDRESS"] as Hex | undefined) ??
-  "0x164aBB4Dc85C2Ff20B0AFE22D7Db7fcbEBdcf736";
+  "0x7c148B6a581E32CcB6ffF7Bd59AF4250d5ec1eBc";
 
 /** Launch modes, fixed at launch and immutable. */
 export const LAUNCH_MODES = [
@@ -175,6 +175,13 @@ export const distributorAbi = [
   { type: "function", name: "distribute", stateMutability: "nonpayable", inputs: [{ type: "address" }], outputs: [] },
 ] as const;
 
+/** v4 tokens name their own distributor — read it from the token so mode and
+ *  claims always target the contract that token was launched against. */
+export const launchTokenAbi = [
+  { type: "function", name: "taxRecipient", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { type: "function", name: "rewardsEnabled", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
+] as const;
+
 export const erc20MetaAbi = [
   { type: "function", name: "name", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
   { type: "function", name: "symbol", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
@@ -239,6 +246,8 @@ export interface LaunchpadToken {
   readonly marketCapUnits: bigint;
   readonly quoteBalance: bigint;
   readonly graduated: boolean;
+  /** 0 standard · 1 divium · 2 arcane · null when not a mode-aware launch. */
+  readonly mode: number | null;
 }
 
 /** Server-side list cache: successive page loads reuse the same chain scan
@@ -325,6 +334,21 @@ async function fetchTokenFrom(client: PublicClient, factory: Hex, token: Hex): P
   ]);
   const tokenIsToken0 = token.toLowerCase() < pairToken.toLowerCase();
   const priceE18 = priceUsdE18(slot0[0], tokenIsToken0);
+  // Mode lives on the distributor the token itself names (falls back to the
+  // canonical one for pre-v4 launches).
+  const mode = await (async (): Promise<number | null> => {
+    const dist = await client
+      .readContract({ address: token, abi: launchTokenAbi, functionName: "taxRecipient" })
+      .catch(() => MODE_DISTRIBUTOR_ADDRESS);
+    const isSet = await client
+      .readContract({ address: dist, abi: modeDistributorAbi, functionName: "modeSet", args: [token] })
+      .catch(() => false);
+    if (!isSet) return null;
+    const m = await client
+      .readContract({ address: dist, abi: modeDistributorAbi, functionName: "modeOf", args: [token] })
+      .catch(() => 0);
+    return Number(m);
+  })();
   return {
     token,
     name,
@@ -337,5 +361,6 @@ async function fetchTokenFrom(client: PublicClient, factory: Hex, token: Hex): P
     marketCapUnits: marketCapUsdUnits(priceE18),
     quoteBalance,
     graduated,
+    mode,
   };
 }

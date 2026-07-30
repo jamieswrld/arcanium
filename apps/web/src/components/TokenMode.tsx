@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 import type { Hex } from "viem";
 import { arcTestnet, formatQuoteUnits, PAIR_TOKEN_SYMBOL } from "@/lib/bridgeClient";
-import { MODE_DISTRIBUTOR_ADDRESS, modeDistributorAbi } from "@/lib/launchpad";
+import { MODE_DISTRIBUTOR_ADDRESS, modeDistributorAbi, launchTokenAbi } from "@/lib/launchpad";
 import { ArcaneWandIcon, DiviumBillsIcon } from "@/components/ModeIcons";
 import { useToast } from "@/components/ui/Toast";
 
@@ -23,6 +23,7 @@ export function TokenMode({ token }: { readonly token: Hex }) {
   const [mode, setMode] = useState<number | null>(null);
   const [claimable, setClaimable] = useState<bigint | null>(null);
   const [busy, setBusy] = useState<"claim" | "distribute" | null>(null);
+  const [dist, setDist] = useState<Hex>(MODE_DISTRIBUTOR_ADDRESS);
 
   useEffect(() => {
     if (arc === undefined) return;
@@ -30,13 +31,16 @@ export function TokenMode({ token }: { readonly token: Hex }) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const tick = async (): Promise<void> => {
       try {
-        const isSet = await arc.readContract({ address: MODE_DISTRIBUTOR_ADDRESS, abi: modeDistributorAbi, functionName: "modeSet", args: [token] });
+        // The token names its own distributor; always talk to that one.
+        const own = await arc.readContract({ address: token, abi: launchTokenAbi, functionName: "taxRecipient" }).catch(() => MODE_DISTRIBUTOR_ADDRESS);
+        if (!cancelled) setDist(own);
+        const isSet = await arc.readContract({ address: own, abi: modeDistributorAbi, functionName: "modeSet", args: [token] });
         if (!isSet) { if (!cancelled) setMode(-1); return; } // pre-v4 launch
-        const m = await arc.readContract({ address: MODE_DISTRIBUTOR_ADDRESS, abi: modeDistributorAbi, functionName: "modeOf", args: [token] });
+        const m = await arc.readContract({ address: own, abi: modeDistributorAbi, functionName: "modeOf", args: [token] });
         if (cancelled) return;
         setMode(Number(m));
         if (Number(m) === 1 && address !== undefined) {
-          const c = await arc.readContract({ address: MODE_DISTRIBUTOR_ADDRESS, abi: modeDistributorAbi, functionName: "claimable", args: [token, address] }).catch(() => 0n);
+          const c = await arc.readContract({ address: own, abi: modeDistributorAbi, functionName: "claimable", args: [token, address] }).catch(() => 0n);
           if (!cancelled) setClaimable(c);
         }
       } catch { /* transient */ }
@@ -55,7 +59,7 @@ export function TokenMode({ token }: { readonly token: Hex }) {
     setBusy(kind);
     try {
       const hash = await writeContractAsync({
-        address: MODE_DISTRIBUTOR_ADDRESS,
+        address: dist,
         abi: modeDistributorAbi,
         functionName: kind === "claim" ? "claimRewards" : "distribute",
         args: [token],
