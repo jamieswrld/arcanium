@@ -24,7 +24,6 @@ import {
 import { UsdcLogo } from "@/components/UsdcLogo";
 import { ConnectButton } from "@/components/ConnectButton";
 import { useToast } from "@/components/ui/Toast";
-import { addOrder, updateOrder } from "@/components/BridgeOrders";
 
 type Direction = "toArc" | "toBase";
 
@@ -235,7 +234,6 @@ export function CctpBridge() {
           if (already) {
             savePending(null);
             setPending(null);
-            updateOrder(p.burnTx, { status: "claimed" });
             setPhase("done");
             setMessage("This transfer was already claimed — your USDC is on " + (p.direction === "toArc" ? "Arc" : "Base") + ".");
             return;
@@ -246,7 +244,6 @@ export function CctpBridge() {
         }
         savePending(null);
         setPending(null);
-        updateOrder(p.burnTx, { status: "claimed", claimTx: relay.txHash });
         setClaimTx(relay.txHash);
         setPhase("done");
         void baseBal.refetch();
@@ -310,8 +307,8 @@ export function CctpBridge() {
       }
 
       const p: Pending = { burnTx, direction, amount: parsed.toString(), at: Date.now() };
-      addOrder({ burnTx, direction, amount: parsed.toString(), at: p.at, status: "pending" });
       savePending(p);
+      window.dispatchEvent(new Event("arcanium:orders"));
       setPending(p);
       setAmountText("");
       await settle(p);
