@@ -2,6 +2,7 @@ import { createConfig, fallback, http } from "wagmi";
 import { base } from "viem/chains";
 import { injected } from "wagmi/connectors";
 import { arcTestnet } from "./bridgeClient";
+import { arcTransport } from "./arcRpc";
 
 /**
  * Wagmi config: Arc (home chain) + Base (bridge source). The launchpad lives
@@ -14,10 +15,7 @@ export const wagmiConfig = createConfig({
   multiInjectedProviderDiscovery: true,
   transports: {
     // Direct to the RPC first (one hop, CORS-open), same-origin proxy fallback.
-    [arcTestnet.id]: fallback([
-      http(process.env["NEXT_PUBLIC_ARC_RPC_URL"] ?? "https://rpc.blockdaemon.mainnet.arc.io", { timeout: 12_000 }),
-      http("/api/arc-rpc", { timeout: 15_000 }),
-    ]),
+    [arcTestnet.id]: arcTransport({ browser: true }),
     [base.id]: fallback([
       http(process.env["NEXT_PUBLIC_BASE_RPC_URL"] ?? "https://mainnet.base.org", { timeout: 12_000 }),
       http("https://base.publicnode.com", { timeout: 12_000 }),

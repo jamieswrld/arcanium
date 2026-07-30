@@ -1,4 +1,5 @@
-import { createPublicClient, fallback, http, type Hex, type PublicClient } from "viem";
+import { createPublicClient, type Hex, type PublicClient } from "viem";
+import { arcTransport } from "@/lib/arcRpc";
 
 /**
  * Launchpad chain access + exact bigint price math. No floats ever touch a
@@ -65,12 +66,7 @@ export function isHidden(token: string): boolean {
 }
 
 export function arcPublicClient(): PublicClient {
-  return createPublicClient({
-    transport: fallback([
-      http(process.env["NEXT_PUBLIC_ARC_RPC_URL"] ?? "https://rpc.blockdaemon.mainnet.arc.io", { timeout: 8000 }),
-      http("https://rpc.blockdaemon.mainnet.arc.io", { timeout: 8000 }),
-    ]),
-  });
+  return createPublicClient({ transport: arcTransport() });
 }
 
 export const factoryAbi = [
