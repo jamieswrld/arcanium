@@ -7,7 +7,16 @@ import { createPublicClient, fallback, http, type Hex, type PublicClient } from 
  */
 
 export const FACTORY_ADDRESS = process.env["NEXT_PUBLIC_ARCH_LAUNCHPAD_FACTORY_ADDRESS"] as Hex | undefined;
-/** Previous factory generation — tokens launched there stay listed/tradable. */
+/** Every factory generation, newest first. Tokens are NEVER dropped when the
+ *  factory is upgraded — each generation stays listed, tradable, and
+ *  collectable forever. Append new generations to the front. */
+export const FACTORY_GENERATIONS: readonly Hex[] = [
+  "0x8e5732B520a318251a702a680AA7F123fb92AF52", // v4 — launch modes
+  "0xE2aA88806872C2a02A4ab439584d457002983600", // v3 — fee recipient
+  "0xA024664AD5d30F3c0b18b931DdB6f64A96DE8ED3", // v2 — SwapRouter02 fix
+  "0x1d65ab4cDCDdA6f38A9c93a24EF64bE8905e19d5", // v1 — original
+];
+/** Kept for callers that want the immediately previous generation. */
 export const LEGACY_FACTORY_ADDRESS: Hex =
   (process.env["NEXT_PUBLIC_ARCH_LEGACY_FACTORY_ADDRESS"] as Hex | undefined) ??
   "0xE2aA88806872C2a02A4ab439584d457002983600";
@@ -42,17 +51,12 @@ const Q192 = 2n ** 192n;
 
 /** Tokens hidden from the launchpad UI (e.g. internal test launches). They
  *  still exist on-chain — this only removes them from our lists and pages. */
+/** Tokens are NEVER hidden by default — every launch on every factory
+ *  generation stays listed. Only an explicit env denylist can hide one, and
+ *  only if the operator sets it deliberately. */
 const HIDDEN_TOKENS = new Set(
-  [
-    "0xE7c4f3a9F20AfbCA5A238d4fA705344943Ed9B5C", // Archway — internal test launch (old factory)
-    "0x6347dB930F087D99E722652921e22f3Ca545eA45", // RTCK — router-fix verification launch
-    "0x54464cA71f55C59b2e944B09e24cA689A918e644", // AROS — pre-public test launch (fresh start)
-    "0x10667F1aF42927cae3C4E41d95B009A1a3140bC6", // RDCK — fee-redirect verification launch
-    "0xc4da09A19d1AA76Ab8616C6ffbB9b834F5A273eD", // DIVT — Divium precision test (first run)
-    "0xA6A959d435F95964B4A80fEDcF21D3A1B383b30c", // DIVT — Divium verification launch
-    "0x35892F857c3d47f50E352C57C2ECbE47dA492d1b", // ARCT — Arcane verification launch
-    ...(process.env["NEXT_PUBLIC_ARCH_HIDDEN_TOKENS"] ?? "").split(","),
-  ]
+  (process.env["NEXT_PUBLIC_ARCH_HIDDEN_TOKENS"] ?? "")
+    .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter((s) => /^0x[0-9a-f]{40}$/.test(s)),
 );
@@ -251,8 +255,11 @@ export async function fetchAllTokens(client: PublicClient): Promise<LaunchpadTok
   listInFlight = (async () => {
     // Both factory generations scanned fully in parallel; every read within a
     // generation is parallel too. Current generation lists first.
+    const all = FACTORY_ADDRESS !== undefined && !FACTORY_GENERATIONS.includes(FACTORY_ADDRESS)
+      ? [FACTORY_ADDRESS as Hex, ...FACTORY_GENERATIONS]
+      : FACTORY_GENERATIONS;
     const generations = await Promise.all(
-      [FACTORY_ADDRESS as Hex, LEGACY_FACTORY_ADDRESS].map(async (factory) => {
+      all.map(async (factory) => {
         const count = await client
           .readContract({ address: factory, abi: factoryAbi, functionName: "allTokensLength" })
           .catch(() => 0n);
@@ -291,11 +298,10 @@ export async function fetchToken(client: PublicClient, token: Hex): Promise<Laun
   const key = token.toLowerCase();
   const hit = detailCache.get(key);
   if (hit !== undefined && Date.now() - hit.at < DETAIL_TTL_MS) return hit.value;
-  const [current, legacy] = await Promise.all([
-    fetchTokenFrom(client, FACTORY_ADDRESS, token).catch(() => null),
-    fetchTokenFrom(client, LEGACY_FACTORY_ADDRESS, token).catch(() => null),
-  ]);
-  const value = current ?? legacy;
+  const found = await Promise.all(
+    FACTORY_GENERATIONS.map((f) => fetchTokenFrom(client, f, token).catch(() => null)),
+  );
+  const value = found.find((v) => v !== null) ?? null;
   detailCache.set(key, { at: Date.now(), value });
   return value;
 }
