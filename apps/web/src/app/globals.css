@@ -447,12 +447,91 @@ main {
   to { background-position: -200% 0; }
 }
 
+/* ---- Responsive helpers ---- */
+@layer components {
+  /* Two-field row (e.g. name + ticker) that stacks on small screens. */
+  .arch-form-grid {
+    @apply grid gap-3;
+    grid-template-columns: 2fr 1fr;
+  }
+  /* Stat tiles that wrap gracefully instead of crushing. */
+  .arch-stat-grid {
+    @apply grid gap-3;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  /* Horizontal scroll shell for data tables on narrow screens. */
+  .arch-scroll-x {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .arch-scroll-x > * {
+    min-width: 430px;
+  }
+}
+
+/* ---- Mobile ---- */
 @media (max-width: 640px) {
+  main {
+    padding: 1.5rem 0.9rem 4rem;
+  }
   .arch-header {
-    gap: 0.75rem;
+    gap: 0.6rem;
+    padding: 0.6rem 0.9rem;
   }
   .arch-nav {
     order: 3;
     width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    margin: 0 -0.25rem;
+    padding: 0 0.25rem;
+  }
+  .arch-nav::-webkit-scrollbar { display: none; }
+  .arch-nav a {
+    white-space: nowrap;
+    padding: 0.35rem 0.65rem;
+  }
+  .arch-card {
+    padding: 1.1rem;
+  }
+  .arch-hero {
+    padding-top: 1.25rem;
+    padding-bottom: 1.75rem;
+  }
+  .arch-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .arch-stat-grid {
+    gap: 0.5rem;
+  }
+  .arch-stat-tile {
+    padding: 0.7rem 0.75rem;
+  }
+  .arch-stat-value {
+    font-size: 1.05rem;
+  }
+  .arch-stat-label {
+    font-size: 0.62rem;
+    letter-spacing: 0.02em;
+  }
+  .arch-amount-input,
+  .arch-amount-output {
+    font-size: 1.55rem;
+  }
+  .arch-token-price-big {
+    font-size: 1.4rem;
+  }
+  .arch-hero h1 {
+    font-size: 1.9rem;
+  }
+  .arch-terminal {
+    gap: 0.85rem;
+  }
+  .docs-table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
   }
 }

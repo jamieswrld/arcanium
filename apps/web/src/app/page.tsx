@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { arcPublicClient, fetchAllTokens } from "@/lib/launchpad";
-import { formatQuoteUnits } from "@/lib/onchain";
+import { arcPublicClient, fetchAllTokens, formatUsdCompact } from "@/lib/launchpad";
 import { fetchTokenImages } from "@/lib/tokenImages";
 import { TokenCard } from "@/components/TokenCard";
 
@@ -22,7 +21,6 @@ export default async function LaunchpadHome() {
   return (
     <div>
       <div className="arch-hero">
-        <span className="arch-eyebrow">◆ Live on Arc</span>
         <h1>
           Launch a token on Arc.
           <br />
@@ -30,8 +28,7 @@ export default async function LaunchpadHome() {
         </h1>
         <p className="arch-note" style={{ fontSize: "1.02rem", maxWidth: 480, margin: "1.1rem auto 0" }}>
           Every token pairs with native USDC on real Uniswap liquidity that&apos;s
-          permanently locked — no bonding curve, no pre-market, no rug. Launching is
-          free; you only pay gas.
+          permanently locked.
         </p>
         <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", marginTop: "1.6rem", flexWrap: "wrap" }}>
           <Link href="/create" className="arch-primary-button" style={{ width: "auto", padding: "0.85rem 1.8rem", textDecoration: "none" }}>
@@ -44,14 +41,14 @@ export default async function LaunchpadHome() {
       </div>
 
       <div className="arch-stack">
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "0.75rem" }}>
+        <div className="arch-stat-grid">
           <div className="arch-stat-tile">
             <div className="arch-stat-label">Tokens launched</div>
             <div className="arch-stat-value">{tokens.length}</div>
           </div>
           <div className="arch-stat-tile">
             <div className="arch-stat-label">Locked liquidity</div>
-            <div className="arch-stat-value">${formatQuoteUnits(liquidity)}</div>
+            <div className="arch-stat-value">{formatUsdCompact(liquidity)}</div>
           </div>
           <div className="arch-stat-tile">
             <div className="arch-stat-label">Launch fee</div>

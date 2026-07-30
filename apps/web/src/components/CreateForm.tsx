@@ -222,7 +222,7 @@ export function CreateForm() {
 
   return (
     <div>
-      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "0.75rem" }}>
+      <div className="arch-form-grid">
         <div className="arch-form-row">
           <label htmlFor="cf-name">Token name *</label>
           <input id="cf-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Archway" disabled={busy} maxLength={48} />

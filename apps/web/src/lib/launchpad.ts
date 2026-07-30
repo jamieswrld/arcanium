@@ -171,6 +171,16 @@ export function marketCapUsdUnits(priceE18: bigint): bigint {
   return (priceE18 * 10n ** 15n) / 10n ** 18n;
 }
 
+/** Compact USD from 6-decimal units: $3,032 · $18.4K · $1.2M — display only. */
+export function formatUsdCompact(units: bigint): string {
+  const cents = Number(units) / 1e6; // display-only float
+  if (cents >= 1e9) return `$${(cents / 1e9).toFixed(2)}B`;
+  if (cents >= 1e6) return `$${(cents / 1e6).toFixed(2)}M`;
+  if (cents >= 100_000) return `$${(cents / 1e3).toFixed(1)}K`;
+  if (cents >= 1_000) return `$${Math.round(cents).toLocaleString("en-US")}`;
+  return `$${cents.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 /** Render an e18-scaled USD price with sensible sub-cent precision. */
 export function formatPriceE18(priceE18: bigint): string {
   if (priceE18 === 0n) return "$0";

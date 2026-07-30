@@ -9,6 +9,12 @@ import { VersionGuard } from "@/components/VersionGuard";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
+export const viewport = {
+  themeColor: "#0e0e1c",
+  width: "device-width",
+  initialScale: 1,
+};
+
 export const metadata: Metadata = {
   title: "Arcanium — Launch tokens on Arc",
   description:

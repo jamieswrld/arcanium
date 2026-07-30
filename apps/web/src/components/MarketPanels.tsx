@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePublicClient } from "wagmi";
 import { parseAbiItem, type Hex } from "viem";
 import { arcTestnet, ARC_EXPLORER, erc20Abi } from "@/lib/bridgeClient";
-import { formatPriceE18, priceUsdE18, poolAbi } from "@/lib/launchpad";
+import { formatPriceE18, formatUsdCompact, priceUsdE18, poolAbi } from "@/lib/launchpad";
 import { formatQuoteUnits } from "@/lib/onchain";
 import { CandleChart, type Candle } from "@/components/CandleChart";
 
@@ -232,7 +232,7 @@ export function MarketPanels({ pool, token, pairToken, symbol, creator }: Market
               {changePct >= 0 ? "+" : ""}{changePct.toFixed(2)}%
             </span>
           ) : null}
-          {s.length} trades · <span style={{ color: "var(--positive)" }}>{buys} buys</span> / <span style={{ color: "var(--negative)" }}>{s.length - buys} sells</span> · ${formatQuoteUnits(volume)} vol
+          {s.length} trades · <span style={{ color: "var(--positive)" }}>{buys} buys</span> / <span style={{ color: "var(--negative)" }}>{s.length - buys} sells</span> · {formatUsdCompact(volume)} vol
         </span>
       </div>
 
@@ -257,9 +257,9 @@ export function MarketPanels({ pool, token, pairToken, symbol, creator }: Market
           </div>
         </div>
       ) : tab === "trades" ? (
-        <TradesTable swaps={s} symbol={symbol} />
+        <div className="arch-scroll-x"><TradesTable swaps={s} symbol={symbol} /></div>
       ) : (
-        <HoldersTable holders={holders} pool={pool} symbol={symbol} />
+        <div className="arch-scroll-x"><HoldersTable holders={holders} pool={pool} symbol={symbol} /></div>
       )}
     </div>
   );

@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { TokenAvatar } from "@/components/TokenAvatar";
-import { formatPriceE18, GRADUATION_UNITS, type LaunchpadToken } from "@/lib/launchpad";
-import { formatQuoteUnits } from "@/lib/onchain";
+import { formatPriceE18, formatUsdCompact, GRADUATION_UNITS, type LaunchpadToken } from "@/lib/launchpad";
 
 /**
  * Launch-grid card: logo, identity, live price/mcap, graduation progress.
@@ -35,7 +34,7 @@ export function TokenCard({ token, image }: { readonly token: LaunchpadToken; re
         </div>
         <div style={{ textAlign: "right" }}>
           <div className="arch-stat-label">Market cap</div>
-          <div style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>${formatQuoteUnits(token.marketCapUnits)}</div>
+          <div style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{formatUsdCompact(token.marketCapUnits)}</div>
         </div>
       </div>
 
