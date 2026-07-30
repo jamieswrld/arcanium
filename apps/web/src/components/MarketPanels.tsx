@@ -40,7 +40,11 @@ interface MarketPanelsProps {
   readonly creator: Hex;
 }
 
-const LOOKBACK = 200_000n; // one wide getLogs; Arc's sub-second blocks make this ~a day
+/** Blockdaemon caps eth_getLogs at 100k blocks and 20k results per call, so
+ *  history is walked back in chunks. Pool-filtered chunks are tiny, so the
+ *  only real stop conditions are genesis or the node's pruning horizon. */
+const CHUNK = 45_000n;
+const MAX_CHUNKS = 24; // ~1M blocks ≈ days of sub-second Arc blocks — full token history
 const POLL_MS = 2_000; // fast: new trades and price land within ~a block or two
 
 const INTERVALS = [
@@ -134,17 +138,47 @@ export function MarketPanels({ pool, token, pairToken, symbol, creator }: Market
 
     const initial = async (): Promise<void> => {
       const tip = await arcPublic.getBlockNumber();
-      const from = tip > LOOKBACK ? tip - LOOKBACK : 0n;
       const nowMs = Date.now();
       await readSpot(); // chart renders immediately, even with zero trades
-      const logs = await arcPublic.getLogs({ address: pool, event: swapEvent, fromBlock: from, toBlock: tip }).catch(() => []);
-      if (cancelled) return;
-      const pts = logs
-        .map((l) => toPoint(l as unknown as RawSwapLog, nowMs - Number(tip - (l.blockNumber ?? tip)) * 500))
-        .filter((p): p is SwapPoint => p !== null);
-      setSwaps(pts);
       cursor = tip;
       timer = setTimeout(() => void poll(), POLL_MS);
+
+      // Full history: walk back from the tip in RPC-sized chunks, streaming
+      // results into the chart as each chunk lands (newest first). Stops at
+      // genesis or the node's pruning horizon — everything available is shown.
+      let end = tip;
+      for (let i = 0; i < MAX_CHUNKS && !cancelled; i++) {
+        const start = end >= CHUNK ? end - CHUNK + 1n : 0n;
+        let logs: unknown[];
+        try {
+          logs = await arcPublic.getLogs({ address: pool, event: swapEvent, fromBlock: start, toBlock: end });
+        } catch {
+          break; // pruning horizon — older history requires the indexer
+        }
+        if (cancelled) return;
+        const pts = (logs as RawSwapLog[])
+          .map((l) => toPoint(l, nowMs - Number(tip - (l.blockNumber ?? tip)) * 500))
+          .filter((p): p is SwapPoint => p !== null);
+        if (pts.length > 0) {
+          setSwaps((prev) => {
+            const merged = [...(prev ?? []), ...pts];
+            const seen = new Set<string>();
+            return merged
+              .filter((p) => {
+                const k = `${p.txHash}-${p.block}-${p.priceE18}`;
+                if (seen.has(k)) return false;
+                seen.add(k);
+                return true;
+              })
+              .sort((a, b) => (a.block < b.block ? -1 : a.block > b.block ? 1 : 0));
+          });
+        } else if (swaps === null) {
+          setSwaps((prev) => prev ?? []);
+        }
+        if (start === 0n) break;
+        end = start - 1n;
+      }
+      if (!cancelled) setSwaps((prev) => prev ?? []);
     };
 
     const poll = async (): Promise<void> => {
@@ -176,15 +210,24 @@ export function MarketPanels({ pool, token, pairToken, symbol, creator }: Market
     let cancelled = false;
     (async () => {
       const tip = await arcPublic.getBlockNumber();
-      const from = tip > LOOKBACK ? tip - LOOKBACK : 0n;
-      const logs = await arcPublic.getLogs({ address: token, event: transferEvent, fromBlock: from, toBlock: tip }).catch(() => []);
       const balances = new Map<string, bigint>();
-      for (const l of logs) {
-        const fromA = (l.args.from ?? "0x").toLowerCase();
-        const toA = (l.args.to ?? "0x").toLowerCase();
-        const v = l.args.value ?? 0n;
-        balances.set(fromA, (balances.get(fromA) ?? 0n) - v);
-        balances.set(toA, (balances.get(toA) ?? 0n) + v);
+      // Chunked walk-back over Transfer logs (same RPC limits as swaps).
+      let end = tip;
+      for (let i = 0; i < MAX_CHUNKS; i++) {
+        const start = end >= CHUNK ? end - CHUNK + 1n : 0n;
+        let logs;
+        try {
+          logs = await arcPublic.getLogs({ address: token, event: transferEvent, fromBlock: start, toBlock: end });
+        } catch { break; }
+        for (const l of logs) {
+          const fromA = (l.args.from ?? "0x").toLowerCase();
+          const toA = (l.args.to ?? "0x").toLowerCase();
+          const v = l.args.value ?? 0n;
+          balances.set(fromA, (balances.get(fromA) ?? 0n) - v);
+          balances.set(toA, (balances.get(toA) ?? 0n) + v);
+        }
+        if (start === 0n) break;
+        end = start - 1n;
       }
       const [poolBal, creatorBal] = await Promise.all([
         arcPublic.readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [pool] }).catch(() => 0n),

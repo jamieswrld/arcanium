@@ -211,30 +211,46 @@ export interface LaunchpadToken {
   readonly graduated: boolean;
 }
 
+/** Server-side list cache: successive page loads reuse the same chain scan
+ *  for a short window, cutting TTFB from seconds to milliseconds. The 2s+
+ *  client polling keeps in-page data live; this only staggers list refreshes. */
+const LIST_TTL_MS = 15_000;
+let listCache: { at: number; tokens: LaunchpadToken[] } | null = null;
+let listInFlight: Promise<LaunchpadToken[]> | null = null;
+
 export async function fetchAllTokens(client: PublicClient): Promise<LaunchpadToken[]> {
   if (FACTORY_ADDRESS === undefined) return [];
-  const tokens: LaunchpadToken[] = [];
-  // Current factory first (newest generation), then the legacy factory so
-  // earlier launches stay listed and tradable across upgrades.
-  for (const factory of [FACTORY_ADDRESS, LEGACY_FACTORY_ADDRESS]) {
-    const count = await client
-      .readContract({ address: factory, abi: factoryAbi, functionName: "allTokensLength" })
-      .catch(() => 0n);
-    const generation: LaunchpadToken[] = [];
-    for (let i = 0n; i < count; i++) {
-      const token = await client.readContract({
-        address: factory,
-        abi: factoryAbi,
-        functionName: "allTokens",
-        args: [i],
-      });
-      if (isHidden(token)) continue;
-      const detail = await fetchTokenFrom(client, factory, token);
-      if (detail !== null) generation.push(detail);
+  if (listCache !== null && Date.now() - listCache.at < LIST_TTL_MS) return listCache.tokens;
+  if (listInFlight !== null) return listInFlight; // coalesce concurrent requests
+  listInFlight = (async () => {
+    const tokens: LaunchpadToken[] = [];
+    // Current factory first (newest generation), then the legacy factory so
+    // earlier launches stay listed and tradable across upgrades.
+    for (const factory of [FACTORY_ADDRESS as Hex, LEGACY_FACTORY_ADDRESS]) {
+      const count = await client
+        .readContract({ address: factory, abi: factoryAbi, functionName: "allTokensLength" })
+        .catch(() => 0n);
+      // All index reads in parallel, then all detail reads in parallel.
+      const addresses = await Promise.all(
+        Array.from({ length: Number(count) }, (_, i) =>
+          client.readContract({ address: factory, abi: factoryAbi, functionName: "allTokens", args: [BigInt(i)] }),
+        ),
+      );
+      const details = await Promise.all(
+        addresses
+          .filter((t) => !isHidden(t))
+          .map((t) => fetchTokenFrom(client, factory, t).catch(() => null)),
+      );
+      tokens.push(...details.filter((d): d is LaunchpadToken => d !== null).reverse());
     }
-    tokens.push(...generation.reverse()); // newest first within a generation
+    listCache = { at: Date.now(), tokens };
+    return tokens;
+  })();
+  try {
+    return await listInFlight;
+  } finally {
+    listInFlight = null;
   }
-  return tokens;
 }
 
 /** Look up a token on the current factory, falling back to the legacy one. */
