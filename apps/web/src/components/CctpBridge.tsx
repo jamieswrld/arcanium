@@ -17,6 +17,9 @@ import {
   bridgeRouterAbi,
   FAST_FINALITY,
   maxFeeFor,
+  TOKEN_MESSENGER_V2,
+  tokenMessengerMinterAbi,
+  tokenMinterAbi,
 } from "@/lib/cctp";
 import { UsdcLogo } from "@/components/UsdcLogo";
 import { ConnectButton } from "@/components/ConnectButton";
@@ -113,6 +116,7 @@ export function CctpBridge() {
   const [claimTx, setClaimTx] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [fastFeeBps, setFastFeeBps] = useState<number | null>(null);
+  const [burnLimit, setBurnLimit] = useState<bigint | null>(null);
 
   // Circle's live fast-lane fee for this route (bps). Determines the maxFee
   // we must allow for fast finality to engage.
@@ -154,6 +158,21 @@ export function CctpBridge() {
   const srcRouter = toArc ? BRIDGE_ROUTER_BASE : BRIDGE_ROUTER_ARC;
   const srcExplorer = toArc ? BASE_EXPLORER : ARC_EXPLORER;
   const dstExplorer = toArc ? ARC_EXPLORER : BASE_EXPLORER;
+
+  // Circle's per-transaction burn cap on the source chain. Arc's outbound cap
+  // is tiny today, so surface it before the user signs instead of reverting.
+  useEffect(() => {
+    const client = toArc ? basePublic : arcPublic;
+    if (client === undefined) return;
+    let cancelled = false;
+    (async () => {
+      const minter = await client.readContract({ address: TOKEN_MESSENGER_V2, abi: tokenMessengerMinterAbi, functionName: "localMinter" });
+      const lim = await client.readContract({ address: minter, abi: tokenMinterAbi, functionName: "burnLimitsPerMessage", args: [toArc ? BASE_USDC : ARC_USDC] });
+      if (!cancelled) setBurnLimit(lim);
+    })().catch(() => { if (!cancelled) setBurnLimit(null); });
+    return () => { cancelled = true; };
+  }, [toArc, basePublic, arcPublic]);
+
 
   const baseBal = useReadContract({
     address: BASE_USDC, abi: erc20Abi, functionName: "balanceOf",
@@ -247,6 +266,11 @@ export function CctpBridge() {
     }
     if (srcBalance !== undefined && srcBalance < parsed) {
       setPhase("error"); setMessage(`Insufficient USDC on ${srcName}.`); return;
+    }
+    if (burnLimit !== null && burnLimit > 0n && parsed - (parsed * BRIDGE_FEE_BPS) / 10_000n > burnLimit) {
+      setPhase("error");
+      setMessage(`Circle caps ${srcName} transfers at ${formatQuoteUnits(burnLimit)} USDC per transaction right now. Send ${formatQuoteUnits(burnLimit)} or less (you can repeat it).`);
+      return;
     }
     const srcPublic = toArc ? basePublic : arcPublic;
     if (srcPublic === undefined) return;
@@ -370,6 +394,12 @@ export function CctpBridge() {
           <span style={{ color: "var(--muted-foreground)" }}>Max Circle fee{fastFeeBps !== null ? ` · ${fastFeeBps === 0 ? "fast, free" : "fast lane"}` : ""}</span>
           <span>{formatQuoteUnits(circleMax)} USDC</span>
         </div>
+        {burnLimit !== null && burnLimit > 0n && burnLimit < 1_000_000_000n ? (
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "0.15rem 0" }}>
+            <span style={{ color: "var(--muted-foreground)" }}>Circle limit from {srcName}</span>
+            <span style={{ color: "var(--warning)" }}>{formatQuoteUnits(burnLimit)} USDC per transfer</span>
+          </div>
+        ) : null}
         <div style={{ display: "flex", justifyContent: "space-between", padding: "0.15rem 0" }}>
           <span style={{ color: "var(--muted-foreground)" }}>Claim gas on {dstName}</span>
           <span style={{ color: "var(--positive)" }}>Free · Arcanium relays it</span>

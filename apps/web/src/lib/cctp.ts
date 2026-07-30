@@ -72,6 +72,15 @@ export const tokenMessengerAbi = [
   },
 ] as const;
 
+/** TokenMinter enforces a per-transaction burn cap per chain. Arc's outbound
+ *  cap is currently very low, so we read it live and block before signing. */
+export const tokenMessengerMinterAbi = [
+  { type: "function", name: "localMinter", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+] as const;
+export const tokenMinterAbi = [
+  { type: "function", name: "burnLimitsPerMessage", stateMutability: "view", inputs: [{ type: "address" }], outputs: [{ type: "uint256" }] },
+] as const;
+
 export const messageTransmitterAbi = [
   {
     type: "function",
