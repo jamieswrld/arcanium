@@ -83,9 +83,11 @@ async function main() {
     POS_MANAGER, SWAP_ROUTER, LIQUIDITY_VAULT, account.address, USDC, 0n, ARC_SPLITTER,
   ]);
 
-  // 2. Distributor + 3. Graduation registry, both referencing the new factory.
+  // 2. Distributor (with the previous factory as legacy so earlier tokens stay
+  //    claimable through this one) + 3. Graduation registry.
+  const legacyFactory = getAddress(addrs.factory); // current factory becomes legacy
   const distributor = await deploy("ArchFeeDistributor", [
-    factory, LIQUIDITY_VAULT, account.address, CREATOR_SHARE_BPS, ARC_SPLITTER,
+    factory, LIQUIDITY_VAULT, account.address, CREATOR_SHARE_BPS, ARC_SPLITTER, legacyFactory,
   ]);
   const graduation = await deploy("GraduationRegistry", [factory, GRADUATION_UNITS]);
 

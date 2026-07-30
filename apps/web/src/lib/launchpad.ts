@@ -7,6 +7,10 @@ import { createPublicClient, fallback, http, type Hex, type PublicClient } from 
  */
 
 export const FACTORY_ADDRESS = process.env["NEXT_PUBLIC_ARCH_LAUNCHPAD_FACTORY_ADDRESS"] as Hex | undefined;
+/** Previous factory generation — tokens launched there stay listed/tradable. */
+export const LEGACY_FACTORY_ADDRESS: Hex =
+  (process.env["NEXT_PUBLIC_ARCH_LEGACY_FACTORY_ADDRESS"] as Hex | undefined) ??
+  "0xa024664ad5d30f3c0b18b931ddb6f64a96de8ed3";
 export const GRADUATION_ADDRESS = process.env["NEXT_PUBLIC_ARCH_GRADUATION_REGISTRY_ADDRESS"] as Hex | undefined;
 export const DISTRIBUTOR_ADDRESS = process.env["NEXT_PUBLIC_ARCH_FEE_DISTRIBUTOR_ADDRESS"] as Hex | undefined;
 export const ROUTER_ADDRESS = process.env["NEXT_PUBLIC_UNISWAP_SWAP_ROUTER_ADDRESS"] as Hex | undefined;
@@ -22,6 +26,7 @@ const HIDDEN_TOKENS = new Set(
     "0xE7c4f3a9F20AfbCA5A238d4fA705344943Ed9B5C", // Archway — internal test launch (old factory)
     "0x6347dB930F087D99E722652921e22f3Ca545eA45", // RTCK — router-fix verification launch
     "0x54464cA71f55C59b2e944B09e24cA689A918e644", // AROS — pre-public test launch (fresh start)
+    "0x10667F1aF42927cae3C4E41d95B009A1a3140bC6", // RDCK — fee-redirect verification launch
     ...(process.env["NEXT_PUBLIC_ARCH_HIDDEN_TOKENS"] ?? "").split(","),
   ]
     .map((s) => s.trim().toLowerCase())
@@ -74,6 +79,7 @@ export const factoryAbi = [
           { name: "creatorBuyAmount", type: "uint256" },
           { name: "minTokensOut", type: "uint256" },
           { name: "deadline", type: "uint256" },
+          { name: "feeRecipient", type: "address" },
         ],
       },
     ],
@@ -197,30 +203,41 @@ export interface LaunchpadToken {
 
 export async function fetchAllTokens(client: PublicClient): Promise<LaunchpadToken[]> {
   if (FACTORY_ADDRESS === undefined) return [];
-  const count = await client.readContract({
-    address: FACTORY_ADDRESS,
-    abi: factoryAbi,
-    functionName: "allTokensLength",
-  });
   const tokens: LaunchpadToken[] = [];
-  for (let i = 0n; i < count; i++) {
-    const token = await client.readContract({
-      address: FACTORY_ADDRESS,
-      abi: factoryAbi,
-      functionName: "allTokens",
-      args: [i],
-    });
-    if (isHidden(token)) continue;
-    const detail = await fetchToken(client, token);
-    if (detail !== null) tokens.push(detail);
+  // Current factory first (newest generation), then the legacy factory so
+  // earlier launches stay listed and tradable across upgrades.
+  for (const factory of [FACTORY_ADDRESS, LEGACY_FACTORY_ADDRESS]) {
+    const count = await client
+      .readContract({ address: factory, abi: factoryAbi, functionName: "allTokensLength" })
+      .catch(() => 0n);
+    const generation: LaunchpadToken[] = [];
+    for (let i = 0n; i < count; i++) {
+      const token = await client.readContract({
+        address: factory,
+        abi: factoryAbi,
+        functionName: "allTokens",
+        args: [i],
+      });
+      if (isHidden(token)) continue;
+      const detail = await fetchTokenFrom(client, factory, token);
+      if (detail !== null) generation.push(detail);
+    }
+    tokens.push(...generation.reverse()); // newest first within a generation
   }
-  return tokens.reverse(); // newest first
+  return tokens;
 }
 
+/** Look up a token on the current factory, falling back to the legacy one. */
 export async function fetchToken(client: PublicClient, token: Hex): Promise<LaunchpadToken | null> {
   if (FACTORY_ADDRESS === undefined) return null;
+  const current = await fetchTokenFrom(client, FACTORY_ADDRESS, token);
+  if (current !== null) return current;
+  return fetchTokenFrom(client, LEGACY_FACTORY_ADDRESS, token);
+}
+
+async function fetchTokenFrom(client: PublicClient, factory: Hex, token: Hex): Promise<LaunchpadToken | null> {
   const [launchedToken, creator, pairToken, pool, positionId] = await client.readContract({
-    address: FACTORY_ADDRESS,
+    address: factory,
     abi: factoryAbi,
     functionName: "launches",
     args: [token],

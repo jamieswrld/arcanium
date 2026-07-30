@@ -26,6 +26,9 @@ contract ArchFeeDistributor is Ownable2Step, ReentrancyGuard {
     uint256 public constant MAX_CREATOR_SHARE_BPS = 5_000;
 
     ArchLaunchpadFactory public immutable factory;
+    /// @notice Previous factory generation (address(0) = none). Lets one
+    ///         distributor keep serving tokens launched before an upgrade.
+    ArchLaunchpadFactory public immutable legacyFactory;
     ArchLiquidityVault public immutable vault;
 
     /// @notice Creator share of quote-side fees in bps (3000 = 30%).
@@ -51,7 +54,8 @@ contract ArchFeeDistributor is Ownable2Step, ReentrancyGuard {
         address vault_,
         address owner_,
         uint256 creatorShareBps_,
-        address protocolTreasury_
+        address protocolTreasury_,
+        address legacyFactory_
     ) Ownable(owner_) {
         if (factory_ == address(0) || vault_ == address(0) || protocolTreasury_ == address(0)) {
             revert ZeroAddress();
@@ -60,6 +64,7 @@ contract ArchFeeDistributor is Ownable2Step, ReentrancyGuard {
             revert ShareOutOfBounds();
         }
         factory = ArchLaunchpadFactory(factory_);
+        legacyFactory = ArchLaunchpadFactory(legacyFactory_);
         vault = ArchLiquidityVault(vault_);
         creatorShareBps = creatorShareBps_;
         protocolTreasury = protocolTreasury_;
@@ -70,6 +75,9 @@ contract ArchFeeDistributor is Ownable2Step, ReentrancyGuard {
     function distribute(address token) public nonReentrant {
         (address launchedToken, address creator, address pairToken, , uint256 positionId) =
             factory.launches(token);
+        if (launchedToken == address(0) && address(legacyFactory) != address(0)) {
+            (launchedToken, creator, pairToken, , positionId) = legacyFactory.launches(token);
+        }
         if (launchedToken == address(0)) revert UnknownToken();
 
         (uint256 amount0, uint256 amount1) = vault.collectFees(positionId);

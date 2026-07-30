@@ -72,6 +72,7 @@ export function CreateForm() {
   const [imageUrl, setImageUrl] = useState(""); // holds a compressed data URI once a file is picked
   const [imgError, setImgError] = useState<string | null>(null);
   const [creatorBuy, setCreatorBuy] = useState("");
+  const [feeWallet, setFeeWallet] = useState("");
   const [state, setState] = useState<CreateState>({ step: "form" });
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -114,6 +115,9 @@ export function CreateForm() {
 
   const totalNeeded = (launchFee.data ?? 0n) + buyAmount;
 
+  const feeWalletTrimmed = feeWallet.trim();
+  const feeWalletValid = feeWalletTrimmed === "" || /^0x[0-9a-fA-F]{40}$/.test(feeWalletTrimmed);
+
   const formError = ((): string | null => {
     if (name.trim().length === 0) return null;
     if (name.trim().length > 48) return "Name too long (max 48)";
@@ -121,6 +125,7 @@ export function CreateForm() {
     if (!validUrl(website) || !validUrl(twitter) || !validUrl(telegram)) {
       return "Links must be https:// URLs";
     }
+    if (!feeWalletValid) return "Fee recipient must be a valid 0x address";
     return null;
   })();
 
@@ -181,7 +186,11 @@ export function CreateForm() {
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 600);
       const txHash = await writeContractAsync({
         address: FACTORY_ADDRESS, abi: factoryAbi, functionName: "launch",
-        args: [{ name: name.trim(), symbol: tickerNormalized, metadataUri, pairToken: PAIR_TOKEN_ADDRESS, creatorBuyAmount: buyAmount, minTokensOut: 0n, deadline }],
+        args: [{
+          name: name.trim(), symbol: tickerNormalized, metadataUri, pairToken: PAIR_TOKEN_ADDRESS,
+          creatorBuyAmount: buyAmount, minTokensOut: 0n, deadline,
+          feeRecipient: (feeWalletValid && feeWalletTrimmed !== "" ? feeWalletTrimmed : "0x0000000000000000000000000000000000000000") as Hex,
+        }],
         chainId: arcTestnet.id,
       });
       const receipt = await arcPublic.waitForTransactionReceipt({ hash: txHash });
@@ -274,6 +283,14 @@ export function CreateForm() {
         <label htmlFor="cf-buy">Initial buy (optional, in {PAIR_TOKEN_SYMBOL})</label>
         <input id="cf-buy" value={creatorBuy} onChange={(e) => setCreatorBuy(e.target.value)} placeholder="0.00" inputMode="decimal" disabled={busy} />
         <span className="arch-note">Executed atomically inside the launch — nobody can trade before you.</span>
+      </div>
+
+      <div className="arch-form-row">
+        <label htmlFor="cf-feewallet">Creator fee wallet (optional)</label>
+        <input id="cf-feewallet" value={feeWallet} onChange={(e) => setFeeWallet(e.target.value)} placeholder="0x… (defaults to your wallet)" spellCheck={false} disabled={busy} style={{ fontFamily: "monospace", fontSize: "0.85rem" }} />
+        <span className="arch-note">
+          Trading-fee rewards for this token are paid to this wallet, forever. Leave blank to use the wallet you launch with.
+        </span>
       </div>
 
       <div style={{ padding: "0.5rem 0", fontSize: "0.875rem" }}>

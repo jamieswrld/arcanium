@@ -32,7 +32,7 @@ contract DeployLaunchpad is Script {
             npm, router, address(vault), deployer, ausd, launchFee, launchFeeTreasury
         );
         ArchFeeDistributor distributor = new ArchFeeDistributor(
-            address(factory), address(vault), deployer, creatorShareBps, protocolTreasury
+            address(factory), address(vault), deployer, creatorShareBps, protocolTreasury, address(0)
         );
         GraduationRegistry registry =
             new GraduationRegistry(address(factory), graduationUnits);

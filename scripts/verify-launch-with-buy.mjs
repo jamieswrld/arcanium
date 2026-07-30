@@ -38,8 +38,12 @@ const erc20 = parseAbi([
   "function balanceOf(address) view returns (uint256)",
 ]);
 const fac = parseAbi([
-  "function launch((string name,string symbol,string metadataUri,address pairToken,uint256 creatorBuyAmount,uint256 minTokensOut,uint256 deadline) params) returns (address token, address pool, uint256 positionId)",
+  "function launch((string name,string symbol,string metadataUri,address pairToken,uint256 creatorBuyAmount,uint256 minTokensOut,uint256 deadline,address feeRecipient) params) returns (address token, address pool, uint256 positionId)",
+  "function launches(address) view returns (address token, address creator, address pairToken, address pool, uint256 positionId)",
 ]);
+// Fee-redirect test target: rewards should land on this wallet, not the
+// launcher. Use a known fee wallet from env (any EVM address works).
+const REDIRECT = getAddress((env.FEE_RECIPIENTS ?? "").split(",")[2].trim());
 const launchedEvent = {
   type: "event", name: "Launched",
   inputs: [
@@ -69,7 +73,7 @@ async function main() {
   const nonce = await pub.getTransactionCount({ address: account.address });
   const hash = await wallet.writeContract({
     address: FACTORY, abi: fac, functionName: "launch",
-    args: [{ name: "Router Check", symbol: "RTCK", metadataUri: "data:application/json;base64,e30=", pairToken: USDC, creatorBuyAmount: BUY, minTokensOut: 0n, deadline }],
+    args: [{ name: "Redirect Check", symbol: "RDCK", metadataUri: "data:application/json;base64,e30=", pairToken: USDC, creatorBuyAmount: BUY, minTokensOut: 0n, deadline, feeRecipient: REDIRECT }],
     nonce, gas: 8_000_000n,
   });
   console.log(`launch tx: ${hash}`);
@@ -84,9 +88,15 @@ async function main() {
   if (token === null) throw new Error("Launched event not found");
   console.log(`token: ${token}`);
   const got = await pub.readContract({ address: token, abi: erc20, functionName: "balanceOf", args: [account.address] });
-  console.log(`creator token balance from atomic buy: ${formatUnits(got, 18)}`);
-  if (got === 0n) throw new Error("creator received no tokens — swap did not execute");
-  console.log("\nPASS: launch + atomic creator buy works end to end. Hide this token in the UI:");
+  console.log(`launcher token balance from atomic buy: ${formatUnits(got, 18)}`);
+  if (got === 0n) throw new Error("launcher received no tokens — swap did not execute");
+
+  // Fee redirect assertion: rewards owner must be the REDIRECT wallet.
+  const [, rewardsOwner] = await pub.readContract({ address: FACTORY, abi: fac, functionName: "launches", args: [token] });
+  console.log(`rewards owner: ${rewardsOwner} (expected ${REDIRECT})`);
+  if (getAddress(rewardsOwner) !== REDIRECT) throw new Error("fee redirect NOT stored");
+
+  console.log("\nPASS: launch + atomic buy + fee redirect all work. Hide this token in the UI:");
   console.log(`HIDDEN: ${token}`);
 }
 

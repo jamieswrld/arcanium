@@ -6,10 +6,10 @@
   "bridge": "0x9c974f3c8601ff594a93232c91960aec347b1303",
   "gasStation": "0x5d07afa33788f7ba2f9ddc7379efdde218ba2258",
   "liquidityVault": "0x94e8335bed5585f3f43899505b5e5968fa11185e",
-  "factory": "0xA024664AD5d30F3c0b18b931DdB6f64A96DE8ED3",
-  "distributor": "0x789896401c1c90dF95757dFd3228989B627418b4",
-  "graduation": "0xb1DA618a81a522d41B9544ce0b6DC7eA18B6d4E3",
-  "factoryOld": "0x1d65ab4cdcdda6f38a9c93a24ef64be8905e19d5",
-  "distributorOld": "0xbdc362f9ddea2ae9c39b108e0712f7d6e2f00e5f",
-  "graduationOld": "0x40437f7d81dde22126849a7baef71e0280d17f68"
+  "factory": "0xE2aA88806872C2a02A4ab439584d457002983600",
+  "distributor": "0xAFEB72B52159a95375ac271053eE2Be9E8C0CbeE",
+  "graduation": "0xC73d4b6Bd63F0ee69514768870D74548F4d12bc6",
+  "factoryOld": "0xA024664AD5d30F3c0b18b931DdB6f64A96DE8ED3",
+  "distributorOld": "0x789896401c1c90dF95757dFd3228989B627418b4",
+  "graduationOld": "0xb1DA618a81a522d41B9544ce0b6DC7eA18B6d4E3"
 }
