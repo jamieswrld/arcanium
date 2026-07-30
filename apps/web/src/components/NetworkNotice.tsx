@@ -1,20 +1,19 @@
 "use client";
 
 import { useAccount, useSwitchChain } from "wagmi";
-import { arcTestnet, baseChain } from "@/lib/bridgeClient";
+import { arcTestnet } from "@/lib/bridgeClient";
 
 /**
- * Shown when a connected wallet is on a chain Arcanium doesn't use. Offers
- * one-click switching. wagmi's switchChain triggers wallet_addEthereumChain
- * automatically when the chain isn't known to the wallet, so this also *adds*
- * Base / Arc for users who have never used them.
+ * Shown when a connected wallet isn't on Arc. Offers one-click switching.
+ * wagmi's switchChain triggers wallet_addEthereumChain automatically when Arc
+ * is unknown to the wallet, so this also *adds* Arc for first-time users.
  */
 export function NetworkNotice() {
   const { isConnected, chainId } = useAccount();
   const { switchChain, isPending } = useSwitchChain();
 
   if (!isConnected) return null;
-  if (chainId === baseChain.id || chainId === arcTestnet.id) return null;
+  if (chainId === arcTestnet.id) return null;
 
   return (
     <div
@@ -22,13 +21,12 @@ export function NetworkNotice() {
       className="rounded-xl border border-warning/50 bg-warning/5 p-4 flex flex-col sm:flex-row sm:items-center gap-3"
     >
       <div className="flex-1">
-        <div className="font-semibold text-sm">Wrong network</div>
+        <div className="font-semibold text-sm">Switch to Arc</div>
         <div className="arch-note">
-          Your wallet is on an unsupported network. Arcanium runs on <strong>Arc</strong> — switch below
-          and your wallet will add the network if it&apos;s new.
+          Arcanium runs entirely on <strong>Arc</strong>. Switch below — your wallet will add the network if it&apos;s new.
         </div>
       </div>
-      <div className="flex gap-2 shrink-0">
+      <div className="shrink-0">
         <button
           className="arch-wallet-button"
           style={{ cursor: "pointer", opacity: 1 }}

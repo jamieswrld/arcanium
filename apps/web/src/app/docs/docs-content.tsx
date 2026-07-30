@@ -78,14 +78,16 @@ export const DOCS: Record<string, ReactNode> = {
     <>
       <h1>Getting USDC on Arc</h1>
       <p className="docs-lead">Everything on Arcanium is denominated in USDC held on the Arc network. That one balance covers gas, optional first buys, and trades.</p>
-      <h2>Bringing USDC to Arc</h2>
-      <p>Acquire USDC on Arc through an Arc-supported on-ramp or exchange, or by bridging USDC from another chain into Arc using Circle&apos;s CCTP as support rolls out. When you receive it, make sure it lands on the <strong>Arc</strong> network (chain 5042), not Ethereum or Base.</p>
+      <h2>You start with USDC on Base or Ethereum</h2>
+      <p>To get USDC onto Arc you first need <strong>USDC on Base or Ethereum</strong>, then bridge it across. If you don&apos;t have any yet, buy USDC on an exchange (Coinbase, Kraken, and others) and withdraw it on the <strong>Base</strong> or <strong>Ethereum</strong> network.</p>
+      <h2>Bridge it to Arc with Circle CCTP</h2>
+      <p>Use Circle&apos;s Cross-Chain Transfer Protocol (CCTP) — the official USDC bridge — to move your USDC from Base or Ethereum to Arc. CCTP burns the USDC on the source chain and mints native USDC to you on Arc, one for one. Make sure the destination is the <strong>Arc</strong> network (chain 5042).</p>
       <h2>How much you need</h2>
       <ul>
         <li>Enough USDC for an optional first buy — launching itself is free (gas only).</li>
         <li>A little extra for gas — on Arc, gas is paid in that same USDC.</li>
       </ul>
-      <Callout>Once you hold USDC on Arc, head to <a href="/create">Create</a> to launch, or <a href="/tokens">Launchpad</a> to trade.</Callout>
+      <Callout>Once your USDC lands on Arc, head to <a href="/create">Create</a> to launch, or <a href="/tokens">Launchpad</a> to trade.</Callout>
     </>
   ),
 

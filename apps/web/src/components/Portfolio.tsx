@@ -1,40 +1,23 @@
 "use client";
 
-import { useAccount, useBalance, useReadContract } from "wagmi";
-import { arcTestnet, baseChain, erc20Abi, formatQuoteUnits, USDC_ADDRESS } from "@/lib/bridgeClient";
+import { useAccount, useBalance } from "wagmi";
+import { arcTestnet, formatQuoteUnits } from "@/lib/bridgeClient";
 import { ConnectButton } from "@/components/ConnectButton";
 import { NetworkNotice } from "@/components/NetworkNotice";
 
 /** 18-decimal native → short USDC string. */
 function fmtNative(wei: bigint): string {
-  const micro = wei / 10n ** 12n;
-  return formatQuoteUnits(micro);
-}
-
-interface Row {
-  readonly asset: string;
-  readonly chain: string;
-  readonly amount: string;
-  readonly usd: number;
-  readonly pending: boolean;
+  return formatQuoteUnits(wei / 10n ** 12n);
 }
 
 /**
- * Live portfolio: reads the connected wallet's USDC on Base, aUSD and native
- * gas on Arc. Treats aUSD and USDC as $1 (aUSD is 1:1 USDC-backed).
+ * Live portfolio: the connected wallet's USDC on Arc. On Arc, USDC is the
+ * native token — the single balance that pays gas, launches, and trades.
  */
 export function Portfolio() {
   const { address, isConnected } = useAccount();
 
-  const usdc = useReadContract({
-    address: USDC_ADDRESS,
-    abi: erc20Abi,
-    functionName: "balanceOf",
-    args: address === undefined ? undefined : [address],
-    chainId: baseChain.id,
-    query: { enabled: address !== undefined, refetchInterval: 15_000 },
-  });
-  const arcGas = useBalance({
+  const arcUsdc = useBalance({
     address,
     chainId: arcTestnet.id,
     query: { enabled: address !== undefined, refetchInterval: 15_000 },
@@ -45,7 +28,7 @@ export function Portfolio() {
       <div className="arch-stack">
         <Card>
           <p className="arch-note" style={{ margin: 0 }}>
-            Connect your wallet to see your USDC on Arc and Base.
+            Connect your wallet to see your USDC on Arc.
           </p>
           <div style={{ marginTop: "0.75rem", maxWidth: 240 }}>
             <ConnectButton />
@@ -55,15 +38,8 @@ export function Portfolio() {
     );
   }
 
-  // Always show every asset row — 0.00 when empty, "…" while a read is in
-  // flight — so a slow or failed RPC never makes a balance silently vanish.
-  const rows: Row[] = [
-    { asset: "USDC", chain: "Arc", amount: arcGas.data !== undefined ? fmtNative(arcGas.data.value) : (arcGas.isLoading ? "…" : "0"), usd: arcGas.data !== undefined ? Number(arcGas.data.value) / 1e18 : 0, pending: arcGas.data === undefined && arcGas.isLoading },
-    { asset: "USDC", chain: "Base", amount: usdc.data !== undefined ? formatQuoteUnits(usdc.data) : (usdc.isLoading ? "…" : "0"), usd: usdc.data !== undefined ? Number(usdc.data) / 1e6 : 0, pending: usdc.data === undefined && usdc.isLoading },
-  ];
-
-  const total = rows.reduce((a, r) => a + r.usd, 0);
-  const loading = usdc.isLoading || arcGas.isLoading;
+  const amount = arcUsdc.data !== undefined ? fmtNative(arcUsdc.data.value) : arcUsdc.isLoading ? "…" : "0";
+  const usd = arcUsdc.data !== undefined ? Number(arcUsdc.data.value) / 1e18 : 0;
 
   return (
     <div className="arch-stack">
@@ -76,33 +52,28 @@ export function Portfolio() {
           <div>
             <div className="arch-note" style={{ fontFamily: "monospace" }}>{address.slice(0, 6)}…{address.slice(-4)}</div>
             <div style={{ fontSize: "1.75rem", fontWeight: 700 }}>
-              ${total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ${usd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
         </div>
       </Card>
 
       <section>
-        <div className="arch-section-head"><h2>Positions</h2></div>
+        <div className="arch-section-head"><h2>Balances</h2></div>
         <Card>
           <div className="arch-token-list-head" style={{ gridTemplateColumns: "1fr 140px 120px" }}>
             <span>Asset</span><span>Amount</span><span>Value</span>
           </div>
-          {rows.length === 0 ? (
-            <p className="arch-note" style={{ margin: "1rem 0 0", textAlign: "center" }}>
-              {loading ? "Reading balances…" : "No balances yet — add USDC to your wallet on Arc to get started."}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 140px 120px", gap: "0.75rem", padding: "0.6rem 0", alignItems: "center" }}>
+            <span><strong>USDC</strong> <span className="arch-note">on Arc</span></span>
+            <span>{amount}</span>
+            <span>${usd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          </div>
+          {arcUsdc.data !== undefined && arcUsdc.data.value === 0n ? (
+            <p className="arch-note" style={{ margin: "0.5rem 0 0" }}>
+              No USDC on Arc yet — add some to your wallet to launch and trade.
             </p>
-          ) : (
-            <div style={{ display: "grid", gap: "0.25rem", marginTop: "0.5rem" }}>
-              {rows.map((r) => (
-                <div key={r.asset + r.chain} style={{ display: "grid", gridTemplateColumns: "1fr 140px 120px", gap: "0.75rem", padding: "0.6rem 0", borderBottom: "1px solid var(--border)", alignItems: "center" }}>
-                  <span><strong>{r.asset}</strong> <span className="arch-note">on {r.chain}</span></span>
-                  <span>{r.amount}</span>
-                  <span>${r.usd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          ) : null}
         </Card>
       </section>
     </div>

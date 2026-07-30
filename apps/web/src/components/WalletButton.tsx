@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useAccount, useDisconnect, useSwitchChain } from "wagmi";
-import { arcTestnet, baseChain } from "@/lib/bridgeClient";
+import { arcTestnet } from "@/lib/bridgeClient";
 import { ConnectModal } from "@/components/ConnectModal";
 
 function shortAddress(address: string): string {
@@ -15,13 +15,6 @@ export function NetworkPill() {
   if (!isConnected) {
     return <span className="arch-network-pill">Not connected</span>;
   }
-  if (chainId === baseChain.id) {
-    return (
-      <span className="arch-network-pill" style={{ color: "var(--positive)", borderColor: "var(--positive)" }}>
-        {baseChain.name}
-      </span>
-    );
-  }
   if (chainId === arcTestnet.id) {
     return (
       <span className="arch-network-pill" style={{ color: "var(--positive)", borderColor: "var(--positive)" }}>
@@ -29,16 +22,16 @@ export function NetworkPill() {
       </span>
     );
   }
-  // Wrong network → the pill becomes a one-click fix.
+  // Wrong network → the pill becomes a one-click switch to Arc.
   return (
     <button
       className="arch-network-pill"
       style={{ cursor: "pointer", background: "transparent" }}
       disabled={isPending}
-      onClick={() => switchChain({ chainId: baseChain.id })}
-      title="Switch to Base"
+      onClick={() => switchChain({ chainId: arcTestnet.id })}
+      title="Switch to Arc"
     >
-      {isPending ? "Switching…" : "Wrong network — switch"}
+      {isPending ? "Switching…" : "Switch to Arc"}
     </button>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
 import { decodeEventLog, parseAbiItem, type Hex } from "viem";
@@ -30,6 +30,24 @@ type CreateState =
 /** Native gas floor for a full launch (token + pool + lock is gas-heavy). */
 const LAUNCH_GAS_FLOOR = 40_000_000_000_000_000n; // ~0.04 native USDC
 
+/** Downscale + compress a picked image to a small data URI so it embeds in the
+ *  launch cheaply. WebP when supported (keeps transparency, tiny), else PNG. */
+async function compressImage(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  const max = 256;
+  const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+  const w = Math.max(1, Math.round(bitmap.width * scale));
+  const h = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (ctx === null) throw new Error("canvas unavailable");
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  const webp = canvas.toDataURL("image/webp", 0.8);
+  return webp.startsWith("data:image/webp") ? webp : canvas.toDataURL("image/png");
+}
+
 /**
  * Live launch form. A token is created on Arc, paired with the canonical pair
  * token (native Arc USDC), with its Uniswap v3 pool and permanently locked
@@ -51,9 +69,24 @@ export function CreateForm() {
   const [website, setWebsite] = useState("");
   const [twitter, setTwitter] = useState("");
   const [telegram, setTelegram] = useState("");
-  const [imageUrl, setImageUrl] = useState("");
+  const [imageUrl, setImageUrl] = useState(""); // holds a compressed data URI once a file is picked
+  const [imgError, setImgError] = useState<string | null>(null);
   const [creatorBuy, setCreatorBuy] = useState("");
   const [state, setState] = useState<CreateState>({ step: "form" });
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function onPickImage(file: File | undefined): Promise<void> {
+    if (file === undefined) return;
+    if (!file.type.startsWith("image/")) { setImgError("Please choose an image file."); return; }
+    try {
+      const dataUri = await compressImage(file);
+      if (dataUri.length > 160_000) { setImgError("That image is too detailed — try a simpler logo."); return; }
+      setImgError(null);
+      setImageUrl(dataUri);
+    } catch {
+      setImgError("Couldn't read that image. Try a PNG or JPG.");
+    }
+  }
 
   const launchFee = useReadContract({
     address: FACTORY_ADDRESS,
@@ -85,7 +118,7 @@ export function CreateForm() {
     if (name.trim().length === 0) return null;
     if (name.trim().length > 48) return "Name too long (max 48)";
     if (tickerNormalized.length < 2) return "Ticker needs 2–10 letters/numbers";
-    if (!validUrl(website) || !validUrl(twitter) || !validUrl(telegram) || !validUrl(imageUrl)) {
+    if (!validUrl(website) || !validUrl(twitter) || !validUrl(telegram)) {
       return "Links must be https:// URLs";
     }
     return null;
@@ -169,13 +202,30 @@ export function CreateForm() {
       </div>
 
       <div className="arch-form-row">
-        <label htmlFor="cf-image">Logo image URL (optional, https)</label>
-        <div style={{ display: "flex", gap: "0.6rem", alignItems: "center" }}>
-          <div aria-hidden style={{ width: 44, height: 44, borderRadius: 12, flexShrink: 0, background: imageUrl.trim() === "" ? "var(--brand-gradient)" : `center/cover no-repeat url(${JSON.stringify(imageUrl.trim())})`, display: "grid", placeItems: "center", color: "#fff", fontWeight: 700 }}>
-            {imageUrl.trim() === "" ? (tickerNormalized.slice(0, 2) || "AR") : ""}
-          </div>
-          <input id="cf-image" style={{ flex: 1 }} value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://…" disabled={busy} />
-        </div>
+        <label>Logo image (optional)</label>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          style={{ display: "none" }}
+          onChange={(e) => void onPickImage(e.target.files?.[0])}
+          disabled={busy}
+        />
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          disabled={busy}
+          style={{ display: "flex", gap: "0.75rem", alignItems: "center", width: "100%", textAlign: "left", cursor: busy ? "not-allowed" : "pointer", background: "var(--muted)", border: "1px dashed var(--border)", borderRadius: 12, padding: "0.7rem 0.8rem" }}
+        >
+          <span aria-hidden style={{ width: 52, height: 52, borderRadius: 12, flexShrink: 0, background: imageUrl === "" ? "var(--brand-gradient)" : `center/cover no-repeat url(${JSON.stringify(imageUrl)})`, display: "grid", placeItems: "center", color: "#fff", fontWeight: 700 }}>
+            {imageUrl === "" ? (tickerNormalized.slice(0, 2) || "AR") : ""}
+          </span>
+          <span style={{ minWidth: 0 }}>
+            <span style={{ display: "block", fontWeight: 600, fontSize: "0.9rem" }}>{imageUrl === "" ? "Click to upload a logo" : "Change logo"}</span>
+            <span className="arch-note">PNG, JPG, GIF or WebP — we resize it for you.</span>
+          </span>
+        </button>
+        {imgError !== null ? <span className="arch-note" style={{ color: "var(--arch-negative)" }}>{imgError}</span> : null}
       </div>
 
       <div className="arch-form-row">
