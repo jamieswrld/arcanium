@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   arcPublicClient,
+  arcUnreachable,
   fetchAllTokens,
   GRADUATION_UNITS,
 } from "@/lib/launchpad";
@@ -94,9 +95,13 @@ export default async function TokensPage({ searchParams }: TokensPageProps) {
         <section className="arch-card" style={{ textAlign: "center", padding: "3rem 1rem" }}>
           <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>◆</div>
           <p className="arch-note" style={{ margin: 0 }}>
-            {query.length > 0 ? "Nothing matches that search." : "No tokens launched yet. Be the first."}
+            {arcUnreachable
+              ? "Can't reach the Arc network right now — this is an RPC outage, not an empty launchpad. Every token and balance is safe on-chain and will reappear as soon as a node responds."
+              : query.length > 0
+                ? "Nothing matches that search."
+                : "No tokens launched yet. Be the first."}
           </p>
-          {query.length === 0 ? (
+          {query.length === 0 && !arcUnreachable ? (
             <Link href="/create" className="arch-pill arch-pill-active" style={{ display: "inline-block", marginTop: "1rem", padding: "0.5rem 1.1rem", textDecoration: "none" }}>
               Launch a token
             </Link>

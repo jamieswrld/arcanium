@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { arcPublicClient, fetchAllTokens, formatUsdCompact } from "@/lib/launchpad";
+import { arcPublicClient, arcUnreachable, fetchAllTokens, formatUsdCompact } from "@/lib/launchpad";
 import { fetchProtocolStats } from "@/lib/protocolStats";
 import { fetchTokenImages } from "@/lib/tokenImages";
 import { TokenCard } from "@/components/TokenCard";
@@ -80,7 +80,7 @@ export default async function LaunchpadHome() {
           {recent.length === 0 ? (
             <section className="arch-card" style={{ textAlign: "center", padding: "3rem 1rem" }}>
               <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>◆</div>
-              <p className="arch-note" style={{ margin: 0 }}>No tokens launched yet. Be the first.</p>
+              <p className="arch-note" style={{ margin: 0 }}>{arcUnreachable ? "Can’t reach the Arc network right now — an RPC outage, not an empty launchpad. Everything is safe on-chain." : "No tokens launched yet. Be the first."}</p>
               <Link href="/create" className="arch-pill arch-pill-active" style={{ display: "inline-block", marginTop: "1rem", padding: "0.5rem 1.1rem", textDecoration: "none" }}>
                 Launch a token
               </Link>

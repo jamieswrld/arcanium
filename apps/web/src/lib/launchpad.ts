@@ -65,6 +65,10 @@ export function isHidden(token: string): boolean {
   return HIDDEN_TOKENS.has(token.toLowerCase());
 }
 
+/** True when the last list attempt failed to reach any RPC (as opposed to
+ *  there genuinely being no tokens). Lets the UI tell the truth. */
+export let arcUnreachable = false;
+
 export function arcPublicClient(): PublicClient {
   return createPublicClient({ transport: arcTransport() });
 }
@@ -314,6 +318,8 @@ export async function fetchAllTokens(client: PublicClient): Promise<LaunchpadTok
         return details.filter((d): d is LaunchpadToken => d !== null).reverse();
       }),
     );
+    const reachable = generations.some((g) => g.length > 0) || (await client.getBlockNumber().then(() => true).catch(() => false));
+    arcUnreachable = !reachable;
     const flat = generations.flat();
     const modes = await fetchModes(client, flat.map((t) => t.token)).catch(() => new Map<string, number | null>());
     const tokens = flat.map((t) => ({ ...t, mode: modes.get(t.token.toLowerCase()) ?? null }));
