@@ -5,6 +5,7 @@ import Image from "next/image";
 import "./globals.css";
 import { Providers } from "./providers";
 import { WalletButton } from "@/components/WalletButton";
+import { VersionGuard } from "@/components/VersionGuard";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
@@ -45,6 +46,7 @@ export default function RootLayout({
             </div>
           </header>
           <main>{children}</main>
+          <VersionGuard />
         </Providers>
       </body>
     </html>
