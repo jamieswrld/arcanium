@@ -10,10 +10,20 @@ import { fallback, http, type Transport } from "viem";
  */
 
 const DEFAULTS: readonly string[] = [
+  // Blockdaemon is the preferred primary. It began requiring an API key, so
+  // set ARC_BLOCKDAEMON_KEY (or put the full authed URL in ARC_RPC_URLS) and
+  // it is used ahead of everything else automatically.
   "https://rpc.blockdaemon.mainnet.arc.io",
   "https://5042.rpc.thirdweb.com/8b0c89cd3b125e7f8f744f5e56f6436a",
   "https://5042.rpc.thirdweb.com",
 ];
+
+/** Blockdaemon with the operator's key, when configured. */
+function blockdaemonAuthed(): string[] {
+  const key = process.env["ARC_BLOCKDAEMON_KEY"] ?? process.env["NEXT_PUBLIC_ARC_BLOCKDAEMON_KEY"];
+  if (key === undefined || key.trim() === "") return [];
+  return [`https://svc.blockdaemon.com/arc/mainnet/native?apiKey=${key.trim()}`];
+}
 
 function parse(list: string | undefined): string[] {
   if (list === undefined || list.trim() === "") return [];
@@ -23,6 +33,7 @@ function parse(list: string | undefined): string[] {
 /** Server-side endpoint list (never exposed to the browser unless public). */
 export function arcRpcUrls(): string[] {
   const configured = [
+    ...blockdaemonAuthed(),
     ...parse(process.env["ARC_RPC_URLS"]),
     ...parse(process.env["NEXT_PUBLIC_ARC_RPC_URLS"]),
     ...parse(process.env["ARC_RPC_SERVER_URL"]),
@@ -42,6 +53,7 @@ export function arcTransport(opts?: { readonly browser?: boolean }): Transport {
         // Same-origin proxy first in the browser: it hides upstream churn and
         // survives providers that block cross-origin calls.
         "/api/arc-rpc",
+        ...blockdaemonAuthed(),
         ...parse(process.env["NEXT_PUBLIC_ARC_RPC_URLS"]),
         ...parse(process.env["NEXT_PUBLIC_ARC_RPC_URL"]),
         ...DEFAULTS,
