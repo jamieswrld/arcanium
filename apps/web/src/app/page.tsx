@@ -13,7 +13,7 @@ export const revalidate = 15; // edge-cached HTML; client polling keeps data liv
 export default async function LaunchpadHome() {
   const tokens = await Promise.race([
     fetchAllTokens(arcPublicClient()).catch(() => []),
-    new Promise<Awaited<ReturnType<typeof fetchAllTokens>>>((r) => setTimeout(() => r([]), 5000)),
+    new Promise<Awaited<ReturnType<typeof fetchAllTokens>>>((r) => setTimeout(() => r([]), 9000)),
   ]);
   const recent = tokens.slice(0, 6);
   const [images, stats] = await Promise.all([

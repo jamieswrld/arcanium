@@ -250,6 +250,39 @@ export interface LaunchpadToken {
   readonly mode: number | null;
 }
 
+/** Mode lookups are cached separately and never block a listing: a token's
+ *  mode is immutable, so once known it is known forever. */
+const MODE_TTL_MS = 120_000;
+const modeCache = new Map<string, { at: number; mode: number | null }>();
+
+async function fetchModes(client: PublicClient, tokens: readonly Hex[]): Promise<Map<string, number | null>> {
+  const out = new Map<string, number | null>();
+  const misses: Hex[] = [];
+  for (const t of tokens) {
+    const hit = modeCache.get(t.toLowerCase());
+    if (hit !== undefined && (hit.mode !== null || Date.now() - hit.at < MODE_TTL_MS)) out.set(t.toLowerCase(), hit.mode);
+    else misses.push(t);
+  }
+  if (misses.length === 0) return out;
+  await Promise.all(
+    misses.map(async (t) => {
+      const mode = await (async (): Promise<number | null> => {
+        const isSet = await client
+          .readContract({ address: MODE_DISTRIBUTOR_ADDRESS, abi: modeDistributorAbi, functionName: "modeSet", args: [t] })
+          .catch(() => false);
+        if (!isSet) return null;
+        const m = await client
+          .readContract({ address: MODE_DISTRIBUTOR_ADDRESS, abi: modeDistributorAbi, functionName: "modeOf", args: [t] })
+          .catch(() => null);
+        return m === null ? null : Number(m);
+      })();
+      modeCache.set(t.toLowerCase(), { at: Date.now(), mode });
+      out.set(t.toLowerCase(), mode);
+    }),
+  );
+  return out;
+}
+
 /** Server-side list cache: successive page loads reuse the same chain scan
  *  for a short window, cutting TTFB from seconds to milliseconds. The 2s+
  *  client polling keeps in-page data live; this only staggers list refreshes. */
@@ -285,7 +318,9 @@ export async function fetchAllTokens(client: PublicClient): Promise<LaunchpadTok
         return details.filter((d): d is LaunchpadToken => d !== null).reverse();
       }),
     );
-    const tokens = generations.flat();
+    const flat = generations.flat();
+    const modes = await fetchModes(client, flat.map((t) => t.token)).catch(() => new Map<string, number | null>());
+    const tokens = flat.map((t) => ({ ...t, mode: modes.get(t.token.toLowerCase()) ?? null }));
     listCache = { at: Date.now(), tokens };
     return tokens;
   })();
@@ -310,7 +345,11 @@ export async function fetchToken(client: PublicClient, token: Hex): Promise<Laun
   const found = await Promise.all(
     FACTORY_GENERATIONS.map((f) => fetchTokenFrom(client, f, token).catch(() => null)),
   );
-  const value = found.find((v) => v !== null) ?? null;
+  const base = found.find((v) => v !== null) ?? null;
+  const value =
+    base === null
+      ? null
+      : { ...base, mode: (await fetchModes(client, [base.token]).catch(() => new Map())).get(base.token.toLowerCase()) ?? null };
   detailCache.set(key, { at: Date.now(), value });
   return value;
 }
@@ -334,21 +373,6 @@ async function fetchTokenFrom(client: PublicClient, factory: Hex, token: Hex): P
   ]);
   const tokenIsToken0 = token.toLowerCase() < pairToken.toLowerCase();
   const priceE18 = priceUsdE18(slot0[0], tokenIsToken0);
-  // Mode lives on the distributor the token itself names (falls back to the
-  // canonical one for pre-v4 launches).
-  const mode = await (async (): Promise<number | null> => {
-    const dist = await client
-      .readContract({ address: token, abi: launchTokenAbi, functionName: "taxRecipient" })
-      .catch(() => MODE_DISTRIBUTOR_ADDRESS);
-    const isSet = await client
-      .readContract({ address: dist, abi: modeDistributorAbi, functionName: "modeSet", args: [token] })
-      .catch(() => false);
-    if (!isSet) return null;
-    const m = await client
-      .readContract({ address: dist, abi: modeDistributorAbi, functionName: "modeOf", args: [token] })
-      .catch(() => 0);
-    return Number(m);
-  })();
   return {
     token,
     name,
@@ -361,6 +385,6 @@ async function fetchTokenFrom(client: PublicClient, factory: Hex, token: Hex): P
     marketCapUnits: marketCapUsdUnits(priceE18),
     quoteBalance,
     graduated,
-    mode,
+    mode: null,
   };
 }
