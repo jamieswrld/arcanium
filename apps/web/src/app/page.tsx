@@ -7,7 +7,7 @@ import { TokenCard } from "@/components/TokenCard";
  * Launchpad landing — hero, live protocol stats, and the launch grid.
  * Everything below the fold is a live chain read.
  */
-export const dynamic = "force-dynamic";
+export const revalidate = 15; // edge-cached HTML; client polling keeps data live
 
 export default async function LaunchpadHome() {
   const tokens = await Promise.race([

@@ -2,10 +2,10 @@ import type { ReactNode } from "react";
 
 /** Deployed mainnet contract addresses (Arc chain 5042). */
 const A = {
-  factory: "0x1d65ab4cdcdda6f38a9c93a24ef64be8905e19d5",
+  factory: "0xe2aa88806872c2a02a4ab439584d457002983600",
   liquidityVault: "0x94e8335bed5585f3f43899505b5e5968fa11185e",
-  distributor: "0xbdc362f9ddea2ae9c39b108e0712f7d6e2f00e5f",
-  graduation: "0x40437f7d81dde22126849a7baef71e0280d17f68",
+  distributor: "0xafeb72b52159a95375ac271053ee2be9e8c0cbee",
+  graduation: "0xc73d4b6bd63f0ee69514768870d74548f4d12bc6",
   arcUsdc: "0x3600000000000000000000000000000000000000",
 } as const;
 
@@ -156,6 +156,29 @@ export const DOCS: Record<string, ReactNode> = {
           <tr><td>USDC (native)</td><td><Mono>{A.arcUsdc}</Mono></td></tr>
         </tbody>
       </table>
+    </>
+  ),
+
+  "reference/integrators": (
+    <>
+      <h1>Terminals &amp; integrators</h1>
+      <p className="docs-lead">Everything a trading terminal, screener, or bot needs to list Arcanium launches with names, logos, socials, and market data.</p>
+      <h2>Token info API</h2>
+      <p>CORS-open, edge-cached, no key required:</p>
+      <ul>
+        <li><Mono>GET https://arcanium.trade/api/token-info</Mono> — index of every launch (address, symbol, pool, creator).</li>
+        <li><Mono>GET https://arcanium.trade/api/token-info/&#123;address&#125;</Mono> — full detail: name, symbol, <strong>logo image</strong>, description, website / X / Telegram links, live price, market cap, liquidity, pool address, and provenance.</li>
+      </ul>
+      <h2>On-chain discovery</h2>
+      <p>Launches emit <Mono>Launched(token, creator, pairToken, pool, positionId, metadataUri)</Mono> on the factory. The <Mono>metadataUri</Mono> is a self-contained data URI holding the same JSON (image and socials included), so metadata is recoverable from chain data alone.</p>
+      <table className="docs-table">
+        <tbody>
+          <tr><td>Factory (current)</td><td><Mono>{A.factory}</Mono></td></tr>
+          <tr><td>Quote token</td><td><Mono>{A.arcUsdc}</Mono> (native USDC, 6d ERC-20 view)</td></tr>
+          <tr><td>Pools</td><td>Standard Uniswap v3, 1% tier, liquidity permanently locked</td></tr>
+        </tbody>
+      </table>
+      <Callout>Building an integration or want Arcanium listed as a launchpad filter on your terminal? Reach out on X: <a href="https://x.com/arcaniumtrade" target="_blank" rel="noreferrer">@arcaniumtrade</a>.</Callout>
     </>
   ),
 

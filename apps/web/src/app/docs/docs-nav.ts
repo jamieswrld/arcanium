@@ -30,6 +30,7 @@ export const DOCS_NAV: readonly DocSection[] = [
     title: "Reference",
     links: [
       { slug: "reference/addresses", title: "Contract addresses" },
+      { slug: "reference/integrators", title: "Terminals & integrators" },
       { slug: "reference/security", title: "Security and risks" },
     ],
   },

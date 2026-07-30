@@ -1,17 +1,26 @@
 import Link from "next/link";
 import { TokenAvatar } from "@/components/TokenAvatar";
 import { formatPriceE18, formatUsdCompact, GRADUATION_UNITS, type LaunchpadToken } from "@/lib/launchpad";
+import { ARC_EXPLORER } from "@/lib/bridgeClient";
 
 /**
- * Launch-grid card: logo, identity, live price/mcap, graduation progress.
- * Server-safe (pure markup); hover treatment comes from .arch-token-card.
+ * Launch-grid card: logo, identity, live price/mcap, graduation progress, and
+ * the dev (creator) address linking to the explorer. The whole card is a
+ * stretched link; the dev link sits above it so both stay clickable without
+ * nesting anchors.
  */
 export function TokenCard({ token, image }: { readonly token: LaunchpadToken; readonly image?: string | undefined }) {
   const progressPct =
     token.quoteBalance >= GRADUATION_UNITS ? 100 : Number((token.quoteBalance * 100n) / GRADUATION_UNITS);
 
   return (
-    <Link href={`/tokens/${token.token}`} className="arch-token-card" style={{ textDecoration: "none", color: "inherit" }}>
+    <div className="arch-token-card" style={{ position: "relative" }}>
+      <Link
+        href={`/tokens/${token.token}`}
+        aria-label={`${token.name} (${token.symbol})`}
+        style={{ position: "absolute", inset: 0, zIndex: 1, borderRadius: 16 }}
+      />
+
       <div style={{ display: "flex", alignItems: "center", gap: "0.7rem", minWidth: 0 }}>
         <TokenAvatar image={image} symbol={token.symbol} size={44} radius={12} />
         <div style={{ minWidth: 0 }}>
@@ -51,6 +60,19 @@ export function TokenCard({ token, image }: { readonly token: LaunchpadToken; re
       ) : (
         <div className="arch-note" style={{ fontSize: "0.7rem" }}>Graduated · liquidity locked forever</div>
       )}
-    </Link>
+
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
+        <span className="arch-note" style={{ fontSize: "0.7rem" }}>Dev</span>
+        <a
+          href={`${ARC_EXPLORER}/address/${token.creator}`}
+          target="_blank"
+          rel="noreferrer"
+          className="arch-note"
+          style={{ position: "relative", zIndex: 2, fontFamily: "monospace", fontSize: "0.72rem", textDecoration: "underline", textUnderlineOffset: 3 }}
+        >
+          {token.creator.slice(0, 6)}…{token.creator.slice(-4)} ↗
+        </a>
+      </div>
+    </div>
   );
 }

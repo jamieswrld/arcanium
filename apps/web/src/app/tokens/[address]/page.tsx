@@ -11,7 +11,7 @@ import { CopyButton } from "@/components/CopyButton";
 import { CreatorFees } from "@/components/CreatorFees";
 import { fetchTokenImage } from "@/lib/tokenImages";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 10; // edge-cached shell; 2s client polling keeps the terminal live
 
 interface TokenPageProps {
   readonly params: Promise<{ address: string }>;
