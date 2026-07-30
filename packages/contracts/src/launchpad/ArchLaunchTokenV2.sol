@@ -40,7 +40,10 @@ contract ArchLaunchTokenV2 is ERC20 {
     address public pool;
 
     // ---- Divium accrual (cumulative index; O(1) per transfer) ----
-    /// @notice USDC (6d) accrued per whole token, scaled 1e18.
+    /// @notice USDC (6d) accrued per whole token, scaled by ACC_PRECISION.
+    /// @dev 1e36 keeps tiny 6-decimal rewards from truncating to zero against an
+    ///      18-decimal supply (a 1e18 index loses every sub-cent distribution).
+    uint256 public constant ACC_PRECISION = 1e36;
     uint256 public rewardPerTokenStored;
     mapping(address => uint256) public userRewardPerTokenPaid;
     mapping(address => uint256) public rewardsAccrued;
@@ -93,14 +96,14 @@ contract ArchLaunchTokenV2 is ERC20 {
         if (msg.sender != taxRecipient || !rewardsEnabled) return;
         uint256 eligible = rewardEligibleSupply;
         if (eligible == 0 || usdcAmount == 0) return;
-        rewardPerTokenStored += (usdcAmount * 1e18) / eligible;
+        rewardPerTokenStored += (usdcAmount * ACC_PRECISION) / eligible;
     }
 
     /// @notice Rewards owed to `account` that have not yet been booked.
     function earned(address account) public view returns (uint256) {
         if (!rewardsEnabled || excludedFromRewards[account]) return rewardsAccrued[account];
         uint256 delta = rewardPerTokenStored - userRewardPerTokenPaid[account];
-        return rewardsAccrued[account] + (balanceOf(account) * delta) / 1e18;
+        return rewardsAccrued[account] + (balanceOf(account) * delta) / ACC_PRECISION;
     }
 
     /// @notice Distributor-only: zero an account's booked rewards after paying.
@@ -119,7 +122,7 @@ contract ArchLaunchTokenV2 is ERC20 {
         }
         uint256 delta = rewardPerTokenStored - userRewardPerTokenPaid[account];
         if (delta > 0) {
-            rewardsAccrued[account] += (balanceOf(account) * delta) / 1e18;
+            rewardsAccrued[account] += (balanceOf(account) * delta) / ACC_PRECISION;
         }
         userRewardPerTokenPaid[account] = rewardPerTokenStored;
     }

@@ -94,11 +94,11 @@ contract ArchModeDistributor is Ownable2Step, ReentrancyGuard {
     }
 
     /// @notice Factory-only, one-time mode assignment at launch.
-    function setMode(address token, Mode mode) external {
+    function setMode(address token, uint8 mode) external {
         if (msg.sender != address(factory)) revert NotFactory();
         if (modeSet[token]) revert ModeAlreadySet();
         modeSet[token] = true;
-        modeOf[token] = mode;
+        modeOf[token] = Mode(mode);
     }
 
     /// @notice Collect and route this pool's accrued fees. Permissionless.
