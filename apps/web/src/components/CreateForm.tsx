@@ -34,7 +34,7 @@ const LAUNCH_GAS_FLOOR = 40_000_000_000_000_000n; // ~0.04 native USDC
  *  launch cheaply. WebP when supported (keeps transparency, tiny), else PNG. */
 async function compressImage(file: File): Promise<string> {
   const bitmap = await createImageBitmap(file);
-  const max = 256;
+  const max = 192;
   const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
   const w = Math.max(1, Math.round(bitmap.width * scale));
   const h = Math.max(1, Math.round(bitmap.height * scale));
@@ -80,7 +80,7 @@ export function CreateForm() {
     if (!file.type.startsWith("image/")) { setImgError("Please choose an image file."); return; }
     try {
       const dataUri = await compressImage(file);
-      if (dataUri.length > 160_000) { setImgError("That image is too detailed — try a simpler logo."); return; }
+      if (dataUri.length > 48_000) { setImgError("That image is too detailed — try a simpler logo."); return; }
       setImgError(null);
       setImageUrl(dataUri);
     } catch {
@@ -175,6 +175,15 @@ export function CreateForm() {
       let newToken: string | null = null;
       for (const log of receipt.logs) {
         try { newToken = decodeEventLog({ abi: [launchedEvent], data: log.data, topics: log.topics }).args.token; break; } catch { /* not it */ }
+      }
+      // Persist the metadata (logo) so it displays immediately on the token
+      // pages, without waiting for the indexer to catch up. Fire-and-forget.
+      if (newToken !== null) {
+        void fetch(`/api/tokens/${newToken}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ metadataUri }),
+        }).catch(() => undefined);
       }
       toast({ tone: "success", title: "Token launched", description: "Your pool is live with permanently locked liquidity." });
       router.push(newToken !== null ? `/tokens/${newToken}` : "/tokens");

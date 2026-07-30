@@ -7,6 +7,8 @@ import {
   GRADUATION_UNITS,
 } from "@/lib/launchpad";
 import { formatQuoteUnits } from "@/lib/onchain";
+import { fetchTokenImages } from "@/lib/tokenImages";
+import { TokenAvatar } from "@/components/TokenAvatar";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +50,8 @@ export default async function TokensPage({ searchParams }: TokensPageProps) {
   } else if (sort === "oldest") {
     tokens = [...tokens].reverse();
   }
+
+  const images = await fetchTokenImages(tokens.map((t) => t.token));
 
   const pills = [
     { key: "newest", label: "Newest" },
@@ -123,9 +127,7 @@ export default async function TokensPage({ searchParams }: TokensPageProps) {
                   className="arch-token-row"
                 >
                   <span style={{ display: "flex", alignItems: "center", gap: "0.7rem", minWidth: 0 }}>
-                    <span aria-hidden style={{ width: 36, height: 36, borderRadius: 10, background: "var(--brand-gradient)", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, fontSize: "0.85rem", flexShrink: 0 }}>
-                      {t.symbol.slice(0, 2)}
-                    </span>
+                    <TokenAvatar image={images[t.token.toLowerCase()]} symbol={t.symbol} />
                     <span style={{ minWidth: 0 }}>
                       <span style={{ display: "block", fontWeight: 600 }}>{t.symbol}</span>
                       <span className="arch-note" style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

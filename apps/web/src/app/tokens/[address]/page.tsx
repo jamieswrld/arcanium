@@ -5,6 +5,8 @@ import { formatQuoteUnits } from "@/lib/onchain";
 import { ARC_EXPLORER, PAIR_TOKEN_SYMBOL } from "@/lib/bridgeClient";
 import { TradePanel } from "@/components/TradePanel";
 import { MarketPanels } from "@/components/MarketPanels";
+import { TokenAvatar } from "@/components/TokenAvatar";
+import { fetchTokenImage } from "@/lib/tokenImages";
 
 export const dynamic = "force-dynamic";
 
@@ -42,18 +44,14 @@ export default async function TokenPage({ params }: TokenPageProps) {
     detail.quoteBalance >= GRADUATION_UNITS
       ? 100
       : Number((detail.quoteBalance * 100n) / GRADUATION_UNITS);
+  const image = await fetchTokenImage(detail.token);
 
   return (
     <div className="arch-stack" style={{ maxWidth: 720, margin: "0 auto" }}>
       <Card>
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
           <a href="/tokens" aria-label="Back to tokens" style={{ fontSize: "1.25rem", padding: "0 0.25rem" }}>‹</a>
-          <div
-            aria-hidden
-            style={{ width: 52, height: 52, borderRadius: 14, background: "var(--brand-gradient)", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, flexShrink: 0 }}
-          >
-            {detail.symbol.slice(0, 2)}
-          </div>
+          <TokenAvatar image={image} symbol={detail.symbol} size={52} radius={14} />
           <div>
             <strong style={{ fontSize: "1.125rem" }}>{detail.name}</strong>{" "}
             <span className="arch-note">{detail.symbol}</span>

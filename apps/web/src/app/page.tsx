@@ -7,6 +7,8 @@ import {
   GRADUATION_UNITS,
 } from "@/lib/launchpad";
 import { formatQuoteUnits } from "@/lib/onchain";
+import { fetchTokenImages } from "@/lib/tokenImages";
+import { TokenAvatar } from "@/components/TokenAvatar";
 
 /**
  * Launchpad landing. Hero + the most recent launches, all live chain reads.
@@ -21,6 +23,7 @@ export default async function LaunchpadHome() {
     new Promise<Awaited<ReturnType<typeof fetchAllTokens>>>((r) => setTimeout(() => r([]), 8000)),
   ]);
   const recent = tokens.slice(0, 6);
+  const images = await fetchTokenImages(recent.map((t) => t.token));
 
   return (
     <div style={{ maxWidth: 720, margin: "0 auto" }}>
@@ -68,9 +71,7 @@ export default async function LaunchpadHome() {
                   return (
                     <Link key={t.token} href={`/tokens/${t.token}`} className="arch-token-row">
                       <span style={{ display: "flex", alignItems: "center", gap: "0.7rem", minWidth: 0 }}>
-                        <span aria-hidden style={{ width: 36, height: 36, borderRadius: 10, background: "var(--brand-gradient)", color: "#fff", display: "grid", placeItems: "center", fontWeight: 700, fontSize: "0.85rem", flexShrink: 0 }}>
-                          {t.symbol.slice(0, 2)}
-                        </span>
+                        <TokenAvatar image={images[t.token.toLowerCase()]} symbol={t.symbol} />
                         <span style={{ minWidth: 0 }}>
                           <span style={{ display: "block", fontWeight: 600 }}>{t.symbol}</span>
                           <span className="arch-note" style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
