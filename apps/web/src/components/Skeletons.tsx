@@ -34,9 +34,9 @@ export function TokenGridSkeleton({ count = 6 }: { readonly count?: number }) {
 
 export function StatStripSkeleton() {
   return (
-    <div className="arch-stat-grid" aria-hidden>
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="arch-stat-tile" style={{ display: "grid", gap: 8 }}>
+    <div className="arch-stat-bar" aria-hidden>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <div key={i} style={{ display: "grid", gap: 8 }}>
           <Sk h={10} w="60%" />
           <Sk h={20} w="40%" />
         </div>

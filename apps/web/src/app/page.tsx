@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { arcPublicClient, fetchAllTokens, formatUsdCompact } from "@/lib/launchpad";
+import { fetchProtocolStats } from "@/lib/protocolStats";
 import { fetchTokenImages } from "@/lib/tokenImages";
 import { TokenCard } from "@/components/TokenCard";
 
@@ -15,8 +16,11 @@ export default async function LaunchpadHome() {
     new Promise<Awaited<ReturnType<typeof fetchAllTokens>>>((r) => setTimeout(() => r([]), 5000)),
   ]);
   const recent = tokens.slice(0, 6);
-  const images = await fetchTokenImages(recent.map((t) => t.token));
-  const liquidity = tokens.reduce((acc, t) => acc + t.quoteBalance, 0n);
+  const [images, stats] = await Promise.all([
+    fetchTokenImages(recent.map((t) => t.token)),
+    fetchProtocolStats(arcPublicClient(), tokens).catch(() => ({ trades: 0, volAllUnits: 0n, vol24hUnits: 0n })),
+  ]);
+  const graduated = tokens.filter((t) => t.graduated).length;
 
   return (
     <div>
@@ -45,18 +49,26 @@ export default async function LaunchpadHome() {
       </div>
 
       <div className="arch-stack">
-        <div className="arch-stat-grid">
-          <div className="arch-stat-tile">
+        <div className="arch-stat-bar">
+          <div>
             <div className="arch-stat-label">Tokens launched</div>
             <div className="arch-stat-value">{tokens.length}</div>
           </div>
-          <div className="arch-stat-tile">
-            <div className="arch-stat-label">Locked liquidity</div>
-            <div className="arch-stat-value">{formatUsdCompact(liquidity)}</div>
+          <div>
+            <div className="arch-stat-label">24h volume</div>
+            <div className="arch-stat-value">{formatUsdCompact(stats.vol24hUnits)}</div>
           </div>
-          <div className="arch-stat-tile">
-            <div className="arch-stat-label">Launch fee</div>
-            <div className="arch-stat-value" style={{ color: "var(--positive)" }}>Free</div>
+          <div>
+            <div className="arch-stat-label">All-time volume</div>
+            <div className="arch-stat-value">{formatUsdCompact(stats.volAllUnits)}</div>
+          </div>
+          <div>
+            <div className="arch-stat-label">Trades</div>
+            <div className="arch-stat-value">{stats.trades.toLocaleString("en-US")}</div>
+          </div>
+          <div>
+            <div className="arch-stat-label">Graduated</div>
+            <div className="arch-stat-value">{graduated}</div>
           </div>
         </div>
 

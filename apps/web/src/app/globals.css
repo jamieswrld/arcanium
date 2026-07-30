@@ -326,6 +326,35 @@ main {
     background: color-mix(in oklch, var(--card) 85%, transparent);
     box-shadow: var(--shadow-sm);
   }
+  /* Single horizontal protocol-stats bar with hairline dividers. */
+  .arch-stat-bar {
+    @apply grid rounded-2xl border border-border/80;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    background: color-mix(in oklch, var(--card) 88%, transparent);
+    box-shadow: var(--shadow-sm), inset 0 1px 0 oklch(1 0 0 / 0.04);
+    overflow: hidden;
+  }
+  .arch-stat-bar > div {
+    @apply px-5 py-4;
+  }
+  .arch-stat-bar > div + div {
+    border-left: 1px solid color-mix(in oklch, var(--border) 55%, transparent);
+  }
+  @media (max-width: 860px) {
+    .arch-stat-bar {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .arch-stat-bar > div:nth-child(4) {
+      border-left: none;
+      border-top: 1px solid color-mix(in oklch, var(--border) 55%, transparent);
+    }
+    .arch-stat-bar > div:nth-child(5) {
+      border-top: 1px solid color-mix(in oklch, var(--border) 55%, transparent);
+    }
+    .arch-stat-bar > div {
+      padding: 0.7rem 0.9rem;
+    }
+  }
   .arch-stat-label {
     @apply text-[0.72rem] uppercase tracking-wide text-muted-foreground font-medium;
   }
