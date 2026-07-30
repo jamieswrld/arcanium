@@ -10,10 +10,31 @@ export const FACTORY_ADDRESS = process.env["NEXT_PUBLIC_ARCH_LAUNCHPAD_FACTORY_A
 /** Previous factory generation — tokens launched there stay listed/tradable. */
 export const LEGACY_FACTORY_ADDRESS: Hex =
   (process.env["NEXT_PUBLIC_ARCH_LEGACY_FACTORY_ADDRESS"] as Hex | undefined) ??
-  "0xa024664ad5d30f3c0b18b931ddb6f64a96de8ed3";
+  "0xE2aA88806872C2a02A4ab439584d457002983600";
 export const GRADUATION_ADDRESS = process.env["NEXT_PUBLIC_ARCH_GRADUATION_REGISTRY_ADDRESS"] as Hex | undefined;
 export const DISTRIBUTOR_ADDRESS = process.env["NEXT_PUBLIC_ARCH_FEE_DISTRIBUTOR_ADDRESS"] as Hex | undefined;
 export const ROUTER_ADDRESS = process.env["NEXT_PUBLIC_UNISWAP_SWAP_ROUTER_ADDRESS"] as Hex | undefined;
+/** Mode distributor (v4): routes creator fees by launch mode. */
+export const MODE_DISTRIBUTOR_ADDRESS =
+  (process.env["NEXT_PUBLIC_ARCH_MODE_DISTRIBUTOR_ADDRESS"] as Hex | undefined) ??
+  "0xed233972c8a24dFA91671B94E2bb0B1E1E2f943D";
+
+/** Launch modes, fixed at launch and immutable. */
+export const LAUNCH_MODES = [
+  { id: 0, key: "standard", label: "Standard", blurb: "Creator fees are paid to your wallet." },
+  { id: 1, key: "divium", label: "Divium", blurb: "Creator fees are paid out to everyone holding the token, in USDC." },
+  { id: 2, key: "arcane", label: "Arcane Mode", blurb: "Creator fees buy the token on the market and burn it forever." },
+] as const;
+
+export const modeDistributorAbi = [
+  { type: "function", name: "modeOf", stateMutability: "view", inputs: [{ type: "address" }], outputs: [{ type: "uint8" }] },
+  { type: "function", name: "modeSet", stateMutability: "view", inputs: [{ type: "address" }], outputs: [{ type: "bool" }] },
+  { type: "function", name: "claimable", stateMutability: "view", inputs: [{ type: "address" }, { type: "address" }], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "claimRewards", stateMutability: "nonpayable", inputs: [{ type: "address" }], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "distribute", stateMutability: "nonpayable", inputs: [{ type: "address" }], outputs: [] },
+  { type: "function", name: "creatorShareBps", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+] as const;
+
 export const LIQUIDITY_VAULT_ADDRESS = process.env["NEXT_PUBLIC_ARCH_LIQUIDITY_VAULT_ADDRESS"] as Hex | undefined;
 
 export const GRADUATION_UNITS = 9_000_000_000n; // 9,000 quote units (6d)
@@ -80,6 +101,8 @@ export const factoryAbi = [
           { name: "minTokensOut", type: "uint256" },
           { name: "deadline", type: "uint256" },
           { name: "feeRecipient", type: "address" },
+          { name: "taxBps", type: "uint256" },
+          { name: "mode", type: "uint8" },
         ],
       },
     ],

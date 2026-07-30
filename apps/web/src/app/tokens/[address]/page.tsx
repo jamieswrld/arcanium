@@ -9,6 +9,7 @@ import { TokenAvatar } from "@/components/TokenAvatar";
 import { LivePrice } from "@/components/LivePrice";
 import { CopyButton } from "@/components/CopyButton";
 import { CreatorFees } from "@/components/CreatorFees";
+import { TokenMode } from "@/components/TokenMode";
 import { fetchTokenImage } from "@/lib/tokenImages";
 
 export const revalidate = 10; // edge-cached shell; 2s client polling keeps the terminal live
@@ -105,6 +106,8 @@ export default async function TokenPage({ params }: TokenPageProps) {
           <Card title="Trade">
             <TradePanel token={detail.token} pairToken={detail.pairToken} symbol={detail.symbol} />
           </Card>
+
+          <TokenMode token={detail.token} />
 
           <CreatorFees
             token={detail.token}

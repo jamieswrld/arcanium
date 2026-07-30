@@ -1,6 +1,5 @@
 import { Card, StatRow } from "@arch/ui";
 import { CreateForm } from "@/components/CreateForm";
-import { ArcaneWandIcon, DiviumBillsIcon } from "@/components/ModeIcons";
 
 /**
  * Create token — live launch flow. The review facts below are constants of
@@ -21,48 +20,6 @@ export default function CreateTokenPage() {
           <CreateForm />
         </Card>
 
-
-        <Card title="Launch modes">
-          <p className="arch-note" style={{ margin: "0 0 0.9rem" }}>
-            Optional ways to direct your creator fees, chosen at launch and fixed forever.
-            Coming soon.
-          </p>
-          <div style={{ display: "grid", gap: "0.6rem" }}>
-            {[
-              {
-                icon: <DiviumBillsIcon size={30} />,
-                name: "Divium",
-                body: "Creator fees are paid out to everyone holding the token, in USDC, pro-rata and continuously. Hold the token, get paid.",
-              },
-              {
-                icon: <ArcaneWandIcon size={30} />,
-                name: "Arcane Mode",
-                body: "Creator fees automatically buy the token on the open market and burn it to 0xdead — supply drops with every trade.",
-              },
-              {
-                icon: <span style={{ fontSize: 22, lineHeight: 1 }}>⚙️</span>,
-                name: "Tax tiers · 1% / 3% / 5% / 10%",
-                body: "Pick the trading tax at launch. 1% is the default and keeps the token a plain ERC-20; higher tiers add a tax on pool trades only — wallet transfers are never taxed.",
-              },
-            ].map((m) => (
-              <div
-                key={m.name}
-                style={{ display: "flex", gap: "0.75rem", alignItems: "flex-start", border: "1px solid var(--border)", borderRadius: 12, padding: "0.75rem 0.85rem", background: "color-mix(in oklch, var(--background) 45%, var(--card))" }}
-              >
-                <span style={{ marginTop: 2 }}>{m.icon}</span>
-                <span style={{ minWidth: 0 }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                    <strong style={{ fontSize: "0.95rem" }}>{m.name}</strong>
-                    <span style={{ fontSize: "0.62rem", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--accent)", border: "1px solid color-mix(in oklch, var(--accent) 45%, transparent)", borderRadius: 999, padding: "0.1rem 0.45rem" }}>
-                      Coming soon
-                    </span>
-                  </span>
-                  <span className="arch-note" style={{ display: "block", marginTop: 2 }}>{m.body}</span>
-                </span>
-              </div>
-            ))}
-          </div>
-        </Card>
 
         <Card title="What you get">
           <StatRow label="Supply" value="1,000,000,000 (fixed forever)" />

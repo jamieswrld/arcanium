@@ -12,7 +12,8 @@ import {
   PAIR_TOKEN_SYMBOL,
   parseQuoteUnits,
 } from "@/lib/bridgeClient";
-import { FACTORY_ADDRESS, factoryAbi } from "@/lib/launchpad";
+import { FACTORY_ADDRESS, factoryAbi, LAUNCH_MODES } from "@/lib/launchpad";
+import { ArcaneWandIcon, DiviumBillsIcon } from "@/components/ModeIcons";
 import { useToast } from "@/components/ui/Toast";
 import { ConnectButton } from "@/components/ConnectButton";
 
@@ -73,6 +74,7 @@ export function CreateForm() {
   const [imgError, setImgError] = useState<string | null>(null);
   const [creatorBuy, setCreatorBuy] = useState("");
   const [feeWallet, setFeeWallet] = useState("");
+  const [mode, setMode] = useState<0 | 1 | 2>(0);
   const [state, setState] = useState<CreateState>({ step: "form" });
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -190,6 +192,8 @@ export function CreateForm() {
           name: name.trim(), symbol: tickerNormalized, metadataUri, pairToken: PAIR_TOKEN_ADDRESS,
           creatorBuyAmount: buyAmount, minTokensOut: 0n, deadline,
           feeRecipient: (feeWalletValid && feeWalletTrimmed !== "" ? feeWalletTrimmed : "0x0000000000000000000000000000000000000000") as Hex,
+          taxBps: 0n,
+          mode,
         }],
         chainId: arcTestnet.id,
       });
@@ -286,10 +290,47 @@ export function CreateForm() {
       </div>
 
       <div className="arch-form-row">
+        <label>Creator fee mode</label>
+        <div style={{ display: "grid", gap: "0.5rem" }}>
+          {LAUNCH_MODES.map((m) => {
+            const active = mode === m.id;
+            return (
+              <button
+                key={m.key}
+                type="button"
+                disabled={busy}
+                onClick={() => setMode(m.id as 0 | 1 | 2)}
+                style={{
+                  display: "flex", gap: "0.7rem", alignItems: "flex-start", textAlign: "left", cursor: busy ? "not-allowed" : "pointer",
+                  border: `1px solid ${active ? "color-mix(in oklch, var(--primary) 65%, var(--border))" : "var(--border)"}`,
+                  background: active ? "color-mix(in oklch, var(--primary) 12%, var(--card))" : "color-mix(in oklch, var(--background) 45%, var(--card))",
+                  borderRadius: 12, padding: "0.7rem 0.8rem", color: "inherit",
+                  boxShadow: active ? "0 0 20px oklch(0.58 0.24 295 / 0.16)" : "none",
+                }}
+              >
+                <span aria-hidden style={{ marginTop: 1, width: 26, display: "grid", placeItems: "center" }}>
+                  {m.id === 1 ? <DiviumBillsIcon size={24} /> : m.id === 2 ? <ArcaneWandIcon size={24} /> : <span style={{ fontSize: 18 }}>💼</span>}
+                </span>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: "block", fontWeight: 700, fontSize: "0.92rem" }}>
+                    {m.label}{m.id === 0 ? " · default" : ""}
+                  </span>
+                  <span className="arch-note" style={{ display: "block" }}>{m.blurb}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <span className="arch-note" style={{ marginTop: "0.35rem" }}>
+          Fixed at launch and can never be changed. Traders always pay the same 1% pool fee.
+        </span>
+      </div>
+
+      <div className="arch-form-row">
         <label htmlFor="cf-feewallet">Creator fee wallet (optional)</label>
         <input id="cf-feewallet" value={feeWallet} onChange={(e) => setFeeWallet(e.target.value)} placeholder="0x… (defaults to your wallet)" spellCheck={false} disabled={busy} style={{ fontFamily: "monospace", fontSize: "0.85rem" }} />
         <span className="arch-note">
-          Trading-fee rewards for this token are paid to this wallet, forever. Leave blank to use the wallet you launch with.
+          {mode === 0 ? "Trading-fee rewards for this token are paid to this wallet, forever. Leave blank to use the wallet you launch with." : "In this mode fees go to holders or the burn — this wallet only owns the launch record."}
         </span>
       </div>
 
