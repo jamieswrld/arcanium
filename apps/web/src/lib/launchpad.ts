@@ -223,26 +223,27 @@ export async function fetchAllTokens(client: PublicClient): Promise<LaunchpadTok
   if (listCache !== null && Date.now() - listCache.at < LIST_TTL_MS) return listCache.tokens;
   if (listInFlight !== null) return listInFlight; // coalesce concurrent requests
   listInFlight = (async () => {
-    const tokens: LaunchpadToken[] = [];
-    // Current factory first (newest generation), then the legacy factory so
-    // earlier launches stay listed and tradable across upgrades.
-    for (const factory of [FACTORY_ADDRESS as Hex, LEGACY_FACTORY_ADDRESS]) {
-      const count = await client
-        .readContract({ address: factory, abi: factoryAbi, functionName: "allTokensLength" })
-        .catch(() => 0n);
-      // All index reads in parallel, then all detail reads in parallel.
-      const addresses = await Promise.all(
-        Array.from({ length: Number(count) }, (_, i) =>
-          client.readContract({ address: factory, abi: factoryAbi, functionName: "allTokens", args: [BigInt(i)] }),
-        ),
-      );
-      const details = await Promise.all(
-        addresses
-          .filter((t) => !isHidden(t))
-          .map((t) => fetchTokenFrom(client, factory, t).catch(() => null)),
-      );
-      tokens.push(...details.filter((d): d is LaunchpadToken => d !== null).reverse());
-    }
+    // Both factory generations scanned fully in parallel; every read within a
+    // generation is parallel too. Current generation lists first.
+    const generations = await Promise.all(
+      [FACTORY_ADDRESS as Hex, LEGACY_FACTORY_ADDRESS].map(async (factory) => {
+        const count = await client
+          .readContract({ address: factory, abi: factoryAbi, functionName: "allTokensLength" })
+          .catch(() => 0n);
+        const addresses = await Promise.all(
+          Array.from({ length: Number(count) }, (_, i) =>
+            client.readContract({ address: factory, abi: factoryAbi, functionName: "allTokens", args: [BigInt(i)] }),
+          ),
+        );
+        const details = await Promise.all(
+          addresses
+            .filter((t) => !isHidden(t))
+            .map((t) => fetchTokenFrom(client, factory, t).catch(() => null)),
+        );
+        return details.filter((d): d is LaunchpadToken => d !== null).reverse();
+      }),
+    );
+    const tokens = generations.flat();
     listCache = { at: Date.now(), tokens };
     return tokens;
   })();
@@ -253,12 +254,24 @@ export async function fetchAllTokens(client: PublicClient): Promise<LaunchpadTok
   }
 }
 
-/** Look up a token on the current factory, falling back to the legacy one. */
+/** Short per-token detail cache: repeat visits and back-navigation paint from
+ *  memory while the client's live polling keeps the numbers current. */
+const DETAIL_TTL_MS = 10_000;
+const detailCache = new Map<string, { at: number; value: LaunchpadToken | null }>();
+
+/** Look up a token on both factory generations in parallel (current wins). */
 export async function fetchToken(client: PublicClient, token: Hex): Promise<LaunchpadToken | null> {
   if (FACTORY_ADDRESS === undefined) return null;
-  const current = await fetchTokenFrom(client, FACTORY_ADDRESS, token);
-  if (current !== null) return current;
-  return fetchTokenFrom(client, LEGACY_FACTORY_ADDRESS, token);
+  const key = token.toLowerCase();
+  const hit = detailCache.get(key);
+  if (hit !== undefined && Date.now() - hit.at < DETAIL_TTL_MS) return hit.value;
+  const [current, legacy] = await Promise.all([
+    fetchTokenFrom(client, FACTORY_ADDRESS, token).catch(() => null),
+    fetchTokenFrom(client, LEGACY_FACTORY_ADDRESS, token).catch(() => null),
+  ]);
+  const value = current ?? legacy;
+  detailCache.set(key, { at: Date.now(), value });
+  return value;
 }
 
 async function fetchTokenFrom(client: PublicClient, factory: Hex, token: Hex): Promise<LaunchpadToken | null> {

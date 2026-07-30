@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function LaunchpadHome() {
   const tokens = await Promise.race([
     fetchAllTokens(arcPublicClient()).catch(() => []),
-    new Promise<Awaited<ReturnType<typeof fetchAllTokens>>>((r) => setTimeout(() => r([]), 8000)),
+    new Promise<Awaited<ReturnType<typeof fetchAllTokens>>>((r) => setTimeout(() => r([]), 5000)),
   ]);
   const recent = tokens.slice(0, 6);
   const images = await fetchTokenImages(recent.map((t) => t.token));

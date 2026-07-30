@@ -22,7 +22,7 @@ export default async function TokensPage({ searchParams }: TokensPageProps) {
   const { sort = "newest", q = "" } = await searchParams;
   let tokens = await Promise.race([
     fetchAllTokens(arcPublicClient()).catch(() => []),
-    new Promise<Awaited<ReturnType<typeof fetchAllTokens>>>((r) => setTimeout(() => r([]), 8000)),
+    new Promise<Awaited<ReturnType<typeof fetchAllTokens>>>((r) => setTimeout(() => r([]), 5000)),
   ]);
 
   const query = q.trim().toLowerCase();

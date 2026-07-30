@@ -13,11 +13,11 @@ export const wagmiConfig = createConfig({
   connectors: [injected({ shimDisconnect: true })],
   multiInjectedProviderDiscovery: true,
   transports: {
-    // Reads go through our same-origin proxy (reliable in the browser), then
-    // fall back to the direct RPC if the proxy itself is unreachable.
+    // Direct to the RPC first (one network hop, CORS-open), same-origin proxy
+    // as the reliability fallback.
     [arcTestnet.id]: fallback([
+      http(process.env["NEXT_PUBLIC_ARC_RPC_URL"] ?? "https://rpc.blockdaemon.mainnet.arc.io", { timeout: 12_000 }),
       http("/api/arc-rpc", { timeout: 15_000 }),
-      http(process.env["NEXT_PUBLIC_ARC_RPC_URL"] ?? "https://rpc.blockdaemon.mainnet.arc.io", { timeout: 15_000 }),
     ]),
   },
 });

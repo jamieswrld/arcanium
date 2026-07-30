@@ -33,6 +33,9 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={inter.variable}>
+      <head>
+        <link rel="preconnect" href="https://rpc.blockdaemon.mainnet.arc.io" crossOrigin="anonymous" />
+      </head>
       <body>
         <Providers>
           <header className="arch-header">
