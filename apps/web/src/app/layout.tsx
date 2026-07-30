@@ -6,6 +6,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 import { WalletButton } from "@/components/WalletButton";
 import { VersionGuard } from "@/components/VersionGuard";
+import { SearchCommand } from "@/components/SearchCommand";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
@@ -51,6 +52,7 @@ export default function RootLayout({
               ))}
             </nav>
             <div className="arch-header-right">
+              <SearchCommand />
               <a
                 href="https://x.com/arcaniumtrade"
                 target="_blank"

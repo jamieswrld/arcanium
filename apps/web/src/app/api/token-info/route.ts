@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { arcPublicClient, fetchAllTokens, FACTORY_ADDRESS, LEGACY_FACTORY_ADDRESS } from "@/lib/launchpad";
+import { fetchTokenImages } from "@/lib/tokenImages";
 
 /**
  * Public launch index for terminals and aggregators: every Arcanium token,
@@ -19,6 +20,7 @@ export function OPTIONS(): NextResponse {
 
 export async function GET(): Promise<NextResponse> {
   const tokens = await fetchAllTokens(arcPublicClient()).catch(() => []);
+  const images = await fetchTokenImages(tokens.slice(0, 50).map((t) => t.token)).catch(() => ({} as Record<string, string>));
   return NextResponse.json(
     {
       chainId: 5042,
@@ -33,6 +35,8 @@ export async function GET(): Promise<NextResponse> {
         pool: t.pool,
         creator: t.creator,
         graduated: t.graduated,
+        marketCapUsd: (Number(t.marketCapUnits) / 1e6).toFixed(0),
+        image: images[t.token.toLowerCase()] ?? null,
         detail: `https://arcanium.trade/api/token-info/${t.token}`,
       })),
     },

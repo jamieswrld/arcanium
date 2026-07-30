@@ -593,4 +593,7 @@ main {
     overflow-x: auto;
     white-space: nowrap;
   }
+  .search-hint-text {
+    display: none;
+  }
 }
