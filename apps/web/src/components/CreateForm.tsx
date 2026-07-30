@@ -226,9 +226,7 @@ export function CreateForm() {
           disabled={busy}
           style={{ display: "flex", gap: "0.75rem", alignItems: "center", width: "100%", textAlign: "left", cursor: busy ? "not-allowed" : "pointer", background: "var(--muted)", border: "1px dashed var(--border)", borderRadius: 12, padding: "0.7rem 0.8rem" }}
         >
-          <span aria-hidden style={{ width: 52, height: 52, borderRadius: 12, flexShrink: 0, background: imageUrl === "" ? "var(--brand-gradient)" : `center/cover no-repeat url(${JSON.stringify(imageUrl)})`, display: "grid", placeItems: "center", color: "#fff", fontWeight: 700 }}>
-            {imageUrl === "" ? (tickerNormalized.slice(0, 2) || "AR") : ""}
-          </span>
+          <span aria-hidden style={{ width: 52, height: 52, borderRadius: 12, flexShrink: 0, background: imageUrl === "" ? "var(--card)" : `center/cover no-repeat url(${JSON.stringify(imageUrl)})`, border: imageUrl === "" ? "1px solid var(--border)" : "none" }} />
           <span style={{ minWidth: 0 }}>
             <span style={{ display: "block", fontWeight: 600, fontSize: "0.9rem" }}>{imageUrl === "" ? "Click to upload a logo" : "Change logo"}</span>
             <span className="arch-note">PNG, JPG, GIF or WebP — we resize it for you.</span>
