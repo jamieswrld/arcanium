@@ -2,7 +2,7 @@ import { Badge, Card, StatRow } from "@arch/ui";
 import type { Hex } from "viem";
 import { arcPublicClient, fetchToken, formatPriceE18, GRADUATION_UNITS } from "@/lib/launchpad";
 import { formatQuoteUnits } from "@/lib/onchain";
-import { ARC_EXPLORER } from "@/lib/bridgeClient";
+import { ARC_EXPLORER, PAIR_TOKEN_SYMBOL } from "@/lib/bridgeClient";
 import { TradePanel } from "@/components/TradePanel";
 import { MarketPanels } from "@/components/MarketPanels";
 
@@ -76,7 +76,7 @@ export default async function TokenPage({ params }: TokenPageProps) {
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.4rem" }}>
               <span className="arch-note">Graduation progress</span>
               <span className="arch-note" style={{ fontVariantNumeric: "tabular-nums" }}>
-                {formatQuoteUnits(detail.quoteBalance)} / 9,000 aUSD
+                {formatQuoteUnits(detail.quoteBalance)} / 9,000 {PAIR_TOKEN_SYMBOL}
               </span>
             </div>
             <div className="arch-progress" aria-hidden>
@@ -90,8 +90,8 @@ export default async function TokenPage({ params }: TokenPageProps) {
         <Card title="Market">
           <StatRow label="Price" value={formatPriceE18(detail.priceE18)} />
           <StatRow label="Market cap" value={`$${formatQuoteUnits(detail.marketCapUnits)}`} />
-          <StatRow label="Pool quote balance" value={`${formatQuoteUnits(detail.quoteBalance)} aUSD`} />
-          <StatRow label="Graduation threshold" value="9,000 aUSD" />
+          <StatRow label="Pool quote balance" value={`${formatQuoteUnits(detail.quoteBalance)} ${PAIR_TOKEN_SYMBOL}`} />
+          <StatRow label="Graduation threshold" value={`9,000 ${PAIR_TOKEN_SYMBOL}`} />
           <StatRow label="Supply" value="1,000,000,000 (fixed)" />
           <StatRow label="Creator" value={`${detail.creator.slice(0, 8)}…`} />
           <p className="arch-note" style={{ marginBottom: 0 }}>
@@ -135,7 +135,7 @@ export default async function TokenPage({ params }: TokenPageProps) {
           The full launch supply sits in Uniswap v3 position #{detail.positionId.toString()},
           owned by the Arcanium liquidity vault. It can never be withdrawn or
           transferred — by anyone, including Arcanium. The creator earns a share of
-          trading fees for the life of the pool. Graduation at 9,000 aUSD is a
+          trading fees for the life of the pool. Graduation at 9,000 {PAIR_TOKEN_SYMBOL} is a
           permanent label only.
         </p>
       </Card>

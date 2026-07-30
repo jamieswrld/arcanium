@@ -9,16 +9,14 @@ import { NetworkPill, WalletButton } from "@/components/WalletButton";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "Arcanium — Bridge and launch on Arc",
+  title: "Arcanium — Launch tokens on Arc",
   description:
-    "Bridge USDC to Arc. Launch a token. Trade immediately through permanently locked Uniswap liquidity.",
+    "Launch a token on Arc paired with native USDC. Real Uniswap liquidity, permanently locked from block one.",
 };
 
 const NAV = [
-  { href: "/", label: "Bridge" },
-  { href: "/tokens", label: "Launchpad" },
+  { href: "/", label: "Launchpad" },
   { href: "/create", label: "Create" },
-  { href: "/gas", label: "Gas" },
   { href: "/portfolio", label: "Portfolio" },
   { href: "/docs", label: "Docs" },
 ];

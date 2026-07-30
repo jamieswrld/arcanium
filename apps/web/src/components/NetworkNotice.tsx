@@ -24,8 +24,8 @@ export function NetworkNotice() {
       <div className="flex-1">
         <div className="font-semibold text-sm">Wrong network</div>
         <div className="arch-note">
-          Your wallet is on an unsupported network. Arcanium runs on <strong>Base</strong> (to bridge in and out)
-          and <strong>Arc</strong> (to trade and launch). Switch below — your wallet will add the network if it&apos;s new.
+          Your wallet is on an unsupported network. Arcanium runs on <strong>Arc</strong> — switch below
+          and your wallet will add the network if it&apos;s new.
         </div>
       </div>
       <div className="flex gap-2 shrink-0">
@@ -33,17 +33,9 @@ export function NetworkNotice() {
           className="arch-wallet-button"
           style={{ cursor: "pointer", opacity: 1 }}
           disabled={isPending}
-          onClick={() => switchChain({ chainId: baseChain.id })}
-        >
-          {isPending ? "Switching…" : "Switch to Base"}
-        </button>
-        <button
-          className="arch-max-chip"
-          style={{ cursor: "pointer", padding: "0.5rem 0.85rem" }}
-          disabled={isPending}
           onClick={() => switchChain({ chainId: arcTestnet.id })}
         >
-          Switch to Arc
+          {isPending ? "Switching…" : "Switch to Arc"}
         </button>
       </div>
     </div>

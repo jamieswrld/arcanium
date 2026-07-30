@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAccount, useBalance, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
 import type { Hex } from "viem";
-import { arcTestnet, erc20Abi, formatQuoteUnits, parseQuoteUnits, ARC_EXPLORER } from "@/lib/bridgeClient";
+import { arcTestnet, erc20Abi, formatQuoteUnits, parseQuoteUnits, ARC_EXPLORER, PAIR_TOKEN_SYMBOL } from "@/lib/bridgeClient";
 import { useToast } from "@/components/ui/Toast";
 import { ConnectButton } from "@/components/ConnectButton";
 import { ROUTER_ADDRESS, routerAbi } from "@/lib/launchpad";
@@ -58,7 +58,7 @@ function GasRows() {
       </div>
       {noGas ? (
         <p className="arch-note" style={{ color: "var(--arch-warning)", margin: "0.25rem 0 0" }}>
-          You have no Arc gas — <a href="/gas" style={{ textDecoration: "underline" }}>buy a little with aUSD</a> (gas-free signature), then trade.
+          You have no Arc gas — add a little native USDC to your wallet on Arc, then trade.
         </p>
       ) : null}
     </div>
@@ -215,13 +215,13 @@ export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
       <div className="arch-panel">
         <div className="arch-panel-head">
           <span>{side === "buy" ? "You pay" : "You sell"}</span>
-          <span className="arch-asset-chip">{side === "buy" ? "aUSD" : symbol}</span>
+          <span className="arch-asset-chip">{side === "buy" ? PAIR_TOKEN_SYMBOL : symbol}</span>
         </div>
         <div className="arch-amount-row">
           <input className="arch-amount-input" placeholder="0.00" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)} disabled={busy} aria-label="Trade amount" />
         </div>
         <div className="arch-panel-foot">
-          <span>Balance: {bal !== undefined ? (side === "buy" ? `${formatQuoteUnits(bal)} aUSD` : `${formatToken18(bal)} ${symbol}`) : "—"}</span>
+          <span>Balance: {bal !== undefined ? (side === "buy" ? `${formatQuoteUnits(bal)} ${PAIR_TOKEN_SYMBOL}` : `${formatToken18(bal)} ${symbol}`) : "—"}</span>
         </div>
         <div className="arch-pct-chips">
           {[25, 50, 75, 100].map((pct) => (

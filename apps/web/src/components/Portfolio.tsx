@@ -1,7 +1,7 @@
 "use client";
 
 import { useAccount, useBalance, useReadContract } from "wagmi";
-import { arcTestnet, AUSD_ADDRESS, baseChain, erc20Abi, formatQuoteUnits, USDC_ADDRESS } from "@/lib/bridgeClient";
+import { arcTestnet, baseChain, erc20Abi, formatQuoteUnits, USDC_ADDRESS } from "@/lib/bridgeClient";
 import { ConnectButton } from "@/components/ConnectButton";
 import { NetworkNotice } from "@/components/NetworkNotice";
 
@@ -34,14 +34,6 @@ export function Portfolio() {
     chainId: baseChain.id,
     query: { enabled: address !== undefined, refetchInterval: 15_000 },
   });
-  const ausd = useReadContract({
-    address: AUSD_ADDRESS,
-    abi: erc20Abi,
-    functionName: "balanceOf",
-    args: address === undefined ? undefined : [address],
-    chainId: arcTestnet.id,
-    query: { enabled: address !== undefined && AUSD_ADDRESS !== undefined, refetchInterval: 15_000 },
-  });
   const arcGas = useBalance({
     address,
     chainId: arcTestnet.id,
@@ -53,7 +45,7 @@ export function Portfolio() {
       <div className="arch-stack">
         <Card>
           <p className="arch-note" style={{ margin: 0 }}>
-            Connect your wallet to see your USDC, aUSD, and Arc gas across both chains.
+            Connect your wallet to see your USDC on Arc and Base.
           </p>
           <div style={{ marginTop: "0.75rem", maxWidth: 240 }}>
             <ConnectButton />
@@ -66,13 +58,12 @@ export function Portfolio() {
   // Always show every asset row — 0.00 when empty, "…" while a read is in
   // flight — so a slow or failed RPC never makes a balance silently vanish.
   const rows: Row[] = [
+    { asset: "USDC", chain: "Arc", amount: arcGas.data !== undefined ? fmtNative(arcGas.data.value) : (arcGas.isLoading ? "…" : "0"), usd: arcGas.data !== undefined ? Number(arcGas.data.value) / 1e18 : 0, pending: arcGas.data === undefined && arcGas.isLoading },
     { asset: "USDC", chain: "Base", amount: usdc.data !== undefined ? formatQuoteUnits(usdc.data) : (usdc.isLoading ? "…" : "0"), usd: usdc.data !== undefined ? Number(usdc.data) / 1e6 : 0, pending: usdc.data === undefined && usdc.isLoading },
-    { asset: "aUSD", chain: "Arc", amount: ausd.data !== undefined ? formatQuoteUnits(ausd.data) : (ausd.isLoading ? "…" : "0"), usd: ausd.data !== undefined ? Number(ausd.data) / 1e6 : 0, pending: ausd.data === undefined && ausd.isLoading },
-    { asset: "USDC (gas)", chain: "Arc", amount: arcGas.data !== undefined ? fmtNative(arcGas.data.value) : (arcGas.isLoading ? "…" : "0"), usd: arcGas.data !== undefined ? Number(arcGas.data.value) / 1e18 : 0, pending: arcGas.data === undefined && arcGas.isLoading },
   ];
 
   const total = rows.reduce((a, r) => a + r.usd, 0);
-  const loading = usdc.isLoading || ausd.isLoading || arcGas.isLoading;
+  const loading = usdc.isLoading || arcGas.isLoading;
 
   return (
     <div className="arch-stack">
@@ -99,7 +90,7 @@ export function Portfolio() {
           </div>
           {rows.length === 0 ? (
             <p className="arch-note" style={{ margin: "1rem 0 0", textAlign: "center" }}>
-              {loading ? "Reading balances…" : "No balances yet — bridge some USDC to get started."}
+              {loading ? "Reading balances…" : "No balances yet — add USDC to your wallet on Arc to get started."}
             </p>
           ) : (
             <div style={{ display: "grid", gap: "0.25rem", marginTop: "0.5rem" }}>

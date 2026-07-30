@@ -29,7 +29,10 @@ export const wagmiConfig = createConfig({
   multiInjectedProviderDiscovery: true,
   transports: {
     [baseChain.id]: baseTransport,
-    [arcTestnet.id]: http(),
+    [arcTestnet.id]: fallback([
+      http(process.env["NEXT_PUBLIC_ARC_RPC_URL"] ?? "https://rpc.blockdaemon.mainnet.arc.io", { timeout: 12_000 }),
+      http("https://rpc.blockdaemon.mainnet.arc.io", { timeout: 12_000 }),
+    ]),
   },
 });
 

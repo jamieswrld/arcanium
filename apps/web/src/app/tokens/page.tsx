@@ -144,7 +144,7 @@ export default async function TokensPage({ searchParams }: TokensPageProps) {
       </Card>
 
       <p className="arch-note" style={{ textAlign: "center", margin: 0 }}>
-        <Badge label="ⓘ" /> A token graduates permanently at 9,000 aUSD in its pool — a
+        <Badge label="ⓘ" /> A token graduates permanently at 9,000 USDC in its pool — a
         milestone label only. It never unlocks liquidity or changes the market.
       </p>
     </div>

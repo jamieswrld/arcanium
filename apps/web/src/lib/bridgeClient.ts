@@ -17,11 +17,11 @@ export const arcTestnet = defineChain({
   nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
   rpcUrls: {
     default: {
-      http: [process.env["NEXT_PUBLIC_ARC_RPC_URL"] ?? "https://5042.rpc.thirdweb.com"],
+      http: [process.env["NEXT_PUBLIC_ARC_RPC_URL"] ?? "https://rpc.blockdaemon.mainnet.arc.io"],
     },
   },
   blockExplorers: {
-    default: { name: "Arc Explorer", url: process.env["NEXT_PUBLIC_ARC_EXPLORER_URL"] ?? "https://arc.exploreme.pro" },
+    default: { name: "Arc Explorer", url: process.env["NEXT_PUBLIC_ARC_EXPLORER_URL"] ?? "https://arc-mainnet.cloud.blockscout.com" },
   },
   testnet: process.env["NEXT_PUBLIC_ARC_CHAIN_ID"] !== "5042",
 });
