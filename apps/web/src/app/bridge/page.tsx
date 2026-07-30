@@ -1,4 +1,5 @@
 import { CctpBridge } from "@/components/CctpBridge";
+import { BridgeOrders } from "@/components/BridgeOrders";
 
 export const metadata = { title: "Bridge — Arcanium" };
 
@@ -21,6 +22,8 @@ export default function BridgePage() {
       <section className="arch-card">
         <CctpBridge />
       </section>
+
+      <BridgeOrders />
 
       <p className="arch-note" style={{ textAlign: "center", margin: 0 }}>
         Burns and mints are Circle-attested. If a transfer ever stalls mid-way, your
