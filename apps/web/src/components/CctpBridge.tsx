@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAccount, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
 import { base } from "viem/chains";
 import type { Hex } from "viem";
@@ -11,12 +11,12 @@ import {
   ARC_USDC,
   BASE_DOMAIN,
   BASE_USDC,
-  FAST_FINALITY,
-  maxFeeFor,
   BRIDGE_FEE_BPS,
   BRIDGE_ROUTER_ARC,
   BRIDGE_ROUTER_BASE,
   bridgeRouterAbi,
+  FAST_FINALITY,
+  maxFeeFor,
 } from "@/lib/cctp";
 import { UsdcLogo } from "@/components/UsdcLogo";
 import { ConnectButton } from "@/components/ConnectButton";
@@ -24,20 +24,78 @@ import { useToast } from "@/components/ui/Toast";
 
 type Direction = "toArc" | "toBase";
 
-type Step =
-  | { readonly id: "idle" }
-  | { readonly id: "switching" }
-  | { readonly id: "approving" }
-  | { readonly id: "burning" }
-  | { readonly id: "attesting"; readonly burnTx: Hex }
-  | { readonly id: "minting"; readonly burnTx: Hex }
-  | { readonly id: "done"; readonly burnTx: Hex; readonly mintTx: string }
-  | { readonly id: "error"; readonly message: string };
+type Phase = "idle" | "switching" | "approving" | "burning" | "attesting" | "claiming" | "done" | "error";
+
+interface Pending {
+  readonly burnTx: Hex;
+  readonly direction: Direction;
+  readonly amount: string; // 6d units
+  readonly at: number;
+}
+
+const STORE_KEY = "arcanium.bridge.pending";
+
+function loadPending(): Pending | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(STORE_KEY);
+    if (raw === null) return null;
+    const p = JSON.parse(raw) as Pending;
+    return /^0x[0-9a-fA-F]{64}$/.test(p.burnTx) ? p : null;
+  } catch {
+    return null;
+  }
+}
+function savePending(p: Pending | null): void {
+  if (typeof window === "undefined") return;
+  if (p === null) window.localStorage.removeItem(STORE_KEY);
+  else window.localStorage.setItem(STORE_KEY, JSON.stringify(p));
+}
+
+function Spinner() {
+  return (
+    <span
+      aria-hidden
+      style={{
+        width: 15, height: 15, borderRadius: 999, display: "inline-block",
+        border: "2px solid oklch(1 0 0 / 0.35)", borderTopColor: "#fff",
+        animation: "spin 0.75s linear infinite", marginRight: "0.5rem", verticalAlign: "-2px",
+      }}
+    />
+  );
+}
+
+/** One row of the transfer checklist: done ✓ / active spinner / waiting dot. */
+function Step({ state, title, note }: { readonly state: "done" | "active" | "todo"; readonly title: string; readonly note: string }) {
+  return (
+    <div style={{ display: "flex", gap: "0.6rem", alignItems: "flex-start", padding: "0.4rem 0" }}>
+      <span
+        aria-hidden
+        style={{
+          width: 18, height: 18, borderRadius: 999, flexShrink: 0, marginTop: 1,
+          display: "grid", placeItems: "center", fontSize: "0.62rem", fontWeight: 700,
+          background: state === "done" ? "var(--positive)" : state === "active" ? "var(--brand-gradient)" : "var(--muted)",
+          color: state === "todo" ? "var(--muted-foreground)" : "#fff",
+          border: state === "todo" ? "1px solid var(--border)" : "none",
+        }}
+      >
+        {state === "done" ? "✓" : state === "active" ? "•" : ""}
+      </span>
+      <span style={{ minWidth: 0 }}>
+        <span style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: state === "todo" ? "var(--muted-foreground)" : "var(--foreground)" }}>
+          {title}
+        </span>
+        <span className="arch-note" style={{ fontSize: "0.75rem" }}>{note}</span>
+      </span>
+    </div>
+  );
+}
 
 /**
  * Circle CCTP v2 bridge: burn USDC on the source chain, Circle attests, our
- * relayer submits the mint on the destination — so arrival needs no gas there.
- * Native USDC both sides, no wrapped assets, no third-party bridge risk.
+ * relayer claims on the destination — arrival needs no gas there. The pending
+ * transfer is persisted, so closing the tab mid-flight never loses it: the
+ * claim can always be resumed (it never creates a second deposit).
  */
 export function CctpBridge() {
   const { address, isConnected, chainId } = useAccount();
@@ -49,7 +107,44 @@ export function CctpBridge() {
 
   const [direction, setDirection] = useState<Direction>("toArc");
   const [amountText, setAmountText] = useState("");
-  const [step, setStep] = useState<Step>({ id: "idle" });
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [message, setMessage] = useState<string | null>(null);
+  const [pending, setPending] = useState<Pending | null>(null);
+  const [claimTx, setClaimTx] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [fastFeeBps, setFastFeeBps] = useState<number | null>(null);
+
+  // Circle's live fast-lane fee for this route (bps). Determines the maxFee
+  // we must allow for fast finality to engage.
+  useEffect(() => {
+    const src = direction === "toArc" ? BASE_DOMAIN : ARC_DOMAIN;
+    const dst = direction === "toArc" ? ARC_DOMAIN : BASE_DOMAIN;
+    let cancelled = false;
+    fetch(`/api/bridge/fee?src=${src}&dst=${dst}`)
+      .then((r) => r.json())
+      .then((d: { fastMinimumFee?: number | null }) => {
+        if (!cancelled && typeof d.fastMinimumFee === "number") setFastFeeBps(d.fastMinimumFee);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [direction]);
+
+  // Restore an in-flight transfer on mount.
+  useEffect(() => {
+    const p = loadPending();
+    if (p !== null) {
+      setPending(p);
+      setDirection(p.direction);
+      setPhase("attesting");
+    }
+  }, []);
+
+  // Elapsed timer while waiting on Circle.
+  useEffect(() => {
+    if (phase !== "attesting" || pending === null) return;
+    const t = setInterval(() => setElapsed(Math.round((Date.now() - pending.at) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [phase, pending]);
 
   const toArc = direction === "toArc";
   const srcChainId = toArc ? base.id : arcTestnet.id;
@@ -72,7 +167,6 @@ export function CctpBridge() {
     chainId: arcTestnet.id,
     query: { enabled: address !== undefined, refetchInterval: 10_000 },
   });
-
   const srcBalance = toArc ? baseBal.data : arcBal.data;
   const dstBalance = toArc ? arcBal.data : baseBal.data;
 
@@ -81,24 +175,86 @@ export function CctpBridge() {
     try { return parseQuoteUnits(amountText); } catch { return null; }
   }, [amountText]);
 
-  const receiveAfterFee = parsed === null ? null : parsed - (parsed * BRIDGE_FEE_BPS) / 10_000n;
+  const platformFee = parsed === null ? 0n : (parsed * BRIDGE_FEE_BPS) / 10_000n;
+  const burnAmount = parsed === null ? 0n : parsed - platformFee;
+  // Circle's fee is bps of the burn amount; round up and add a small buffer so
+  // a tick of drift can't drop us onto the slow lane.
+  const circleMax =
+    parsed === null
+      ? 0n
+      : fastFeeBps === null
+        ? maxFeeFor(burnAmount)
+        : (() => {
+            const scaled = BigInt(Math.ceil(fastFeeBps * 100)); // bps*100 for precision
+            const fee = (burnAmount * scaled) / 1_000_000n;
+            const withBuffer = fee + fee / 5n + 1n;
+            const cap = maxFeeFor(burnAmount); // never exceed the 20bps ceiling
+            return withBuffer > cap ? cap : withBuffer;
+          })();
+  const receiveMin = parsed === null ? null : parsed - platformFee - circleMax;
 
-  const busy = step.id === "switching" || step.id === "approving" || step.id === "burning" || step.id === "attesting" || step.id === "minting";
+  const busy = phase === "switching" || phase === "approving" || phase === "burning" || phase === "attesting" || phase === "claiming";
 
-  async function run(): Promise<void> {
+  /** Poll Circle, then have the relayer claim on the destination. */
+  async function settle(p: Pending): Promise<void> {
+    const srcDomain = p.direction === "toArc" ? BASE_DOMAIN : ARC_DOMAIN;
+    setPhase("attesting");
+    setMessage(null);
+    const deadline = Date.now() + 30 * 60_000; // Base finality can take ~15–20 min
+    for (;;) {
+      const res = await fetch(`/api/bridge/attest?domain=${srcDomain}&tx=${p.burnTx}`).then((r) => r.json()).catch(() => ({ status: "pending" }));
+      if (res.status === "complete") {
+        setPhase("claiming");
+        const relay = await fetch("/api/bridge/relay", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ chain: p.direction === "toArc" ? "arc" : "base", message: res.message, attestation: res.attestation }),
+        }).then((r) => r.json());
+        if (relay.txHash === undefined) {
+          const already = typeof relay.error === "string" && relay.error.includes("Already minted");
+          if (already) {
+            savePending(null);
+            setPending(null);
+            setPhase("done");
+            setMessage("This transfer was already claimed — your USDC is on " + (p.direction === "toArc" ? "Arc" : "Base") + ".");
+            return;
+          }
+          setPhase("error");
+          setMessage(relay.error ?? "Claim failed. Your deposit is attested and safe — press Resume to retry.");
+          return;
+        }
+        savePending(null);
+        setPending(null);
+        setClaimTx(relay.txHash);
+        setPhase("done");
+        void baseBal.refetch();
+        void arcBal.refetch();
+        toast({ tone: "success", title: `Bridged to ${p.direction === "toArc" ? "Arc" : "Base"}`, description: "Native USDC delivered.", href: `${p.direction === "toArc" ? ARC_EXPLORER : BASE_EXPLORER}/tx/${relay.txHash}`, hrefLabel: "View claim" });
+        return;
+      }
+      if (Date.now() > deadline) {
+        setPhase("error");
+        setMessage("Circle is still confirming this deposit. Nothing is lost — come back and press Resume to claim.");
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 4_000));
+    }
+  }
+
+  async function start(): Promise<void> {
     if (address === undefined || parsed === null || parsed === 0n) {
-      setStep({ id: "error", message: "Enter an amount." });
-      return;
+      setPhase("error"); setMessage("Enter an amount."); return;
     }
     if (srcBalance !== undefined && srcBalance < parsed) {
-      setStep({ id: "error", message: `Insufficient USDC on ${srcName}.` });
-      return;
+      setPhase("error"); setMessage(`Insufficient USDC on ${srcName}.`); return;
     }
     const srcPublic = toArc ? basePublic : arcPublic;
     if (srcPublic === undefined) return;
+    setMessage(null);
+    setClaimTx(null);
     try {
       if (chainId !== srcChainId) {
-        setStep({ id: "switching" });
+        setPhase("switching");
         await switchChainAsync({ chainId: srcChainId });
       }
 
@@ -106,78 +262,55 @@ export function CctpBridge() {
         address: srcUsdc, abi: erc20Abi, functionName: "allowance", args: [address, srcRouter],
       });
       if (allowance < parsed) {
-        setStep({ id: "approving" });
+        setPhase("approving");
         const approveTx = await writeContractAsync({
           address: srcUsdc, abi: erc20Abi, functionName: "approve", args: [srcRouter, parsed], chainId: srcChainId,
         });
         await srcPublic.waitForTransactionReceipt({ hash: approveTx });
       }
 
-      setStep({ id: "burning" });
+      setPhase("burning");
       const burnTx = await writeContractAsync({
         address: srcRouter,
         abi: bridgeRouterAbi,
         functionName: "bridge",
-        args: [
-          parsed,
-          toArc ? ARC_DOMAIN : BASE_DOMAIN,
-          addressToBytes32(address),
-          maxFeeFor(parsed),
-          FAST_FINALITY,
-        ],
+        args: [parsed, toArc ? ARC_DOMAIN : BASE_DOMAIN, addressToBytes32(address), circleMax, FAST_FINALITY],
         chainId: srcChainId,
       });
       const receipt = await srcPublic.waitForTransactionReceipt({ hash: burnTx });
       if (receipt.status !== "success") {
-        setStep({ id: "error", message: "Burn transaction reverted." });
-        return;
+        setPhase("error"); setMessage("Deposit transaction reverted."); return;
       }
 
-      // Circle attestation — fast transfers land in seconds.
-      setStep({ id: "attesting", burnTx });
-      const srcDomain = toArc ? BASE_DOMAIN : ARC_DOMAIN;
-      let message: string | null = null;
-      let attestation: string | null = null;
-      const deadline = Date.now() + 5 * 60_000;
-      for (;;) {
-        const res = await fetch(`/api/bridge/attest?domain=${srcDomain}&tx=${burnTx}`).then((r) => r.json()).catch(() => ({ status: "pending" }));
-        if (res.status === "complete") { message = res.message; attestation = res.attestation; break; }
-        if (Date.now() > deadline) {
-          setStep({ id: "error", message: "Attestation is taking longer than usual. Your funds are safe — retry in a minute and the mint will complete." });
-          return;
-        }
-        await new Promise((r) => setTimeout(r, 3_000));
-      }
-
-      // Our relayer pays destination gas — nothing needed from the user.
-      setStep({ id: "minting", burnTx });
-      const relay = await fetch("/api/bridge/relay", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ chain: toArc ? "arc" : "base", message, attestation }),
-      }).then((r) => r.json());
-      if (relay.txHash === undefined) {
-        setStep({ id: "error", message: relay.error ?? "Mint relay failed — retry shortly; your burn is attested and safe." });
-        return;
-      }
-      setStep({ id: "done", burnTx, mintTx: relay.txHash });
+      const p: Pending = { burnTx, direction, amount: parsed.toString(), at: Date.now() };
+      savePending(p);
+      setPending(p);
       setAmountText("");
-      void baseBal.refetch();
-      void arcBal.refetch();
-      toast({ tone: "success", title: `Bridged to ${dstName}`, description: `Native USDC delivered on ${dstName}.`, href: `${dstExplorer}/tx/${relay.txHash}`, hrefLabel: "View mint" });
+      await settle(p);
     } catch (err) {
-      const message = err instanceof Error ? (err.message.split("\n")[0] ?? "failed") : "failed";
-      setStep({ id: "error", message: message.toLowerCase().includes("rejected") ? "Rejected in wallet" : message });
+      const raw = err instanceof Error ? (err.message.split("\n")[0] ?? "failed") : "failed";
+      setPhase("error");
+      setMessage(raw.toLowerCase().includes("rejected") ? "Rejected in wallet" : raw);
     }
   }
 
-  const stepLabel = ((): string => {
-    switch (step.id) {
+  const stepState = (want: Phase[]): "done" | "active" | "todo" => {
+    const order: Phase[] = ["idle", "switching", "approving", "burning", "attesting", "claiming", "done"];
+    const cur = order.indexOf(phase === "error" ? "attesting" : phase);
+    const mine = Math.max(...want.map((w) => order.indexOf(w)));
+    if (phase === "done") return "done";
+    if (cur > mine) return "done";
+    if (want.includes(phase)) return "active";
+    return "todo";
+  };
+
+  const buttonLabel = ((): string => {
+    switch (phase) {
       case "switching": return `Switch to ${srcName}…`;
       case "approving": return "Approving USDC…";
-      case "burning": return `Burning on ${srcName}…`;
-      case "attesting": return "Circle attesting…";
-      case "minting": return `Minting on ${dstName} (gas-free)…`;
+      case "burning": return `Depositing on ${srcName}…`;
+      case "attesting": return `Waiting for Circle${elapsed > 0 ? ` · ${Math.floor(elapsed / 60)}m ${elapsed % 60}s` : ""}…`;
+      case "claiming": return `Claiming on ${dstName}…`;
       default: return `Bridge to ${dstName}`;
     }
   })();
@@ -194,20 +327,15 @@ export function CctpBridge() {
         {input ? (
           <input className="arch-amount-input" placeholder="0.00" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)} disabled={busy} aria-label="Amount to bridge" />
         ) : (
-          <span className="arch-amount-output">{receiveAfterFee !== null ? formatQuoteUnits(receiveAfterFee) : "0.00"}</span>
+          <span className="arch-amount-output">{receiveMin !== null && receiveMin > 0n ? formatQuoteUnits(receiveMin) : "0.00"}</span>
         )}
       </div>
       <div className="arch-panel-foot">
-        <span>{input ? "You send" : "After fees (Circle's network fee may apply)"}</span>
+        <span>{input ? "You send" : "You receive (at least)"}</span>
         <span>
           Balance: {balance !== undefined ? formatQuoteUnits(balance) : "—"}
           {input ? (
-            <button
-              className="arch-max-chip"
-              style={{ marginLeft: "0.4rem" }}
-              disabled={balance === undefined || busy}
-              onClick={() => { if (balance !== undefined) setAmountText(formatQuoteUnits(balance).replace(/,/g, "")); }}
-            >
+            <button className="arch-max-chip" style={{ marginLeft: "0.4rem" }} disabled={balance === undefined || busy} onClick={() => { if (balance !== undefined) setAmountText(formatQuoteUnits(balance).replace(/,/g, "")); }}>
               Max
             </button>
           ) : null}
@@ -218,13 +346,15 @@ export function CctpBridge() {
 
   return (
     <div>
+      <style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style>
+
       {panel("From", srcName, srcBalance, true)}
       <div className="arch-switch-row">
         <button
           className="arch-switch-button"
           aria-label="Switch direction"
           disabled={busy}
-          onClick={() => { setDirection(toArc ? "toBase" : "toArc"); setStep({ id: "idle" }); }}
+          onClick={() => { setDirection(toArc ? "toBase" : "toArc"); setPhase("idle"); setMessage(null); }}
         >
           ⇅
         </button>
@@ -233,21 +363,25 @@ export function CctpBridge() {
 
       <div style={{ padding: "0.8rem 0 0.2rem", fontSize: "0.85rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", padding: "0.15rem 0" }}>
-          <span style={{ color: "var(--muted-foreground)" }}>Route</span>
-          <span>Circle CCTP · native USDC (no wrapped assets)</span>
+          <span style={{ color: "var(--muted-foreground)" }}>Platform fee · 2%</span>
+          <span>{formatQuoteUnits(platformFee)} USDC</span>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", padding: "0.15rem 0" }}>
-          <span style={{ color: "var(--muted-foreground)" }}>Bridge fee</span>
-          <span>2%{parsed !== null ? ` (${formatQuoteUnits((parsed * BRIDGE_FEE_BPS) / 10_000n)} USDC)` : ""}</span>
+          <span style={{ color: "var(--muted-foreground)" }}>Max Circle fee{fastFeeBps !== null ? ` · ${fastFeeBps === 0 ? "fast, free" : "fast lane"}` : ""}</span>
+          <span>{formatQuoteUnits(circleMax)} USDC</span>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", padding: "0.15rem 0" }}>
-          <span style={{ color: "var(--muted-foreground)" }}>Speed</span>
-          <span>~15–60 seconds</span>
+          <span style={{ color: "var(--muted-foreground)" }}>Claim gas on {dstName}</span>
+          <span style={{ color: "var(--positive)" }}>Free · Arcanium relays it</span>
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", padding: "0.15rem 0" }}>
-          <span style={{ color: "var(--muted-foreground)" }}>Destination gas</span>
-          <span style={{ color: "var(--positive)" }}>Free — Arcanium relays the mint</span>
-        </div>
+      </div>
+
+      {/* Transfer checklist — always visible so the flow is never a mystery. */}
+      <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: "0.6rem 0.85rem", margin: "0.85rem 0", background: "color-mix(in oklch, var(--background) 45%, var(--card))" }}>
+        <Step state={stepState(["approving"])} title="Approve USDC" note={`One-time allowance for the ${srcName} router`} />
+        <Step state={stepState(["burning"])} title={`Deposit on ${srcName}`} note="Fee taken, remainder burned via Circle CCTP" />
+        <Step state={stepState(["attesting"])} title="Wait for Circle" note={fastFeeBps === 0 ? "Fast lane — usually under a minute" : "Attestation — fast when the fee covers it, otherwise ~15–20 min"} />
+        <Step state={stepState(["claiming"])} title={`Claim on ${dstName}`} note={`Relayed for you · no ${dstName} gas needed`} />
       </div>
 
       {!isConnected ? (
@@ -255,36 +389,50 @@ export function CctpBridge() {
       ) : (
         <button
           className="arch-primary-button"
-          style={{ cursor: busy || parsed === null ? "not-allowed" : "pointer", opacity: busy || parsed === null ? 0.65 : 1, marginTop: "0.5rem" }}
-          disabled={busy || parsed === null}
-          onClick={() => void run()}
+          style={{ cursor: busy || (parsed === null && pending === null) ? "not-allowed" : "pointer", opacity: busy || (parsed === null && pending === null) ? 0.7 : 1 }}
+          disabled={busy || (parsed === null && pending === null)}
+          onClick={() => void (pending !== null ? settle(pending) : start())}
         >
-          {stepLabel}
+          {busy ? <Spinner /> : null}
+          {pending !== null && !busy ? "Resume pending claim" : buttonLabel}
         </button>
       )}
 
-      {step.id === "attesting" || step.id === "minting" || step.id === "done" ? (
+      {pending !== null && !busy ? (
+        <p className="arch-note" style={{ marginTop: "0.5rem", textAlign: "center" }}>
+          You have a deposit of {formatQuoteUnits(BigInt(pending.amount))} USDC waiting to be claimed. Resuming never creates a second deposit.
+        </p>
+      ) : null}
+
+      {(pending !== null || phase === "done") && (pending?.burnTx !== undefined || claimTx !== null) ? (
         <div className="arch-note" style={{ marginTop: "0.75rem" }}>
-          <div>
-            Burn:{" "}
-            <a href={`${srcExplorer}/tx/${step.burnTx}`} target="_blank" rel="noreferrer" style={{ textDecoration: "underline" }}>
-              {step.burnTx.slice(0, 10)}… ✓
-            </a>
-          </div>
-          {step.id === "attesting" ? <div>Waiting for Circle&apos;s attestation…</div> : null}
-          {step.id === "minting" ? <div>Attested ✓ — relaying the mint on {dstName}…</div> : null}
-          {step.id === "done" ? (
+          {pending?.burnTx !== undefined ? (
+            <div>
+              Deposit:{" "}
+              <a href={`${srcExplorer}/tx/${pending.burnTx}`} target="_blank" rel="noreferrer" style={{ textDecoration: "underline" }}>
+                {pending.burnTx.slice(0, 10)}… ✓
+              </a>
+            </div>
+          ) : null}
+          {claimTx !== null ? (
             <div style={{ color: "var(--positive)" }}>
-              ✓ Minted on {dstName}:{" "}
-              <a href={`${dstExplorer}/tx/${step.mintTx}`} target="_blank" rel="noreferrer" style={{ textDecoration: "underline" }}>
-                {step.mintTx.slice(0, 10)}…
+              ✓ Claimed on {dstName}:{" "}
+              <a href={`${dstExplorer}/tx/${claimTx}`} target="_blank" rel="noreferrer" style={{ textDecoration: "underline" }}>
+                {claimTx.slice(0, 10)}…
               </a>
             </div>
           ) : null}
         </div>
       ) : null}
-      {step.id === "error" ? (
-        <p className="arch-note" style={{ marginTop: "0.75rem", color: "var(--negative)" }}>{step.message}</p>
+
+      {message !== null ? (
+        <p className="arch-note" style={{ marginTop: "0.6rem", color: phase === "error" ? "var(--negative)" : "var(--positive)" }}>{message}</p>
+      ) : null}
+
+      {phase === "done" && pending === null ? (
+        <button className="arch-max-chip" style={{ marginTop: "0.6rem", cursor: "pointer", padding: "0.35rem 0.8rem" }} onClick={() => { setPhase("idle"); setMessage(null); setClaimTx(null); }}>
+          Bridge again
+        </button>
       ) : null}
     </div>
   );
