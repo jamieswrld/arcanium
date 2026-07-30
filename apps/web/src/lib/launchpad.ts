@@ -20,6 +20,7 @@ const HIDDEN_TOKENS = new Set(
   [
     "0xE7c4f3a9F20AfbCA5A238d4fA705344943Ed9B5C", // Archway — internal test launch (old factory)
     "0x6347dB930F087D99E722652921e22f3Ca545eA45", // RTCK — router-fix verification launch
+    "0x54464cA71f55C59b2e944B09e24cA689A918e644", // AROS — pre-public test launch (fresh start)
     ...(process.env["NEXT_PUBLIC_ARCH_HIDDEN_TOKENS"] ?? "").split(","),
   ]
     .map((s) => s.trim().toLowerCase())
