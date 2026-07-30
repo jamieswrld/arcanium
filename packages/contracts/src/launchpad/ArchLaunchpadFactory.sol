@@ -196,7 +196,6 @@ contract ArchLaunchpadFactory is Ownable2Step, ReentrancyGuard {
                     tokenOut: token,
                     fee: POOL_FEE,
                     recipient: msg.sender,
-                    deadline: params.deadline,
                     amountIn: params.creatorBuyAmount,
                     amountOutMinimum: params.minTokensOut,
                     sqrtPriceLimitX96: 0

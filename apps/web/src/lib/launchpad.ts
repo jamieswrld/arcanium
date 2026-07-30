@@ -18,7 +18,8 @@ const Q192 = 2n ** 192n;
  *  still exist on-chain — this only removes them from our lists and pages. */
 const HIDDEN_TOKENS = new Set(
   [
-    "0xE7c4f3a9F20AfbCA5A238d4fA705344943Ed9B5C", // Archway — internal test launch
+    "0xE7c4f3a9F20AfbCA5A238d4fA705344943Ed9B5C", // Archway — internal test launch (old factory)
+    "0x6347dB930F087D99E722652921e22f3Ca545eA45", // RTCK — router-fix verification launch
     ...(process.env["NEXT_PUBLIC_ARCH_HIDDEN_TOKENS"] ?? "").split(","),
   ]
     .map((s) => s.trim().toLowerCase())
@@ -100,6 +101,9 @@ export const poolAbi = [
   },
 ] as const;
 
+// SwapRouter02 interface — NOTE: no `deadline` field (unlike SwapRouter v1).
+// The router deployed on Arc mainnet is SwapRouter02; calling it with the v1
+// tuple (extra deadline) selects a nonexistent function and reverts.
 export const routerAbi = [
   {
     type: "function",
@@ -114,7 +118,6 @@ export const routerAbi = [
           { name: "tokenOut", type: "address" },
           { name: "fee", type: "uint24" },
           { name: "recipient", type: "address" },
-          { name: "deadline", type: "uint256" },
           { name: "amountIn", type: "uint256" },
           { name: "amountOutMinimum", type: "uint256" },
           { name: "sqrtPriceLimitX96", type: "uint160" },

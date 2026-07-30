@@ -79,13 +79,16 @@ interface INonfungiblePositionManager {
     function ownerOf(uint256 tokenId) external view returns (address);
 }
 
+/// SwapRouter02 interface (swap-router-contracts). NOTE: unlike SwapRouter v1,
+/// ExactInputSingleParams has NO `deadline` field. The router deployed on Arc
+/// mainnet is SwapRouter02 — calling it with the v1 tuple layout selects a
+/// nonexistent function selector and reverts.
 interface ISwapRouter {
     struct ExactInputSingleParams {
         address tokenIn;
         address tokenOut;
         uint24 fee;
         address recipient;
-        uint256 deadline;
         uint256 amountIn;
         uint256 amountOutMinimum;
         uint160 sqrtPriceLimitX96;

@@ -148,8 +148,8 @@ export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
       }
 
       // Slippage: simulate the swap for the expected output, then bound it.
+      // SwapRouter02: no deadline field in ExactInputSingleParams.
       setState({ step: "swapping" });
-      const deadline = BigInt(Math.floor(Date.now() / 1000) + 300);
       const { result: expectedOut } = await arcPublic.simulateContract({
         account: address,
         address: ROUTER_ADDRESS,
@@ -160,7 +160,6 @@ export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
           tokenOut,
           fee: 10_000,
           recipient: address,
-          deadline,
           amountIn: parsedAmount,
           amountOutMinimum: 0n,
           sqrtPriceLimitX96: 0n,
@@ -178,7 +177,6 @@ export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
           tokenOut,
           fee: 10_000,
           recipient: address,
-          deadline,
           amountIn: parsedAmount,
           amountOutMinimum: minOut,
           sqrtPriceLimitX96: 0n,

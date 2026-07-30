@@ -7,6 +7,7 @@ import { TradePanel } from "@/components/TradePanel";
 import { MarketPanels } from "@/components/MarketPanels";
 import { TokenAvatar } from "@/components/TokenAvatar";
 import { LivePrice } from "@/components/LivePrice";
+import { CopyButton } from "@/components/CopyButton";
 import { fetchTokenImage } from "@/lib/tokenImages";
 
 export const dynamic = "force-dynamic";
@@ -56,8 +57,9 @@ export default async function TokenPage({ params }: TokenPageProps) {
           <div>
             <strong style={{ fontSize: "1.125rem" }}>{detail.name}</strong>{" "}
             <span className="arch-note">{detail.symbol}</span>
-            <div className="arch-note" style={{ fontFamily: "monospace", fontSize: "0.75rem" }}>
-              {detail.token}
+            <div className="arch-note" style={{ fontFamily: "monospace", fontSize: "0.75rem", display: "flex", alignItems: "center", flexWrap: "wrap", gap: "0.15rem" }}>
+              <span>{detail.token.slice(0, 10)}…{detail.token.slice(-8)}</span>
+              <CopyButton text={detail.token} label="Copy address" />
             </div>
           </div>
           <span style={{ marginLeft: "auto", display: "grid", justifyItems: "end", gap: "0.25rem" }}>
