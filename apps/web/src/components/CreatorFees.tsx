@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 import type { Hex } from "viem";
 import { arcTestnet, PAIR_TOKEN_SYMBOL } from "@/lib/bridgeClient";
-import { DISTRIBUTOR_ADDRESS, LIQUIDITY_VAULT_ADDRESS } from "@/lib/launchpad";
+import { DISTRIBUTOR_ADDRESS, LIQUIDITY_VAULT_ADDRESS, MODE_DISTRIBUTOR_ADDRESS, modeDistributorAbi, launchTokenAbi } from "@/lib/launchpad";
 import { formatQuoteUnits } from "@/lib/onchain";
 import { useToast } from "@/components/ui/Toast";
 
@@ -40,9 +40,26 @@ export function CreatorFees({
   const [pending, setPending] = useState<bigint | null>(null);
   const [shareBps, setShareBps] = useState<bigint | null>(null);
   const [claiming, setClaiming] = useState(false);
+  // Divium/Arcane pay holders or the burn — the creator never claims, so this
+  // panel must not appear for them.
+  const [payoutMode, setPayoutMode] = useState<number | null>(null);
 
   const isCreator = isConnected && address !== undefined && address.toLowerCase() === creator.toLowerCase();
   const tokenIsToken0 = token.toLowerCase() < pairToken.toLowerCase();
+
+  useEffect(() => {
+    if (arcPublic === undefined) return;
+    let cancelled = false;
+    (async () => {
+      const own = await arcPublic.readContract({ address: token, abi: launchTokenAbi, functionName: "taxRecipient" }).catch(() => MODE_DISTRIBUTOR_ADDRESS);
+      const isSet = await arcPublic.readContract({ address: own, abi: modeDistributorAbi, functionName: "modeSet", args: [token] }).catch(() => false);
+      const m = isSet
+        ? Number(await arcPublic.readContract({ address: own, abi: modeDistributorAbi, functionName: "modeOf", args: [token] }).catch(() => 0))
+        : 0;
+      if (!cancelled) setPayoutMode(m);
+    })().catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [arcPublic, token]);
 
   useEffect(() => {
     if (!isCreator || arcPublic === undefined || DISTRIBUTOR_ADDRESS === undefined || LIQUIDITY_VAULT_ADDRESS === undefined) return;
@@ -76,6 +93,8 @@ export function CreatorFees({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCreator, arcPublic, positionId, tokenIsToken0]);
 
+  // Hidden entirely for Divium/Arcane, and until the mode is known.
+  if (payoutMode === null || payoutMode !== 0) return null;
   if (!isCreator || DISTRIBUTOR_ADDRESS === undefined) return null;
 
   async function claim(): Promise<void> {

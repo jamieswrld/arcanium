@@ -103,7 +103,10 @@ async function cycle(): Promise<void> {
       const pending = await pendingQuoteFees(factory, token).catch(() => 0n);
       if (pending < MIN_QUOTE_FEES) { skipped += 1; continue; }
 
-      const mode = await pub.readContract({ address: DISTRIBUTOR, abi: distAbi, functionName: "modeOf", args: [token] }).catch(() => 0);
+      const own = await pub
+        .readContract({ address: token, abi: parseAbi(["function taxRecipient() view returns (address)"]), functionName: "taxRecipient" })
+        .catch(() => DISTRIBUTOR);
+      const mode = await pub.readContract({ address: own, abi: distAbi, functionName: "modeOf", args: [token] }).catch(() => 0);
       try {
         const nonce = await pub.getTransactionCount({ address: account.address });
         const hash = await wallet.writeContract({
