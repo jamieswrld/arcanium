@@ -14,11 +14,25 @@ export const ROUTER_ADDRESS = process.env["NEXT_PUBLIC_UNISWAP_SWAP_ROUTER_ADDRE
 export const GRADUATION_UNITS = 9_000_000_000n; // 9,000 quote units (6d)
 const Q192 = 2n ** 192n;
 
+/** Tokens hidden from the launchpad UI (e.g. internal test launches). They
+ *  still exist on-chain — this only removes them from our lists and pages. */
+const HIDDEN_TOKENS = new Set(
+  [
+    "0xE7c4f3a9F20AfbCA5A238d4fA705344943Ed9B5C", // Archway — internal test launch
+    ...(process.env["NEXT_PUBLIC_ARCH_HIDDEN_TOKENS"] ?? "").split(","),
+  ]
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => /^0x[0-9a-f]{40}$/.test(s)),
+);
+export function isHidden(token: string): boolean {
+  return HIDDEN_TOKENS.has(token.toLowerCase());
+}
+
 export function arcPublicClient(): PublicClient {
   return createPublicClient({
     transport: fallback([
-      http(process.env["NEXT_PUBLIC_ARC_RPC_URL"] ?? "https://5042.rpc.thirdweb.com", { timeout: 8000 }),
-      http("https://5042.rpc.thirdweb.com", { timeout: 8000 }),
+      http(process.env["NEXT_PUBLIC_ARC_RPC_URL"] ?? "https://rpc.blockdaemon.mainnet.arc.io", { timeout: 8000 }),
+      http("https://rpc.blockdaemon.mainnet.arc.io", { timeout: 8000 }),
     ]),
   });
 }
@@ -191,6 +205,7 @@ export async function fetchAllTokens(client: PublicClient): Promise<LaunchpadTok
       functionName: "allTokens",
       args: [i],
     });
+    if (isHidden(token)) continue;
     const detail = await fetchToken(client, token);
     if (detail !== null) tokens.push(detail);
   }

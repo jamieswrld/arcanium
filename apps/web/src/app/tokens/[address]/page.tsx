@@ -1,6 +1,6 @@
 import { Badge, Card, StatRow } from "@arch/ui";
 import type { Hex } from "viem";
-import { arcPublicClient, fetchToken, formatPriceE18, GRADUATION_UNITS } from "@/lib/launchpad";
+import { arcPublicClient, fetchToken, formatPriceE18, GRADUATION_UNITS, isHidden } from "@/lib/launchpad";
 import { formatQuoteUnits } from "@/lib/onchain";
 import { ARC_EXPLORER, PAIR_TOKEN_SYMBOL } from "@/lib/bridgeClient";
 import { TradePanel } from "@/components/TradePanel";
@@ -22,10 +22,10 @@ interface TokenPageProps {
  */
 export default async function TokenPage({ params }: TokenPageProps) {
   const { address } = await params;
-  if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address) || isHidden(address)) {
     return (
       <Card title="Not found">
-        <p className="arch-note">That doesn&apos;t look like a token address on Arc.</p>
+        <p className="arch-note">That token isn&apos;t listed on Arcanium.</p>
       </Card>
     );
   }
@@ -128,6 +128,7 @@ export default async function TokenPage({ params }: TokenPageProps) {
           token={detail.token}
           pairToken={detail.pairToken}
           symbol={detail.symbol}
+          creator={detail.creator}
         />
       </Card>
 

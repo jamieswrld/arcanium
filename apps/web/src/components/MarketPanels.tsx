@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { usePublicClient } from "wagmi";
 import { parseAbiItem, type Hex } from "viem";
-import { arcTestnet, ARC_EXPLORER } from "@/lib/bridgeClient";
-import { formatPriceE18, priceUsdE18 } from "@/lib/launchpad";
+import { arcTestnet, ARC_EXPLORER, erc20Abi } from "@/lib/bridgeClient";
+import { formatPriceE18, priceUsdE18, poolAbi } from "@/lib/launchpad";
 import { formatQuoteUnits } from "@/lib/onchain";
 
 const transferEvent = parseAbiItem(
@@ -36,6 +36,7 @@ interface MarketPanelsProps {
   readonly token: Hex;
   readonly pairToken: Hex;
   readonly symbol: string;
+  readonly creator: Hex;
 }
 
 /**
@@ -45,9 +46,10 @@ interface MarketPanelsProps {
  */
 const LOOKBACK = 200_000n; // one wide getLogs; Arc's sub-second blocks make this ~a day
 
-export function MarketPanels({ pool, token, pairToken, symbol }: MarketPanelsProps) {
+export function MarketPanels({ pool, token, pairToken, symbol, creator }: MarketPanelsProps) {
   const arcPublic = usePublicClient({ chainId: arcTestnet.id });
   const [swaps, setSwaps] = useState<SwapPoint[] | null>(null);
+  const [spotE18, setSpotE18] = useState<bigint | null>(null);
   const [tab, setTab] = useState<"chart" | "trades" | "holders">("chart");
   const [holders, setHolders] = useState<Array<{ wallet: Hex; balance: bigint }> | null>(null);
   const [failed, setFailed] = useState(false);
@@ -80,10 +82,16 @@ export function MarketPanels({ pool, token, pairToken, symbol }: MarketPanelsPro
     let timer: ReturnType<typeof setTimeout> | undefined;
     let cursor = 0n;
 
+    const readSpot = async (): Promise<void> => {
+      const slot0 = await arcPublic.readContract({ address: pool, abi: poolAbi, functionName: "slot0" }).catch(() => null);
+      if (slot0 !== null && !cancelled) setSpotE18(priceUsdE18(slot0[0], tokenIsToken0));
+    };
+
     const initial = async (): Promise<void> => {
       const tip = await arcPublic.getBlockNumber();
       const from = tip > LOOKBACK ? tip - LOOKBACK : 0n;
       const nowMs = Date.now();
+      await readSpot(); // seed the chart immediately, even with zero trades
       const logs = await arcPublic.getLogs({ address: pool, event: swapEvent, fromBlock: from, toBlock: tip }).catch(() => []);
       if (cancelled) return;
       const pts = logs
@@ -96,6 +104,7 @@ export function MarketPanels({ pool, token, pairToken, symbol }: MarketPanelsPro
 
     const poll = async (): Promise<void> => {
       try {
+        await readSpot(); // keep the headline/endpoint price live
         const tip = await arcPublic.getBlockNumber();
         if (tip > cursor) {
           const logs = await arcPublic.getLogs({ address: pool, event: swapEvent, fromBlock: cursor + 1n, toBlock: tip }).catch(() => []);
@@ -131,6 +140,15 @@ export function MarketPanels({ pool, token, pairToken, symbol }: MarketPanelsPro
         balances.set(fromA, (balances.get(fromA) ?? 0n) - v);
         balances.set(toA, (balances.get(toA) ?? 0n) + v);
       }
+      // Always include the two holders that exist from block one — the pool
+      // (which holds the locked liquidity) and the creator — read directly, so
+      // the Holders tab is never empty regardless of the event window.
+      const [poolBal, creatorBal] = await Promise.all([
+        arcPublic.readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [pool] }).catch(() => 0n),
+        arcPublic.readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [creator] }).catch(() => 0n),
+      ]);
+      balances.set(pool.toLowerCase(), poolBal);
+      balances.set(creator.toLowerCase(), creatorBal);
       balances.delete("0x0000000000000000000000000000000000000000");
       const list = [...balances.entries()]
         .filter(([, b]) => b > 0n)
@@ -140,13 +158,15 @@ export function MarketPanels({ pool, token, pairToken, symbol }: MarketPanelsPro
       if (!cancelled) setHolders(list);
     })().catch(() => undefined);
     return () => { cancelled = true; };
-  }, [arcPublic, tab, holders, token]);
+  }, [arcPublic, tab, holders, token, pool, creator]);
 
-  if (failed) return <p className="arch-note">Couldn&apos;t load market data from the RPC just now.</p>;
-  if (swaps === null) return <p className="arch-note">Reading swaps from the pool…</p>;
+  const s = swaps ?? [];
+  if (swaps === null && spotE18 === null && !failed) {
+    return <p className="arch-note">Reading market data…</p>;
+  }
 
-  const volume = swaps.reduce((acc, s) => acc + s.quoteVolume, 0n);
-  const buys = swaps.filter((s) => s.isBuy).length;
+  const volume = s.reduce((acc, x) => acc + x.quoteVolume, 0n);
+  const buys = s.filter((x) => x.isBuy).length;
 
   return (
     <div>
@@ -157,14 +177,14 @@ export function MarketPanels({ pool, token, pairToken, symbol }: MarketPanelsPro
           <button className={tab === "holders" ? "arch-pill arch-pill-active" : "arch-pill"} style={{ border: "none", cursor: "pointer" }} onClick={() => setTab("holders")}>Holders</button>
         </div>
         <span className="arch-note" style={{ fontVariantNumeric: "tabular-nums" }}>
-          {swaps.length} trades · <span style={{ color: "var(--positive)" }}>{buys} buys</span> / <span style={{ color: "var(--negative)" }}>{swaps.length - buys} sells</span> · ${formatQuoteUnits(volume)} vol
+          {s.length} trades · <span style={{ color: "var(--positive)" }}>{buys} buys</span> / <span style={{ color: "var(--negative)" }}>{s.length - buys} sells</span> · ${formatQuoteUnits(volume)} vol
         </span>
       </div>
 
       {tab === "chart" ? (
-        <PriceSvg swaps={swaps} />
+        <PriceSvg swaps={s} spotE18={spotE18} />
       ) : tab === "trades" ? (
-        <TradesTable swaps={swaps} symbol={symbol} />
+        <TradesTable swaps={s} symbol={symbol} />
       ) : (
         <HoldersTable holders={holders} pool={pool} symbol={symbol} />
       )}
@@ -172,30 +192,35 @@ export function MarketPanels({ pool, token, pairToken, symbol }: MarketPanelsPro
   );
 }
 
-function PriceSvg({ swaps }: { readonly swaps: SwapPoint[] }) {
-  if (swaps.length === 0) {
+function PriceSvg({ swaps, spotE18 }: { readonly swaps: SwapPoint[]; readonly spotE18: bigint | null }) {
+  // Always chart something: the swap prices plus the live spot price as the
+  // trailing point. With zero trades this is a single spot point → a clean
+  // flat line at the current price, never an empty box.
+  const series: bigint[] = [...swaps.map((s) => s.priceE18)];
+  if (spotE18 !== null) series.push(spotE18);
+  if (series.length === 0) {
     return (
       <div style={{ height: 220, display: "grid", placeItems: "center", background: "var(--muted)", borderRadius: 14, border: "1px solid var(--border)" }}>
-        <p className="arch-note" style={{ margin: 0, textAlign: "center", maxWidth: 320 }}>No trades yet — the chart begins with the first swap.</p>
+        <p className="arch-note" style={{ margin: 0 }}>Loading price…</p>
       </div>
     );
   }
   const W = 640;
   const H = 220;
   const PAD = 14;
-  let min = swaps[0]?.priceE18 ?? 0n;
+  let min = series[0]!;
   let max = min;
-  for (const s of swaps) {
-    if (s.priceE18 < min) min = s.priceE18;
-    if (s.priceE18 > max) max = s.priceE18;
+  for (const p of series) {
+    if (p < min) min = p;
+    if (p > max) max = p;
   }
   if (max === min) max = min + 1n;
   const span = max - min;
-  const n = swaps.length;
-  const xy = swaps.map((s, i) => {
+  const n = series.length;
+  const xy = series.map((p, i) => {
     const x = PAD + (i * (W - 2 * PAD)) / Math.max(1, n - 1);
     // Display-only float conversion of a bounded ratio (never money math).
-    const ratio = Number(((s.priceE18 - min) * 10_000n) / span) / 10_000;
+    const ratio = Number(((p - min) * 10_000n) / span) / 10_000;
     const y = H - PAD - ratio * (H - 2 * PAD);
     return { x, y };
   });
@@ -203,7 +228,7 @@ function PriceSvg({ swaps }: { readonly swaps: SwapPoint[] }) {
   const pts = n === 1 ? [{ x: PAD, y: xy[0]!.y }, { x: W - PAD, y: xy[0]!.y }] : xy;
   const line = pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
   const area = `${PAD},${H - PAD} ${line} ${(W - PAD).toFixed(1)},${H - PAD}`;
-  const up = (swaps[n - 1]?.priceE18 ?? 0n) >= (swaps[0]?.priceE18 ?? 0n);
+  const up = series[n - 1]! >= series[0]!;
   const stroke = up ? "var(--positive)" : "var(--negative)";
 
   return (
