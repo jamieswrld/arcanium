@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePublicClient } from "wagmi";
 import { parseAbiItem, type Hex } from "viem";
 import { arcTestnet, ARC_EXPLORER, erc20Abi } from "@/lib/bridgeClient";
 import { formatPriceE18, priceUsdE18, poolAbi } from "@/lib/launchpad";
 import { formatQuoteUnits } from "@/lib/onchain";
+import { CandleChart, type Candle } from "@/components/CandleChart";
 
 const transferEvent = parseAbiItem(
   "event Transfer(address indexed from, address indexed to, uint256 value)",
@@ -39,18 +40,63 @@ interface MarketPanelsProps {
   readonly creator: Hex;
 }
 
-/**
- * Chart + trades built from real pool Swap events (bounded recent lookback;
- * the persistent indexer extends history once its VPS lands). Price series
- * uses exact bigint math; pixels are the only place numbers become floats.
- */
 const LOOKBACK = 200_000n; // one wide getLogs; Arc's sub-second blocks make this ~a day
+const POLL_MS = 2_000; // fast: new trades and price land within ~a block or two
 
+const INTERVALS = [
+  { key: "1m", sec: 60 },
+  { key: "5m", sec: 300 },
+  { key: "15m", sec: 900 },
+  { key: "1h", sec: 3600 },
+] as const;
+
+/** Bucket swap points into OHLC candles; the live spot extends the last bar so
+ *  the chart ticks between trades. Floats are display-only. */
+function toCandles(swaps: readonly SwapPoint[], spotE18: bigint | null, intervalSec: number): Candle[] {
+  const buckets = new Map<number, { o: number; h: number; l: number; c: number; v: number }>();
+  const sorted = [...swaps].sort((a, b) => a.timeMs - b.timeMs);
+  for (const s of sorted) {
+    const t = Math.floor(s.timeMs / 1000 / intervalSec) * intervalSec;
+    const p = Number(s.priceE18) / 1e18;
+    const v = Number(s.quoteVolume) / 1e6;
+    const b = buckets.get(t);
+    if (b === undefined) buckets.set(t, { o: p, h: p, l: p, c: p, v });
+    else {
+      b.h = Math.max(b.h, p);
+      b.l = Math.min(b.l, p);
+      b.c = p;
+      b.v += v;
+    }
+  }
+  // Live tick: extend/append the current bucket with the spot price.
+  if (spotE18 !== null) {
+    const now = Math.floor(Date.now() / 1000 / intervalSec) * intervalSec;
+    const p = Number(spotE18) / 1e18;
+    const b = buckets.get(now);
+    if (b === undefined) {
+      const prevClose = sorted.length > 0 ? Number(sorted[sorted.length - 1]!.priceE18) / 1e18 : p;
+      buckets.set(now, { o: prevClose, h: Math.max(prevClose, p), l: Math.min(prevClose, p), c: p, v: 0 });
+    } else {
+      b.h = Math.max(b.h, p);
+      b.l = Math.min(b.l, p);
+      b.c = p;
+    }
+  }
+  return [...buckets.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([time, b]) => ({ time, open: b.o, high: b.h, low: b.l, close: b.c, volume: b.v }));
+}
+
+/**
+ * Trading terminal panels: TradingView-engine candles (live-ticking), trades
+ * feed, holders. One fast initial getLogs, then 2s incremental polling.
+ */
 export function MarketPanels({ pool, token, pairToken, symbol, creator }: MarketPanelsProps) {
   const arcPublic = usePublicClient({ chainId: arcTestnet.id });
   const [swaps, setSwaps] = useState<SwapPoint[] | null>(null);
   const [spotE18, setSpotE18] = useState<bigint | null>(null);
   const [tab, setTab] = useState<"chart" | "trades" | "holders">("chart");
+  const [interval, setIntervalKey] = useState<(typeof INTERVALS)[number]>(INTERVALS[1]);
   const [holders, setHolders] = useState<Array<{ wallet: Hex; balance: bigint }> | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -74,8 +120,7 @@ export function MarketPanels({ pool, token, pairToken, symbol, creator }: Market
     };
   };
 
-  // Fast initial load (one getLogs) + light incremental polling so the chart
-  // and trades keep up in near-real-time without re-scanning history.
+  // Fast initial load (one getLogs) + 2s incremental polling.
   useEffect(() => {
     if (arcPublic === undefined) return;
     let cancelled = false;
@@ -91,7 +136,7 @@ export function MarketPanels({ pool, token, pairToken, symbol, creator }: Market
       const tip = await arcPublic.getBlockNumber();
       const from = tip > LOOKBACK ? tip - LOOKBACK : 0n;
       const nowMs = Date.now();
-      await readSpot(); // seed the chart immediately, even with zero trades
+      await readSpot(); // chart renders immediately, even with zero trades
       const logs = await arcPublic.getLogs({ address: pool, event: swapEvent, fromBlock: from, toBlock: tip }).catch(() => []);
       if (cancelled) return;
       const pts = logs
@@ -99,12 +144,12 @@ export function MarketPanels({ pool, token, pairToken, symbol, creator }: Market
         .filter((p): p is SwapPoint => p !== null);
       setSwaps(pts);
       cursor = tip;
-      timer = setTimeout(() => void poll(), 4_000);
+      timer = setTimeout(() => void poll(), POLL_MS);
     };
 
     const poll = async (): Promise<void> => {
       try {
-        await readSpot(); // keep the headline/endpoint price live
+        await readSpot();
         const tip = await arcPublic.getBlockNumber();
         if (tip > cursor) {
           const logs = await arcPublic.getLogs({ address: pool, event: swapEvent, fromBlock: cursor + 1n, toBlock: tip }).catch(() => []);
@@ -115,8 +160,8 @@ export function MarketPanels({ pool, token, pairToken, symbol, creator }: Market
           }
           cursor = tip;
         }
-      } catch { /* transient — try again next tick */ }
-      if (!cancelled) timer = setTimeout(() => void poll(), 4_000);
+      } catch { /* transient — next tick */ }
+      if (!cancelled) timer = setTimeout(() => void poll(), POLL_MS);
     };
 
     initial().catch(() => { if (!cancelled) setFailed(true); });
@@ -124,7 +169,8 @@ export function MarketPanels({ pool, token, pairToken, symbol, creator }: Market
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arcPublic, pool, token, tokenIsToken0]);
 
-  // Holders load lazily — only when the tab is opened, and only once.
+  // Holders load lazily on tab open; pool + creator always included via
+  // direct balance reads so the tab is never empty.
   useEffect(() => {
     if (arcPublic === undefined || tab !== "holders" || holders !== null) return;
     let cancelled = false;
@@ -140,9 +186,6 @@ export function MarketPanels({ pool, token, pairToken, symbol, creator }: Market
         balances.set(fromA, (balances.get(fromA) ?? 0n) - v);
         balances.set(toA, (balances.get(toA) ?? 0n) + v);
       }
-      // Always include the two holders that exist from block one — the pool
-      // (which holds the locked liquidity) and the creator — read directly, so
-      // the Holders tab is never empty regardless of the event window.
       const [poolBal, creatorBal] = await Promise.all([
         arcPublic.readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [pool] }).catch(() => 0n),
         arcPublic.readContract({ address: token, abi: erc20Abi, functionName: "balanceOf", args: [creator] }).catch(() => 0n),
@@ -161,12 +204,19 @@ export function MarketPanels({ pool, token, pairToken, symbol, creator }: Market
   }, [arcPublic, tab, holders, token, pool, creator]);
 
   const s = swaps ?? [];
+  const candles = useMemo(() => toCandles(s, spotE18, interval.sec), [s, spotE18, interval.sec]);
+
   if (swaps === null && spotE18 === null && !failed) {
-    return <p className="arch-note">Reading market data…</p>;
+    return <div className="arch-skeleton" style={{ height: 380 }} />;
   }
 
   const volume = s.reduce((acc, x) => acc + x.quoteVolume, 0n);
   const buys = s.filter((x) => x.isBuy).length;
+  const first = s[0]?.priceE18;
+  const last = spotE18 ?? s[s.length - 1]?.priceE18;
+  const changePct = first !== undefined && last !== undefined && first > 0n
+    ? Number(((last - first) * 10_000n) / first) / 100
+    : null;
 
   return (
     <div>
@@ -177,82 +227,40 @@ export function MarketPanels({ pool, token, pairToken, symbol, creator }: Market
           <button className={tab === "holders" ? "arch-pill arch-pill-active" : "arch-pill"} style={{ border: "none", cursor: "pointer" }} onClick={() => setTab("holders")}>Holders</button>
         </div>
         <span className="arch-note" style={{ fontVariantNumeric: "tabular-nums" }}>
+          {changePct !== null ? (
+            <span style={{ color: changePct >= 0 ? "var(--positive)" : "var(--negative)", fontWeight: 600, marginRight: "0.5rem" }}>
+              {changePct >= 0 ? "+" : ""}{changePct.toFixed(2)}%
+            </span>
+          ) : null}
           {s.length} trades · <span style={{ color: "var(--positive)" }}>{buys} buys</span> / <span style={{ color: "var(--negative)" }}>{s.length - buys} sells</span> · ${formatQuoteUnits(volume)} vol
         </span>
       </div>
 
       {tab === "chart" ? (
-        <PriceSvg swaps={s} spotE18={spotE18} />
+        <div>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "0.4rem" }}>
+            <div className="arch-pills" style={{ display: "inline-flex" }}>
+              {INTERVALS.map((iv) => (
+                <button
+                  key={iv.key}
+                  className={interval.key === iv.key ? "arch-pill arch-pill-active" : "arch-pill"}
+                  style={{ border: "none", cursor: "pointer", padding: "0.25rem 0.7rem", fontSize: "0.75rem" }}
+                  onClick={() => setIntervalKey(iv)}
+                >
+                  {iv.key}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ background: "var(--muted)", borderRadius: 14, border: "1px solid var(--border)", padding: "0.5rem" }}>
+            <CandleChart candles={candles} />
+          </div>
+        </div>
       ) : tab === "trades" ? (
         <TradesTable swaps={s} symbol={symbol} />
       ) : (
         <HoldersTable holders={holders} pool={pool} symbol={symbol} />
       )}
-    </div>
-  );
-}
-
-function PriceSvg({ swaps, spotE18 }: { readonly swaps: SwapPoint[]; readonly spotE18: bigint | null }) {
-  // Always chart something: the swap prices plus the live spot price as the
-  // trailing point. With zero trades this is a single spot point → a clean
-  // flat line at the current price, never an empty box.
-  const series: bigint[] = [...swaps.map((s) => s.priceE18)];
-  if (spotE18 !== null) series.push(spotE18);
-  if (series.length === 0) {
-    return (
-      <div style={{ height: 220, display: "grid", placeItems: "center", background: "var(--muted)", borderRadius: 14, border: "1px solid var(--border)" }}>
-        <p className="arch-note" style={{ margin: 0 }}>Loading price…</p>
-      </div>
-    );
-  }
-  const W = 640;
-  const H = 220;
-  const PAD = 14;
-  let min = series[0]!;
-  let max = min;
-  for (const p of series) {
-    if (p < min) min = p;
-    if (p > max) max = p;
-  }
-  if (max === min) max = min + 1n;
-  const span = max - min;
-  const n = series.length;
-  const xy = series.map((p, i) => {
-    const x = PAD + (i * (W - 2 * PAD)) / Math.max(1, n - 1);
-    // Display-only float conversion of a bounded ratio (never money math).
-    const ratio = Number(((p - min) * 10_000n) / span) / 10_000;
-    const y = H - PAD - ratio * (H - 2 * PAD);
-    return { x, y };
-  });
-  // A single trade renders as a flat baseline across the width.
-  const pts = n === 1 ? [{ x: PAD, y: xy[0]!.y }, { x: W - PAD, y: xy[0]!.y }] : xy;
-  const line = pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-  const area = `${PAD},${H - PAD} ${line} ${(W - PAD).toFixed(1)},${H - PAD}`;
-  const up = series[n - 1]! >= series[0]!;
-  const stroke = up ? "var(--positive)" : "var(--negative)";
-
-  return (
-    <div>
-      <div style={{ overflowX: "auto", background: "var(--muted)", borderRadius: 14, border: "1px solid var(--border)", padding: "0.5rem" }}>
-        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", minWidth: 320, display: "block" }} role="img" aria-label="Price chart" preserveAspectRatio="none">
-          <defs>
-            <linearGradient id="arch-price-fill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={stroke} stopOpacity="0.28" />
-              <stop offset="100%" stopColor={stroke} stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          {[0.25, 0.5, 0.75].map((g) => (
-            <line key={g} x1={PAD} x2={W - PAD} y1={PAD + g * (H - 2 * PAD)} y2={PAD + g * (H - 2 * PAD)} stroke="var(--border)" strokeWidth="1" strokeDasharray="3 5" opacity="0.6" />
-          ))}
-          <polygon points={area} fill="url(#arch-price-fill)" />
-          <polyline points={line} fill="none" stroke={stroke} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
-          <circle cx={pts[pts.length - 1]!.x} cy={pts[pts.length - 1]!.y} r="4" fill={stroke} />
-        </svg>
-      </div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: "0.4rem" }} className="arch-note">
-        <span>low {formatPriceE18(min)}</span>
-        <span>high {formatPriceE18(max)}</span>
-      </div>
     </div>
   );
 }
@@ -302,16 +310,15 @@ function HoldersTable({ holders, pool, symbol }: { readonly holders: Array<{ wal
             style={{ display: "grid", gridTemplateColumns: "32px 1fr 140px 70px", gap: "0.5rem", fontSize: "0.85rem", padding: "0.25rem 0", borderBottom: "1px solid var(--arch-border)" }}>
             <span className="arch-note">{i + 1}</span>
             <span style={{ fontFamily: "monospace" }}>
-              {h.wallet.slice(0, 6)}…{h.wallet.slice(-4)}{isPool ? <span className="arch-note"> · LP</span> : null}
+              {h.wallet.slice(0, 6)}…{h.wallet.slice(-4)}{isPool ? <span className="arch-note"> · LP (locked)</span> : null}
             </span>
             <span>{(h.balance / 10n ** 18n).toLocaleString("en-US")} {symbol}</span>
             <span>{(pctBps / 100).toFixed(2)}%</span>
           </a>
         );
       })}
-      <p className="arch-note" style={{ margin: "0.5rem 0 0" }}>
-        Best-effort view from recent transfers; the full-history indexer extends this.
-      </p>
     </div>
   );
 }
+
+export { formatPriceE18 };

@@ -8,6 +8,7 @@ import { MarketPanels } from "@/components/MarketPanels";
 import { TokenAvatar } from "@/components/TokenAvatar";
 import { LivePrice } from "@/components/LivePrice";
 import { CopyButton } from "@/components/CopyButton";
+import { CreatorFees } from "@/components/CreatorFees";
 import { fetchTokenImage } from "@/lib/tokenImages";
 
 export const dynamic = "force-dynamic";
@@ -49,7 +50,7 @@ export default async function TokenPage({ params }: TokenPageProps) {
   const image = await fetchTokenImage(detail.token);
 
   return (
-    <div className="arch-stack" style={{ maxWidth: 720, margin: "0 auto" }}>
+    <div className="arch-stack" style={{ maxWidth: 1100, margin: "0 auto" }}>
       <Card>
         <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
           <a href="/tokens" aria-label="Back to tokens" style={{ fontSize: "1.25rem", padding: "0 0.25rem" }}>‹</a>
@@ -89,50 +90,43 @@ export default async function TokenPage({ params }: TokenPageProps) {
         ) : null}
       </Card>
 
-      <div className="arch-two-col">
-        <Card title="Market">
-          <StatRow label="Price" value={formatPriceE18(detail.priceE18)} />
-          <StatRow label="Market cap" value={`$${formatQuoteUnits(detail.marketCapUnits)}`} />
-          <StatRow label="Pool quote balance" value={`${formatQuoteUnits(detail.quoteBalance)} ${PAIR_TOKEN_SYMBOL}`} />
-          <StatRow label="Graduation threshold" value={`9,000 ${PAIR_TOKEN_SYMBOL}`} />
-          <StatRow label="Supply" value="1,000,000,000 (fixed)" />
-          <StatRow label="Creator" value={`${detail.creator.slice(0, 8)}…`} />
-          <p className="arch-note" style={{ marginBottom: 0 }}>
-            <a
-              href={`${ARC_EXPLORER}/address/${detail.token}`}
-              target="_blank"
-              rel="noreferrer"
-              style={{ textDecoration: "underline" }}
-            >
-              Token on explorer
-            </a>{" "}
-            ·{" "}
-            <a
-              href={`${ARC_EXPLORER}/address/${detail.pool}`}
-              target="_blank"
-              rel="noreferrer"
-              style={{ textDecoration: "underline" }}
-            >
-              Pool
-            </a>{" "}
-            · Position #{detail.positionId.toString()}
-          </p>
+      <div className="arch-terminal">
+        <Card>
+          <MarketPanels
+            pool={detail.pool}
+            token={detail.token}
+            pairToken={detail.pairToken}
+            symbol={detail.symbol}
+            creator={detail.creator}
+          />
         </Card>
 
-        <Card title="Trade">
-          <TradePanel token={detail.token} pairToken={detail.pairToken} symbol={detail.symbol} />
-        </Card>
+        <div className="arch-stack">
+          <Card title="Trade">
+            <TradePanel token={detail.token} pairToken={detail.pairToken} symbol={detail.symbol} />
+          </Card>
+
+          <CreatorFees
+            token={detail.token}
+            creator={detail.creator}
+            pairToken={detail.pairToken}
+            positionId={detail.positionId}
+          />
+
+          <Card title="Market">
+            <StatRow label="Market cap" value={`$${formatQuoteUnits(detail.marketCapUnits)}`} />
+            <StatRow label="Pool liquidity" value={`${formatQuoteUnits(detail.quoteBalance)} ${PAIR_TOKEN_SYMBOL}`} />
+            <StatRow label="Graduation" value={`9,000 ${PAIR_TOKEN_SYMBOL}`} />
+            <StatRow label="Supply" value="1,000,000,000 (fixed)" />
+            <StatRow label="Creator" value={`${detail.creator.slice(0, 8)}…`} />
+            <p className="arch-note" style={{ marginBottom: 0 }}>
+              <a href={`${ARC_EXPLORER}/address/${detail.token}`} target="_blank" rel="noreferrer" style={{ textDecoration: "underline" }}>Token on explorer</a>{" "}
+              · <a href={`${ARC_EXPLORER}/address/${detail.pool}`} target="_blank" rel="noreferrer" style={{ textDecoration: "underline" }}>Pool</a>{" "}
+              · Position #{detail.positionId.toString()}
+            </p>
+          </Card>
+        </div>
       </div>
-
-      <Card title="Market activity">
-        <MarketPanels
-          pool={detail.pool}
-          token={detail.token}
-          pairToken={detail.pairToken}
-          symbol={detail.symbol}
-          creator={detail.creator}
-        />
-      </Card>
 
       <Card title="Permanent liquidity">
         <p className="arch-note" style={{ margin: 0 }}>

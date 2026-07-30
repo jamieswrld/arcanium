@@ -10,6 +10,7 @@ export const FACTORY_ADDRESS = process.env["NEXT_PUBLIC_ARCH_LAUNCHPAD_FACTORY_A
 export const GRADUATION_ADDRESS = process.env["NEXT_PUBLIC_ARCH_GRADUATION_REGISTRY_ADDRESS"] as Hex | undefined;
 export const DISTRIBUTOR_ADDRESS = process.env["NEXT_PUBLIC_ARCH_FEE_DISTRIBUTOR_ADDRESS"] as Hex | undefined;
 export const ROUTER_ADDRESS = process.env["NEXT_PUBLIC_UNISWAP_SWAP_ROUTER_ADDRESS"] as Hex | undefined;
+export const LIQUIDITY_VAULT_ADDRESS = process.env["NEXT_PUBLIC_ARCH_LIQUIDITY_VAULT_ADDRESS"] as Hex | undefined;
 
 export const GRADUATION_UNITS = 9_000_000_000n; // 9,000 quote units (6d)
 const Q192 = 2n ** 192n;

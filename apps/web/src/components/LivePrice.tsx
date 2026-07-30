@@ -32,9 +32,9 @@ export function LivePrice({
         const slot0 = await arc.readContract({ address: pool, abi: poolAbi, functionName: "slot0" });
         if (!cancelled) setText(formatPriceE18(priceUsdE18(slot0[0], tokenIsToken0)));
       } catch { /* transient */ }
-      if (!cancelled) timer = setTimeout(() => void tick(), 4_000);
+      if (!cancelled) timer = setTimeout(() => void tick(), 3_000);
     };
-    timer = setTimeout(() => void tick(), 4_000);
+    timer = setTimeout(() => void tick(), 3_000);
     return () => { cancelled = true; if (timer !== undefined) clearTimeout(timer); };
   }, [arc, pool, tokenIsToken0]);
 

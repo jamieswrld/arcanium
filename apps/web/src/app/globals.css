@@ -235,6 +235,15 @@ main {
   .arch-two-col {
     @apply grid grid-cols-2 gap-4 max-[640px]:grid-cols-1;
   }
+  /* Trading terminal: big chart left, trade rail right; stacks on mobile. */
+  .arch-terminal {
+    @apply grid gap-4;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    align-items: start;
+  }
+  @media (max-width: 960px) {
+    .arch-terminal { grid-template-columns: 1fr; }
+  }
   .arch-token-price-big {
     @apply text-[1.85rem] font-bold text-right leading-tight tracking-tight;
   }
