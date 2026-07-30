@@ -17,7 +17,7 @@ export const ROUTER_ADDRESS = process.env["NEXT_PUBLIC_UNISWAP_SWAP_ROUTER_ADDRE
 /** Mode distributor (v4): routes creator fees by launch mode. */
 export const MODE_DISTRIBUTOR_ADDRESS =
   (process.env["NEXT_PUBLIC_ARCH_MODE_DISTRIBUTOR_ADDRESS"] as Hex | undefined) ??
-  "0xed233972c8a24dFA91671B94E2bb0B1E1E2f943D";
+  "0x7c148B6a581E32CcB6ffF7Bd59AF4250d5ec1eBc";
 
 /** Launch modes, fixed at launch and immutable. */
 export const LAUNCH_MODES = [
@@ -48,6 +48,9 @@ const HIDDEN_TOKENS = new Set(
     "0x6347dB930F087D99E722652921e22f3Ca545eA45", // RTCK — router-fix verification launch
     "0x54464cA71f55C59b2e944B09e24cA689A918e644", // AROS — pre-public test launch (fresh start)
     "0x10667F1aF42927cae3C4E41d95B009A1a3140bC6", // RDCK — fee-redirect verification launch
+    "0xc4da09A19d1AA76Ab8616C6ffbB9b834F5A273eD", // DIVT — Divium precision test (first run)
+    "0xA6A959d435F95964B4A80fEDcF21D3A1B383b30c", // DIVT — Divium verification launch
+    "0x35892F857c3d47f50E352C57C2ECbE47dA492d1b", // ARCT — Arcane verification launch
     ...(process.env["NEXT_PUBLIC_ARCH_HIDDEN_TOKENS"] ?? "").split(","),
   ]
     .map((s) => s.trim().toLowerCase())

@@ -69,6 +69,7 @@ contract ArchModeDistributor is Ownable2Step, ReentrancyGuard {
     error ZeroAddress();
     error NotFactory();
     error ModeAlreadySet();
+    error BadMode();
 
     constructor(
         address factory_,
@@ -97,6 +98,17 @@ contract ArchModeDistributor is Ownable2Step, ReentrancyGuard {
     function setMode(address token, uint8 mode) external {
         if (msg.sender != address(factory)) revert NotFactory();
         if (modeSet[token]) revert ModeAlreadySet();
+        modeSet[token] = true;
+        modeOf[token] = Mode(mode);
+    }
+
+    /// @notice One-time mode assignment for tokens launched before modes
+    ///         existed (v3 and earlier). Owner-only, and it can never change a
+    ///         mode that is already set — the same immutability new launches
+    ///         get, just applied retroactively once.
+    function adminSetMode(address token, uint8 mode) external onlyOwner {
+        if (modeSet[token]) revert ModeAlreadySet();
+        if (mode > 2) revert BadMode();
         modeSet[token] = true;
         modeOf[token] = Mode(mode);
     }
