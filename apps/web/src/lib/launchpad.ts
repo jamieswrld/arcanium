@@ -17,7 +17,7 @@ export const ROUTER_ADDRESS = process.env["NEXT_PUBLIC_UNISWAP_SWAP_ROUTER_ADDRE
 /** Mode distributor (v4): routes creator fees by launch mode. */
 export const MODE_DISTRIBUTOR_ADDRESS =
   (process.env["NEXT_PUBLIC_ARCH_MODE_DISTRIBUTOR_ADDRESS"] as Hex | undefined) ??
-  "0x7c148B6a581E32CcB6ffF7Bd59AF4250d5ec1eBc";
+  "0x164aBB4Dc85C2Ff20B0AFE22D7Db7fcbEBdcf736";
 
 /** Launch modes, fixed at launch and immutable. */
 export const LAUNCH_MODES = [

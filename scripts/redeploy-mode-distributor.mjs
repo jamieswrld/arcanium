@@ -71,6 +71,18 @@ async function main() {
   await send("factory.setModeDistributor", { address: FACTORY, abi: facAbi, functionName: "setModeDistributor", args: [distributor], gas: 200_000n });
   await send("vault.setFeeDistributor", { address: VAULT, abi: lvAbi, functionName: "setFeeDistributor", args: [distributor], gas: 200_000n });
 
+  // Point known legacy tokens at the factory that launched them.
+  const OVERRIDES = [
+    ["0x356d6137bde83A8454964D91da5Df75c3bad57F5", addrs.factoryOld], // The Arcane (v2 factory)
+  ];
+  console.log("factory overrides:");
+  for (const [tok, fac] of OVERRIDES) {
+    if (fac === undefined) continue;
+    await send(`setFactoryOverride(${tok.slice(0, 10)}…)`, {
+      address: distributor, abi: a.abi, functionName: "setFactoryOverride", args: [getAddress(tok), getAddress(fac)], gas: 200_000n,
+    });
+  }
+
   // Tag any tokens passed as token=mode
   const tags = process.argv.slice(2).filter((x) => x.includes("="));
   if (tags.length > 0) console.log("\ntagging existing tokens:");

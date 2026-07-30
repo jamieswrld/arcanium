@@ -51,6 +51,9 @@ contract ArchModeDistributor is Ownable2Step, ReentrancyGuard {
     /// @notice Launch mode per token, set once by the factory at launch.
     mapping(address => Mode) public modeOf;
     mapping(address => bool) public modeSet;
+    /// @notice Per-token factory override, so tokens from any earlier factory
+    ///         generation stay collectable through this one distributor.
+    mapping(address => address) public factoryOverride;
 
     event FeesDistributed(
         address indexed token,
@@ -102,6 +105,31 @@ contract ArchModeDistributor is Ownable2Step, ReentrancyGuard {
         modeOf[token] = Mode(mode);
     }
 
+    /// @notice Point a token at the factory that actually launched it.
+    function setFactoryOverride(address token, address factory_) external onlyOwner {
+        if (factory_ == address(0)) revert ZeroAddress();
+        factoryOverride[token] = factory_;
+    }
+
+    /// @dev Resolve a launch record across the current, overridden, and legacy
+    ///      factories — whichever knows this token.
+    function _resolve(address token)
+        internal
+        view
+        returns (address launched, address creator, address pairToken, uint256 positionId)
+    {
+        address ov = factoryOverride[token];
+        if (ov != address(0)) {
+            (launched, creator, pairToken, , positionId) = ArchLaunchpadFactory(ov).launches(token);
+            if (launched != address(0)) return (launched, creator, pairToken, positionId);
+        }
+        (launched, creator, pairToken, , positionId) = factory.launches(token);
+        if (launched != address(0)) return (launched, creator, pairToken, positionId);
+        if (address(legacyFactory) != address(0)) {
+            (launched, creator, pairToken, , positionId) = legacyFactory.launches(token);
+        }
+    }
+
     /// @notice One-time mode assignment for tokens launched before modes
     ///         existed (v3 and earlier). Owner-only, and it can never change a
     ///         mode that is already set — the same immutability new launches
@@ -115,10 +143,7 @@ contract ArchModeDistributor is Ownable2Step, ReentrancyGuard {
 
     /// @notice Collect and route this pool's accrued fees. Permissionless.
     function distribute(address token) public nonReentrant {
-        (address launched, address creator, address pairToken, , uint256 positionId) = factory.launches(token);
-        if (launched == address(0) && address(legacyFactory) != address(0)) {
-            (launched, creator, pairToken, , positionId) = legacyFactory.launches(token);
-        }
+        (address launched, address creator, address pairToken, uint256 positionId) = _resolve(token);
         if (launched == address(0)) revert UnknownToken();
 
         (uint256 amount0, uint256 amount1) = vault.collectFees(positionId);
@@ -164,10 +189,7 @@ contract ArchModeDistributor is Ownable2Step, ReentrancyGuard {
     function claimRewards(address token) external nonReentrant returns (uint256 amount) {
         amount = IArchLaunchTokenV2(token).consumeRewards(msg.sender);
         if (amount == 0) return 0;
-        (, , address pairToken, , ) = factory.launches(token);
-        if (pairToken == address(0) && address(legacyFactory) != address(0)) {
-            (, , pairToken, , ) = legacyFactory.launches(token);
-        }
+        (, , address pairToken, ) = _resolve(token);
         IERC20(pairToken).safeTransfer(msg.sender, amount);
         emit RewardsClaimed(token, msg.sender, amount);
     }
