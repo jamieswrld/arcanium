@@ -279,6 +279,36 @@ main {
   .arch-hero {
     @apply text-center pt-8 pb-10;
   }
+  /* Hero mark: the A centered above the headline, haloed in the brand glow. */
+  .arch-hero-logo {
+    @apply flex justify-center mb-6 relative;
+  }
+  .arch-hero-logo::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 240px;
+    height: 240px;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(circle, oklch(0.58 0.24 296 / 0.32), oklch(0.55 0.2 275 / 0.1) 45%, transparent 70%);
+    pointer-events: none;
+  }
+  .arch-hero-logo img {
+    position: relative;
+    filter:
+      drop-shadow(0 0 14px oklch(0.66 0.24 296 / 0.65))
+      drop-shadow(0 0 42px oklch(0.6 0.22 285 / 0.4));
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .arch-hero-logo img {
+      animation: heroFloat 5.5s ease-in-out infinite;
+    }
+  }
+  @keyframes heroFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+  }
   .arch-hero h1 {
     @apply text-[3rem] max-[640px]:text-[2.1rem] font-bold tracking-tight leading-[1.04] m-0;
   }

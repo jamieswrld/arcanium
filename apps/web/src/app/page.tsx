@@ -21,6 +21,10 @@ export default async function LaunchpadHome() {
   return (
     <div>
       <div className="arch-hero">
+        <div className="arch-hero-logo" aria-hidden>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/arcanium-mark.png" alt="" width={86} height={68} />
+        </div>
         <h1>
           Launch a token on Arc.
           <br />
