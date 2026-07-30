@@ -29,9 +29,9 @@ export default function CreateTokenPage() {
           <StatRow label="Pairs with" value="Native Arc USDC" />
           <p className="arch-note" style={{ marginBottom: 0 }}>
             No bonding curve, no pre-market: your token trades on real Uniswap against
-            native Arc USDC from its first block. Pay the launch cost with the USDC you
-            already hold on Arc. Nobody — including Arcanium — can ever withdraw the
-            launch liquidity. Prices can go down as well as up.
+            native Arc USDC from its first block. Launching is free — you only pay Arc
+            network gas. Nobody — including Arcanium — can ever withdraw the launch
+            liquidity. Prices can go down as well as up.
           </p>
         </Card>
       </div>

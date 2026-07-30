@@ -33,9 +33,9 @@ const LAUNCH_GAS_FLOOR = 40_000_000_000_000_000n; // ~0.04 native USDC
 /**
  * Live launch form. A token is created on Arc, paired with the canonical pair
  * token (native Arc USDC), with its Uniswap v3 pool and permanently locked
- * liquidity in one atomic transaction. The creator pays the launch fee and any
- * initial buy in that same token — which on Arc is the chain's native USDC, so
- * a wallet holding Arc USDC can launch directly, no bridge required.
+ * liquidity in one atomic transaction. Launching is free (network gas only);
+ * any optional initial buy is paid in the pair token — which on Arc is the
+ * chain's native USDC, so a wallet holding Arc USDC can launch directly.
  */
 export function CreateForm() {
   const router = useRouter();
@@ -207,9 +207,15 @@ export function CreateForm() {
 
       <div style={{ padding: "0.5rem 0", fontSize: "0.875rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", padding: "0.2rem 0" }}>
-          <span style={{ color: "var(--arch-text-muted)" }}>Launch cost</span>
-          <span>{launchFee.data !== undefined ? `${formatQuoteUnits(totalNeeded)} ${PAIR_TOKEN_SYMBOL}` : "—"}</span>
+          <span style={{ color: "var(--arch-text-muted)" }}>Launch fee</span>
+          <span>{launchFee.data === undefined ? "—" : launchFee.data === 0n ? "Free — you only pay gas" : `${formatQuoteUnits(launchFee.data)} ${PAIR_TOKEN_SYMBOL}`}</span>
         </div>
+        {buyAmount > 0n ? (
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "0.2rem 0" }}>
+            <span style={{ color: "var(--arch-text-muted)" }}>Initial buy</span>
+            <span>{formatQuoteUnits(buyAmount)} {PAIR_TOKEN_SYMBOL}</span>
+          </div>
+        ) : null}
         <div style={{ display: "flex", justifyContent: "space-between", padding: "0.2rem 0" }}>
           <span style={{ color: "var(--arch-text-muted)" }}>Your {PAIR_TOKEN_SYMBOL} on Arc</span>
           <span>{pairBalance.data !== undefined ? `${formatQuoteUnits(pairBalance.data)} ${PAIR_TOKEN_SYMBOL}` : "—"}</span>

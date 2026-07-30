@@ -77,12 +77,12 @@ export const DOCS: Record<string, ReactNode> = {
   "start/get-usdc": (
     <>
       <h1>Getting USDC on Arc</h1>
-      <p className="docs-lead">Everything on Arcanium is denominated in USDC held on the Arc network. That one balance covers gas, launch costs, and trades.</p>
+      <p className="docs-lead">Everything on Arcanium is denominated in USDC held on the Arc network. That one balance covers gas, optional first buys, and trades.</p>
       <h2>Bringing USDC to Arc</h2>
       <p>Acquire USDC on Arc through an Arc-supported on-ramp or exchange, or by bridging USDC from another chain into Arc using Circle&apos;s CCTP as support rolls out. When you receive it, make sure it lands on the <strong>Arc</strong> network (chain 5042), not Ethereum or Base.</p>
       <h2>How much you need</h2>
       <ul>
-        <li>Enough USDC to cover the launch fee plus any optional first buy (shown live on the Create page).</li>
+        <li>Enough USDC for an optional first buy — launching itself is free (gas only).</li>
         <li>A little extra for gas — on Arc, gas is paid in that same USDC.</li>
       </ul>
       <Callout>Once you hold USDC on Arc, head to <a href="/create">Create</a> to launch, or <a href="/tokens">Launchpad</a> to trade.</Callout>
@@ -101,7 +101,7 @@ export const DOCS: Record<string, ReactNode> = {
         <li>The entire supply as a single-sided position, locked permanently in the liquidity vault.</li>
         <li>Optionally, your own first purchase — executed atomically, so no one can trade ahead of you.</li>
       </ul>
-      <p>You pay the launch cost in USDC from your wallet on Arc; the exact amount is read live from the contract on the Create page. As the creator, you earn a share of the pool&apos;s trading fees for the life of the token.</p>
+      <p>Launching is free — you only pay Arc network gas (a few cents of USDC). As the creator, you earn a share of the pool&apos;s trading fees for the life of the token.</p>
     </>
   ),
 
@@ -166,7 +166,7 @@ export const DOCS: Record<string, ReactNode> = {
         <li>Launch liquidity is permanently locked, but token prices can still fall to zero.</li>
         <li>The full supply is the liquidity — there is no team allocation and no further minting.</li>
         <li>Graduation is a permanent display label only; it does not unlock liquidity or change the token.</li>
-        <li>Trading fees on each pool are split between the token creator and the protocol; token-side fees are burned. A launch fee applies when creating a token.</li>
+        <li>Launching is free (network gas only). Trading fees on each pool are split between the token creator and the protocol; token-side fees are burned.</li>
         <li>Arc is an early network. Availability of USDC on-ramps and infrastructure is still maturing.</li>
         <li>Smart-contract and operator risks exist. Use funds you can afford to lose.</li>
       </ul>
