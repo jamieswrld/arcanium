@@ -410,6 +410,23 @@ export function CctpBridge() {
         </div>
       </div>
 
+      {!toArc && burnLimit !== null && burnLimit > 0n && burnLimit <= 10_000_000n ? (
+        <div
+          role="note"
+          style={{ marginTop: "0.85rem", border: "1px solid color-mix(in oklch, var(--warning) 45%, transparent)", background: "color-mix(in oklch, var(--warning) 10%, transparent)", borderRadius: 12, padding: "0.7rem 0.85rem" }}
+        >
+          <div style={{ fontWeight: 700, fontSize: "0.85rem", color: "var(--warning)" }}>
+            Withdrawals from Arc are limited by Circle
+          </div>
+          <p className="arch-note" style={{ margin: "0.3rem 0 0" }}>
+            Circle currently caps CCTP transfers <strong>out of Arc</strong> at{" "}
+            {formatQuoteUnits(burnLimit)} USDC per transaction while the chain is new — this is
+            Circle&apos;s limit, not Arcanium&apos;s, and it applies to every app on Arc. Bridging{" "}
+            <strong>into</strong> Arc is unrestricted. The cap lifts as Circle raises Arc&apos;s limits.
+          </p>
+        </div>
+      ) : null}
+
       {/* Transfer checklist — always visible so the flow is never a mystery. */}
       <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: "0.6rem 0.85rem", margin: "0.85rem 0", background: "color-mix(in oklch, var(--background) 45%, var(--card))" }}>
         <Step state={stepState(["approving"])} title="Approve USDC" note={`One-time allowance for the ${srcName} router`} />
