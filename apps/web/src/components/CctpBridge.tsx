@@ -428,7 +428,7 @@ export function CctpBridge() {
       <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: "0.6rem 0.85rem", margin: "0.85rem 0", background: "color-mix(in oklch, var(--background) 45%, var(--card))" }}>
         <Step state={stepState(["approving"])} title="Approve USDC" note={`One-time allowance for the ${srcName} router`} />
         <Step state={stepState(["burning"])} title={`Deposit on ${srcName}`} note="Fee taken, remainder burned via Circle CCTP" />
-        <Step state={stepState(["attesting"])} title="Wait for Circle" note={fastFeeBps === 0 ? "Fast lane — usually under a minute" : "Attestation — fast when the fee covers it, otherwise ~15–20 min"} />
+        <Step state={stepState(["attesting"])} title="Wait for Circle" note="Circle signs the deposit — timing is set by Circle, not Arcanium" />
         <Step state={stepState(["claiming"])} title={`Claim on ${dstName}`} note={`Relayed for you · no ${dstName} gas needed`} />
       </div>
 

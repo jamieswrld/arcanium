@@ -14,8 +14,9 @@ export default function BridgePage() {
       <div>
         <h1 style={{ margin: 0, fontSize: "1.75rem", fontWeight: 700, letterSpacing: "-0.02em" }}>Bridge</h1>
         <p className="arch-note" style={{ margin: "0.25rem 0 0" }}>
-          Move native USDC between Base and Arc in under a minute — Circle&apos;s official
-          CCTP route, no wrapped assets. Arrival is gas-free: Arcanium relays the mint.
+          Move native USDC between Base and Arc over Circle&apos;s official CCTP route — no
+          wrapped assets. Arrival is gas-free: Arcanium relays the claim for you. Circle&apos;s
+          attestation can take a while; transfers auto-claim as soon as it lands.
         </p>
       </div>
 
