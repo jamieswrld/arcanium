@@ -11,6 +11,31 @@ import { pad, type Hex } from "viem";
 export const TOKEN_MESSENGER_V2: Hex = "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d";
 export const MESSAGE_TRANSMITTER_V2: Hex = "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64";
 
+/** Arcanium bridge routers (per chain): take the protocol's flat fee, then
+ *  burn the remainder through CCTP — one atomic transaction. */
+export const BRIDGE_ROUTER_BASE: Hex =
+  (process.env["NEXT_PUBLIC_BRIDGE_ROUTER_BASE"] as Hex | undefined) ?? "0x085ea6d98c6c8a0e5f05620bb13f34792fae1266";
+export const BRIDGE_ROUTER_ARC: Hex =
+  (process.env["NEXT_PUBLIC_BRIDGE_ROUTER_ARC"] as Hex | undefined) ?? "0x0dd474165985629ff88c718036a0ecd182338bfa";
+/** Protocol bridge fee (bps) — mirrored from the router for display math. */
+export const BRIDGE_FEE_BPS = 200n;
+
+export const bridgeRouterAbi = [
+  {
+    type: "function",
+    name: "bridge",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "amount", type: "uint256" },
+      { name: "destinationDomain", type: "uint32" },
+      { name: "mintRecipient", type: "bytes32" },
+      { name: "maxCctpFee", type: "uint256" },
+      { name: "minFinalityThreshold", type: "uint32" },
+    ],
+    outputs: [],
+  },
+] as const;
+
 export const BASE_DOMAIN = 6;
 export const ARC_DOMAIN = 26;
 

@@ -13,8 +13,10 @@ import {
   BASE_USDC,
   FAST_FINALITY,
   maxFeeFor,
-  TOKEN_MESSENGER_V2,
-  tokenMessengerAbi,
+  BRIDGE_FEE_BPS,
+  BRIDGE_ROUTER_ARC,
+  BRIDGE_ROUTER_BASE,
+  bridgeRouterAbi,
 } from "@/lib/cctp";
 import { UsdcLogo } from "@/components/UsdcLogo";
 import { ConnectButton } from "@/components/ConnectButton";
@@ -54,6 +56,7 @@ export function CctpBridge() {
   const srcName = toArc ? "Base" : "Arc";
   const dstName = toArc ? "Arc" : "Base";
   const srcUsdc = toArc ? BASE_USDC : ARC_USDC;
+  const srcRouter = toArc ? BRIDGE_ROUTER_BASE : BRIDGE_ROUTER_ARC;
   const srcExplorer = toArc ? BASE_EXPLORER : ARC_EXPLORER;
   const dstExplorer = toArc ? ARC_EXPLORER : BASE_EXPLORER;
 
@@ -78,6 +81,8 @@ export function CctpBridge() {
     try { return parseQuoteUnits(amountText); } catch { return null; }
   }, [amountText]);
 
+  const receiveAfterFee = parsed === null ? null : parsed - (parsed * BRIDGE_FEE_BPS) / 10_000n;
+
   const busy = step.id === "switching" || step.id === "approving" || step.id === "burning" || step.id === "attesting" || step.id === "minting";
 
   async function run(): Promise<void> {
@@ -98,27 +103,25 @@ export function CctpBridge() {
       }
 
       const allowance = await srcPublic.readContract({
-        address: srcUsdc, abi: erc20Abi, functionName: "allowance", args: [address, TOKEN_MESSENGER_V2],
+        address: srcUsdc, abi: erc20Abi, functionName: "allowance", args: [address, srcRouter],
       });
       if (allowance < parsed) {
         setStep({ id: "approving" });
         const approveTx = await writeContractAsync({
-          address: srcUsdc, abi: erc20Abi, functionName: "approve", args: [TOKEN_MESSENGER_V2, parsed], chainId: srcChainId,
+          address: srcUsdc, abi: erc20Abi, functionName: "approve", args: [srcRouter, parsed], chainId: srcChainId,
         });
         await srcPublic.waitForTransactionReceipt({ hash: approveTx });
       }
 
       setStep({ id: "burning" });
       const burnTx = await writeContractAsync({
-        address: TOKEN_MESSENGER_V2,
-        abi: tokenMessengerAbi,
-        functionName: "depositForBurn",
+        address: srcRouter,
+        abi: bridgeRouterAbi,
+        functionName: "bridge",
         args: [
           parsed,
           toArc ? ARC_DOMAIN : BASE_DOMAIN,
           addressToBytes32(address),
-          srcUsdc,
-          "0x0000000000000000000000000000000000000000000000000000000000000000",
           maxFeeFor(parsed),
           FAST_FINALITY,
         ],
@@ -191,11 +194,11 @@ export function CctpBridge() {
         {input ? (
           <input className="arch-amount-input" placeholder="0.00" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)} disabled={busy} aria-label="Amount to bridge" />
         ) : (
-          <span className="arch-amount-output">{parsed !== null ? formatQuoteUnits(parsed) : "0.00"}</span>
+          <span className="arch-amount-output">{receiveAfterFee !== null ? formatQuoteUnits(receiveAfterFee) : "0.00"}</span>
         )}
       </div>
       <div className="arch-panel-foot">
-        <span>{input ? "You send" : "You receive (1:1, minus Circle's fast fee)"}</span>
+        <span>{input ? "You send" : "After fees (Circle's network fee may apply)"}</span>
         <span>
           Balance: {balance !== undefined ? formatQuoteUnits(balance) : "—"}
           {input ? (
@@ -232,6 +235,10 @@ export function CctpBridge() {
         <div style={{ display: "flex", justifyContent: "space-between", padding: "0.15rem 0" }}>
           <span style={{ color: "var(--muted-foreground)" }}>Route</span>
           <span>Circle CCTP · native USDC (no wrapped assets)</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "0.15rem 0" }}>
+          <span style={{ color: "var(--muted-foreground)" }}>Bridge fee</span>
+          <span>2%{parsed !== null ? ` (${formatQuoteUnits((parsed * BRIDGE_FEE_BPS) / 10_000n)} USDC)` : ""}</span>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", padding: "0.15rem 0" }}>
           <span style={{ color: "var(--muted-foreground)" }}>Speed</span>
