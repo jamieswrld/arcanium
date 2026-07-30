@@ -1,23 +1,26 @@
 import { createConfig, fallback, http } from "wagmi";
+import { base } from "viem/chains";
 import { injected } from "wagmi/connectors";
 import { arcTestnet } from "./bridgeClient";
 
 /**
- * Wagmi config: Arc only. Arcanium is a pure Arc launchpad — tokens are created
- * and traded on Arc, paired with native Arc USDC. There is no Base/bridge step.
- * EIP-6963 multi-provider discovery surfaces every installed wallet; the
- * injected() connector is the fallback for wallets that don't announce.
+ * Wagmi config: Arc (home chain) + Base (bridge source). The launchpad lives
+ * entirely on Arc; Base exists solely so the CCTP bridge can approve + burn
+ * USDC there. EIP-6963 discovery surfaces every installed wallet.
  */
 export const wagmiConfig = createConfig({
-  chains: [arcTestnet],
+  chains: [arcTestnet, base],
   connectors: [injected({ shimDisconnect: true })],
   multiInjectedProviderDiscovery: true,
   transports: {
-    // Direct to the RPC first (one network hop, CORS-open), same-origin proxy
-    // as the reliability fallback.
+    // Direct to the RPC first (one hop, CORS-open), same-origin proxy fallback.
     [arcTestnet.id]: fallback([
       http(process.env["NEXT_PUBLIC_ARC_RPC_URL"] ?? "https://rpc.blockdaemon.mainnet.arc.io", { timeout: 12_000 }),
       http("/api/arc-rpc", { timeout: 15_000 }),
+    ]),
+    [base.id]: fallback([
+      http(process.env["NEXT_PUBLIC_BASE_RPC_URL"] ?? "https://mainnet.base.org", { timeout: 12_000 }),
+      http("https://base.publicnode.com", { timeout: 12_000 }),
     ]),
   },
 });

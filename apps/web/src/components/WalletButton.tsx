@@ -44,10 +44,12 @@ export function WalletButton() {
 
   // Auto-switch to Arc whenever a connected wallet is on another chain — the
   // wallet adds the network itself if it's new. Attempt once per wrong-chain
-  // state so a user who declines isn't prompt-spammed.
+  // state so a user who declines isn't prompt-spammed. The bridge page manages
+  // its own chain (Base for burns), so never fight it there.
   const attempted = useRef<number | null>(null);
   useEffect(() => {
     if (!isConnected || chainId === undefined || chainId === arcTestnet.id) return;
+    if (typeof window !== "undefined" && window.location.pathname.startsWith("/bridge")) return;
     if (attempted.current === chainId) return;
     attempted.current = chainId;
     switchChain({ chainId: arcTestnet.id });

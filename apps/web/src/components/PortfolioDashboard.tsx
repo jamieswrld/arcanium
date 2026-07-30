@@ -6,6 +6,7 @@ import { parseAbiItem, type Hex } from "viem";
 import { arcTestnet, erc20Abi, formatQuoteUnits, PAIR_TOKEN_SYMBOL } from "@/lib/bridgeClient";
 import { DISTRIBUTOR_ADDRESS, LIQUIDITY_VAULT_ADDRESS, formatUsdCompact } from "@/lib/launchpad";
 import { TokenAvatar } from "@/components/TokenAvatar";
+import { UsdcLogo } from "@/components/UsdcLogo";
 import { ConnectButton } from "@/components/ConnectButton";
 import { NetworkNotice } from "@/components/NetworkNotice";
 import { useToast } from "@/components/ui/Toast";
@@ -273,7 +274,7 @@ export function PortfolioDashboard({ tokens }: { readonly tokens: readonly Seria
           <div style={{ display: "grid", gap: "0.25rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", padding: "0.55rem 0", borderBottom: "1px solid var(--border)", alignItems: "center" }}>
               <span style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-                <span aria-hidden style={{ width: 34, height: 34, borderRadius: 10, background: "var(--brand-gradient)", display: "grid", placeItems: "center", fontWeight: 700, fontSize: "0.72rem", color: "#fff" }}>$</span>
+                <UsdcLogo size={34} />
                 <span><strong>USDC</strong> <span className="arch-note">native · pays gas &amp; trades</span></span>
               </span>
               <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{formatQuoteUnits(usdcUnits)} USDC</span>
