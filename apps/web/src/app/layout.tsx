@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import "./globals.css";
 import { Providers } from "./providers";
-import { NetworkPill, WalletButton } from "@/components/WalletButton";
+import { WalletButton } from "@/components/WalletButton";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
@@ -41,7 +41,6 @@ export default function RootLayout({
               ))}
             </nav>
             <div className="arch-header-right">
-              <NetworkPill />
               <WalletButton />
             </div>
           </header>

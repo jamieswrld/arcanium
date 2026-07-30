@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAccount, useDisconnect, useSwitchChain } from "wagmi";
 import { arcTestnet } from "@/lib/bridgeClient";
 import { ConnectModal } from "@/components/ConnectModal";
@@ -37,9 +37,21 @@ export function NetworkPill() {
 }
 
 export function WalletButton() {
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chainId } = useAccount();
   const { disconnect } = useDisconnect();
+  const { switchChain } = useSwitchChain();
   const [open, setOpen] = useState(false);
+
+  // Auto-switch to Arc whenever a connected wallet is on another chain — the
+  // wallet adds the network itself if it's new. Attempt once per wrong-chain
+  // state so a user who declines isn't prompt-spammed.
+  const attempted = useRef<number | null>(null);
+  useEffect(() => {
+    if (!isConnected || chainId === undefined || chainId === arcTestnet.id) return;
+    if (attempted.current === chainId) return;
+    attempted.current = chainId;
+    switchChain({ chainId: arcTestnet.id });
+  }, [isConnected, chainId, switchChain]);
 
   if (isConnected && address !== undefined) {
     return (
