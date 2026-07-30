@@ -59,6 +59,9 @@ contract ArchLaunchpadFactory is Ownable2Step, ReentrancyGuard {
         uint256 creatorBuyAmount;
         uint256 minTokensOut;
         uint256 deadline;
+        /// Optional wallet that receives creator rewards (and the creator-only
+        /// claim rights). address(0) = the launcher themselves.
+        address feeRecipient;
     }
 
     struct LaunchInfo {
@@ -172,16 +175,19 @@ contract ArchLaunchpadFactory is Ownable2Step, ReentrancyGuard {
             launchToken.transfer(0x000000000000000000000000000000000000dEaD, residual);
         }
 
+        // Creator rewards (and claim rights) go to the chosen fee recipient —
+        // any EVM wallet — defaulting to the launcher.
+        address rewardWallet = params.feeRecipient == address(0) ? msg.sender : params.feeRecipient;
         launches[token] = LaunchInfo({
             token: token,
-            creator: msg.sender,
+            creator: rewardWallet,
             pairToken: params.pairToken,
             pool: pool,
             positionId: positionId
         });
         allTokens.push(token);
 
-        emit Launched(token, msg.sender, params.pairToken, pool, positionId, params.metadataUri);
+        emit Launched(token, rewardWallet, params.pairToken, pool, positionId, params.metadataUri);
 
         // 4. Optional atomic creator purchase — same transaction, so no one
         //    can trade before the creator.
