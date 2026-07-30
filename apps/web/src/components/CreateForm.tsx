@@ -127,22 +127,36 @@ export function CreateForm() {
   const busy = state.step === "approving" || state.step === "launching";
 
   async function submit(): Promise<void> {
-    if (
-      address === undefined || arcPublic === undefined ||
-      FACTORY_ADDRESS === undefined || PAIR_TOKEN_ADDRESS === undefined ||
-      launchFee.data === undefined || formError !== null || name.trim().length === 0
-    ) return;
+    // Validate with explicit feedback — never fail silently.
+    if (FACTORY_ADDRESS === undefined || PAIR_TOKEN_ADDRESS === undefined || arcPublic === undefined) {
+      setState({ step: "error", message: "Launchpad isn't configured on this deployment." });
+      return;
+    }
+    if (name.trim().length === 0) { setState({ step: "error", message: "Enter a token name." }); return; }
+    if (tickerNormalized.length < 2) { setState({ step: "error", message: "Enter a ticker (2–10 letters/numbers)." }); return; }
+    if (formError !== null) { setState({ step: "error", message: formError }); return; }
+    if (address === undefined) { setState({ step: "error", message: "Connect your wallet first." }); return; }
     try {
       if (chainId !== arcTestnet.id) await switchChainAsync({ chainId: arcTestnet.id });
 
-      if (pairBalance.data !== undefined && pairBalance.data < totalNeeded) {
-        setState({ step: "error", message: `Need ${formatQuoteUnits(totalNeeded)} ${PAIR_TOKEN_SYMBOL} (fee + buy); you have ${formatQuoteUnits(pairBalance.data)}` });
+      // Read the launch fee on-demand so a slow/failed hook read never blocks
+      // the launch (it's usually 0 anyway).
+      const fee = launchFee.data ?? await arcPublic.readContract({
+        address: FACTORY_ADDRESS, abi: factoryAbi, functionName: "launchFee",
+      }).catch(() => 0n);
+      const needed = fee + buyAmount;
+
+      const bal = pairBalance.data ?? await arcPublic.readContract({
+        address: PAIR_TOKEN_ADDRESS, abi: erc20Abi, functionName: "balanceOf", args: [address],
+      }).catch(() => undefined);
+      if (bal !== undefined && bal < needed) {
+        setState({ step: "error", message: `Need ${formatQuoteUnits(needed)} ${PAIR_TOKEN_SYMBOL} (fee + buy); you have ${formatQuoteUnits(bal)}` });
         return;
       }
 
       // A full launch is gas-heavy; fail fast with a clear message if the
       // wallet can't cover it rather than a cryptic wallet error.
-      const gasBal = await arcPublic.getBalance({ address });
+      const gasBal = await arcPublic.getBalance({ address }).catch(() => LAUNCH_GAS_FLOOR);
       if (gasBal < LAUNCH_GAS_FLOOR) { setState({ step: "needs_gas" }); return; }
 
       const metadata = {
@@ -155,10 +169,10 @@ export function CreateForm() {
       const allowance = await arcPublic.readContract({
         address: PAIR_TOKEN_ADDRESS, abi: erc20Abi, functionName: "allowance", args: [address, FACTORY_ADDRESS],
       });
-      if (allowance < totalNeeded) {
+      if (needed > 0n && allowance < needed) {
         setState({ step: "approving" });
         const approveTx = await writeContractAsync({
-          address: PAIR_TOKEN_ADDRESS, abi: erc20Abi, functionName: "approve", args: [FACTORY_ADDRESS, totalNeeded], chainId: arcTestnet.id,
+          address: PAIR_TOKEN_ADDRESS, abi: erc20Abi, functionName: "approve", args: [FACTORY_ADDRESS, needed], chainId: arcTestnet.id,
         });
         await arcPublic.waitForTransactionReceipt({ hash: approveTx });
       }
@@ -195,7 +209,7 @@ export function CreateForm() {
     }
   }
 
-  const disabled = busy || formError !== null || name.trim() === "";
+  const disabled = busy; // validation happens on click with a clear message
 
   return (
     <div>
