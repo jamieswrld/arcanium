@@ -58,6 +58,17 @@ export default function RootLayout({
             </div>
           </header>
           <main>{children}</main>
+          <footer className="arch-footer">
+            <div style={{ display: "flex", justifyContent: "center", gap: "1.25rem", flexWrap: "wrap", marginBottom: "0.6rem" }}>
+              <Link href="/tokens" className="arch-note" style={{ textDecoration: "none" }}>Launchpad</Link>
+              <Link href="/create" className="arch-note" style={{ textDecoration: "none" }}>Create</Link>
+              <Link href="/docs" className="arch-note" style={{ textDecoration: "none" }}>Docs</Link>
+              <a href="https://x.com/arcaniumtrade" target="_blank" rel="noreferrer" className="arch-note" style={{ textDecoration: "none" }}>X / Twitter</a>
+            </div>
+            <p className="arch-note" style={{ margin: 0, fontSize: "0.72rem" }}>
+              Arcanium — the launchpad on Arc. Liquidity locked forever. Prices can go down as well as up.
+            </p>
+          </footer>
           <VersionGuard />
         </Providers>
       </body>

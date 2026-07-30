@@ -36,13 +36,13 @@ export function CandleChart({ candles }: { readonly candles: readonly Candle[] }
   useEffect(() => {
     const el = containerRef.current;
     if (el === null) return;
-    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const gridColor = dark ? "rgba(255,255,255,0.06)" : "rgba(15,15,30,0.06)";
+    // Dark-only theme: violet-tinted grid on the deep blue canvas.
+    const gridColor = "rgba(147, 130, 220, 0.08)";
     const chart = createChart(el, {
       autoSize: true,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: dark ? "#9aa0ae" : "#6b7280",
+        textColor: "#8f93a8",
         fontSize: 11,
       },
       grid: { vertLines: { color: gridColor }, horzLines: { color: gridColor } },
