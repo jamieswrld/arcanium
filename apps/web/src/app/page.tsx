@@ -72,11 +72,16 @@ export default async function LaunchpadHome() {
                     <Link key={t.token} href={`/tokens/${t.token}`} className="arch-token-row">
                       <span style={{ display: "flex", alignItems: "center", gap: "0.7rem", minWidth: 0 }}>
                         <TokenAvatar image={images[t.token.toLowerCase()]} symbol={t.symbol} />
-                        <span style={{ minWidth: 0 }}>
+                        <span style={{ minWidth: 0, flex: 1 }}>
                           <span style={{ display: "block", fontWeight: 600 }}>{t.symbol}</span>
                           <span className="arch-note" style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {t.name}{t.graduated ? " · graduated" : ` · ${progressPct}%`}
+                            {t.name}{t.graduated ? " · graduated" : ""}
                           </span>
+                          {!t.graduated ? (
+                            <span className="arch-progress" style={{ display: "block", marginTop: 4, maxWidth: 180 }}>
+                              <span style={{ width: `${Math.min(progressPct, 100)}%` }} />
+                            </span>
+                          ) : null}
                         </span>
                       </span>
                       <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 500 }}>{formatPriceE18(t.priceE18)}</span>

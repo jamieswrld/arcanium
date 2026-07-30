@@ -100,7 +100,7 @@ export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
     functionName: "balanceOf",
     args: address === undefined ? undefined : [address],
     chainId: arcTestnet.id,
-    query: { enabled: address !== undefined, refetchInterval: 15_000 },
+    query: { enabled: address !== undefined, refetchInterval: 8_000 },
   });
   const tokenBalance = useReadContract({
     address: token,
@@ -108,7 +108,7 @@ export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
     functionName: "balanceOf",
     args: address === undefined ? undefined : [address],
     chainId: arcTestnet.id,
-    query: { enabled: address !== undefined, refetchInterval: 15_000 },
+    query: { enabled: address !== undefined, refetchInterval: 8_000 },
   });
 
   const parsedAmount = useMemo<bigint | null>(() => {
@@ -192,6 +192,9 @@ export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
       }
       setState({ step: "done", txHash });
       setAmountText("");
+      // Refresh both balances immediately so the trade feels instant.
+      void quoteBalance.refetch();
+      void tokenBalance.refetch();
       toast({ tone: "success", title: side === "buy" ? `Bought ${symbol}` : `Sold ${symbol}`, description: "Swap confirmed on Arc.", href: `${ARC_EXPLORER}/tx/${txHash}`, hrefLabel: "View transaction" });
     } catch (err) {
       const message = err instanceof Error ? (err.message.split("\n")[0] ?? "failed") : "failed";
