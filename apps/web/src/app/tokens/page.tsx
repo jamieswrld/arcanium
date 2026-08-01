@@ -5,6 +5,7 @@ import {
   fetchAllTokens,
   GRADUATION_UNITS,
 } from "@/lib/launchpad";
+import { getTokens } from "@/lib/tokensServer";
 import { fetchTokenImages } from "@/lib/tokenImages";
 import { TokenCard } from "@/components/TokenCard";
 
@@ -21,10 +22,8 @@ interface TokensPageProps {
  */
 export default async function TokensPage({ searchParams }: TokensPageProps) {
   const { sort = "newest", q = "" } = await searchParams;
-  let tokens = await Promise.race([
-    fetchAllTokens(arcPublicClient()).catch(() => []),
-    new Promise<Awaited<ReturnType<typeof fetchAllTokens>>>((r) => setTimeout(() => r([]), 9000)),
-  ]);
+  const { tokens: fetchedTokens } = await getTokens();
+  let tokens = fetchedTokens;
 
   const query = q.trim().toLowerCase();
   if (query.length > 0) {

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { arcPublicClient, arcUnreachable, fetchAllTokens, formatUsdCompact } from "@/lib/launchpad";
 import { fetchProtocolStats } from "@/lib/protocolStats";
+import { getTokens } from "@/lib/tokensServer";
 import { fetchTokenImages } from "@/lib/tokenImages";
 import { TokenCard } from "@/components/TokenCard";
 
@@ -11,10 +12,9 @@ import { TokenCard } from "@/components/TokenCard";
 export const revalidate = 15; // edge-cached HTML; client polling keeps data live
 
 export default async function LaunchpadHome() {
-  const tokens = await Promise.race([
-    fetchAllTokens(arcPublicClient()).catch(() => []),
-    new Promise<Awaited<ReturnType<typeof fetchAllTokens>>>((r) => setTimeout(() => r([]), 9000)),
-  ]);
+  const { tokens: fetchedTokens } = await getTokens();
+  const tokens = fetchedTokens;
+
   const recent = tokens.slice(0, 6);
   const [images, stats] = await Promise.all([
     fetchTokenImages(recent.map((t) => t.token)),

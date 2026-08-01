@@ -321,22 +321,9 @@ export async function fetchAllTokens(client: PublicClient): Promise<LaunchpadTok
     const reachable = generations.some((g) => g.length > 0) || (await client.getBlockNumber().then(() => true).catch(() => false));
     arcUnreachable = !reachable;
     const flat = generations.flat();
-    if (flat.length === 0) {
-      // Chain unreachable (or every factory read failed): serve the last known
-      // list rather than an empty launchpad.
-      // Imported lazily: the snapshot store touches Postgres and must never
-      // be pulled into the client bundle.
-      const snap = await import("@/lib/listSnapshot").then((m) => m.loadSnapshot()).catch(() => null);
-      if (snap !== null && snap.tokens.length > 0) {
-        arcUnreachable = true;
-        listCache = { at: Date.now(), tokens: snap.tokens };
-        return snap.tokens;
-      }
-    }
     const modes = await fetchModes(client, flat.map((t) => t.token)).catch(() => new Map<string, number | null>());
     const tokens = flat.map((t) => ({ ...t, mode: modes.get(t.token.toLowerCase()) ?? null }));
     listCache = { at: Date.now(), tokens };
-    void import("@/lib/listSnapshot").then((m) => m.saveSnapshot(tokens)).catch(() => undefined);
     return tokens;
   })();
   try {

@@ -1,4 +1,5 @@
 import { arcPublicClient, fetchAllTokens } from "@/lib/launchpad";
+import { getTokens } from "@/lib/tokensServer";
 import { fetchTokenImages } from "@/lib/tokenImages";
 import { PortfolioDashboard, type SerializedToken } from "@/components/PortfolioDashboard";
 
@@ -11,10 +12,9 @@ export const revalidate = 15; // token universe cached; wallet data is client-li
  * pending + claimed rewards) streams in client-side.
  */
 export default async function PortfolioPage() {
-  const tokens = await Promise.race([
-    fetchAllTokens(arcPublicClient()).catch(() => []),
-    new Promise<Awaited<ReturnType<typeof fetchAllTokens>>>((r) => setTimeout(() => r([]), 9000)),
-  ]);
+  const { tokens: fetchedTokens } = await getTokens();
+  const tokens = fetchedTokens;
+
   const images = await fetchTokenImages(tokens.map((t) => t.token));
 
   const serialized: SerializedToken[] = tokens.map((t) => ({
