@@ -1,5 +1,6 @@
 import { createPublicClient, type Hex, type PublicClient } from "viem";
 import { arcTransport } from "@/lib/arcRpc";
+import { loadSnapshot, saveSnapshot } from "@/lib/listSnapshot";
 
 /**
  * Launchpad chain access + exact bigint price math. No floats ever touch a
@@ -321,9 +322,20 @@ export async function fetchAllTokens(client: PublicClient): Promise<LaunchpadTok
     const reachable = generations.some((g) => g.length > 0) || (await client.getBlockNumber().then(() => true).catch(() => false));
     arcUnreachable = !reachable;
     const flat = generations.flat();
+    if (flat.length === 0) {
+      // Chain unreachable (or every factory read failed): serve the last known
+      // list rather than an empty launchpad.
+      const snap = await loadSnapshot().catch(() => null);
+      if (snap !== null && snap.tokens.length > 0) {
+        arcUnreachable = true;
+        listCache = { at: Date.now(), tokens: snap.tokens };
+        return snap.tokens;
+      }
+    }
     const modes = await fetchModes(client, flat.map((t) => t.token)).catch(() => new Map<string, number | null>());
     const tokens = flat.map((t) => ({ ...t, mode: modes.get(t.token.toLowerCase()) ?? null }));
     listCache = { at: Date.now(), tokens };
+    void saveSnapshot(tokens);
     return tokens;
   })();
   try {
