@@ -6,6 +6,7 @@ import {
   GRADUATION_UNITS,
 } from "@/lib/launchpad";
 import { getTokens } from "@/lib/tokensServer";
+import { NetworkStatusNotice } from "@/components/NetworkStatusNotice";
 import { fetchTokenImages } from "@/lib/tokenImages";
 import { TokenCard } from "@/components/TokenCard";
 
@@ -22,7 +23,7 @@ interface TokensPageProps {
  */
 export default async function TokensPage({ searchParams }: TokensPageProps) {
   const { sort = "newest", q = "" } = await searchParams;
-  const { tokens: fetchedTokens } = await getTokens();
+  const { tokens: fetchedTokens, unreachable } = await getTokens();
   let tokens = fetchedTokens;
 
   const query = q.trim().toLowerCase();
@@ -90,7 +91,9 @@ export default async function TokensPage({ searchParams }: TokensPageProps) {
         </form>
       </div>
 
-      {tokens.length === 0 ? (
+      {unreachable ? (
+        <NetworkStatusNotice />
+      ) : tokens.length === 0 ? (
         <section className="arch-card" style={{ textAlign: "center", padding: "3rem 1rem" }}>
           <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>◆</div>
           <p className="arch-note" style={{ margin: 0 }}>

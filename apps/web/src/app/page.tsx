@@ -2,6 +2,7 @@ import Link from "next/link";
 import { arcPublicClient, arcUnreachable, fetchAllTokens, formatUsdCompact } from "@/lib/launchpad";
 import { fetchProtocolStats } from "@/lib/protocolStats";
 import { getTokens } from "@/lib/tokensServer";
+import { NetworkStatusNotice } from "@/components/NetworkStatusNotice";
 import { fetchTokenImages } from "@/lib/tokenImages";
 import { TokenCard } from "@/components/TokenCard";
 
@@ -12,7 +13,7 @@ import { TokenCard } from "@/components/TokenCard";
 export const revalidate = 15; // edge-cached HTML; client polling keeps data live
 
 export default async function LaunchpadHome() {
-  const { tokens: fetchedTokens } = await getTokens();
+  const { tokens: fetchedTokens, unreachable } = await getTokens();
   const tokens = fetchedTokens;
 
   const recent = tokens.slice(0, 6);
@@ -77,10 +78,12 @@ export default async function LaunchpadHome() {
             <h2>Recent launches</h2>
             <Link href="/tokens" className="arch-note" style={{ textDecoration: "underline" }}>View all</Link>
           </div>
-          {recent.length === 0 ? (
+          {unreachable ? (
+            <NetworkStatusNotice />
+          ) : recent.length === 0 ? (
             <section className="arch-card" style={{ textAlign: "center", padding: "3rem 1rem" }}>
               <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>◆</div>
-              <p className="arch-note" style={{ margin: 0 }}>{arcUnreachable ? "Can’t reach the Arc network right now — an RPC outage, not an empty launchpad. Everything is safe on-chain." : "No tokens launched yet. Be the first."}</p>
+              <p className="arch-note" style={{ margin: 0 }}>No tokens launched yet. Be the first.</p>
               <Link href="/create" className="arch-pill arch-pill-active" style={{ display: "inline-block", marginTop: "1rem", padding: "0.5rem 1.1rem", textDecoration: "none" }}>
                 Launch a token
               </Link>
