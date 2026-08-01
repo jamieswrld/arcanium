@@ -1,6 +1,5 @@
 import { createPublicClient, type Hex, type PublicClient } from "viem";
 import { arcTransport } from "@/lib/arcRpc";
-import { loadSnapshot, saveSnapshot } from "@/lib/listSnapshot";
 
 /**
  * Launchpad chain access + exact bigint price math. No floats ever touch a
@@ -325,7 +324,9 @@ export async function fetchAllTokens(client: PublicClient): Promise<LaunchpadTok
     if (flat.length === 0) {
       // Chain unreachable (or every factory read failed): serve the last known
       // list rather than an empty launchpad.
-      const snap = await loadSnapshot().catch(() => null);
+      // Imported lazily: the snapshot store touches Postgres and must never
+      // be pulled into the client bundle.
+      const snap = await import("@/lib/listSnapshot").then((m) => m.loadSnapshot()).catch(() => null);
       if (snap !== null && snap.tokens.length > 0) {
         arcUnreachable = true;
         listCache = { at: Date.now(), tokens: snap.tokens };
@@ -335,7 +336,7 @@ export async function fetchAllTokens(client: PublicClient): Promise<LaunchpadTok
     const modes = await fetchModes(client, flat.map((t) => t.token)).catch(() => new Map<string, number | null>());
     const tokens = flat.map((t) => ({ ...t, mode: modes.get(t.token.toLowerCase()) ?? null }));
     listCache = { at: Date.now(), tokens };
-    void saveSnapshot(tokens);
+    void import("@/lib/listSnapshot").then((m) => m.saveSnapshot(tokens)).catch(() => undefined);
     return tokens;
   })();
   try {
