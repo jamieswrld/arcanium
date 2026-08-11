@@ -189,7 +189,7 @@ const ROBINHOOD: LaunchChain = {
   graduationUnits: graduationUnits(6),
   launchGasFloor: 2_000_000_000_000_000n, // 0.002 ETH — a launch costs ~0.0005
   live: true,
-  accent: "#00c805",
+  accent: "#CCFF00", // Robinhood brand lime, per simple-icons
 };
 
 // -------------------------------------------------------------- BNB (56)
@@ -238,7 +238,7 @@ const BNB: LaunchChain = {
   graduationUnits: graduationUnits(18),
   launchGasFloor: 2_000_000_000_000_000n, // 0.002 BNB — a launch costs ~0.0005
   live: true,
-  accent: "#f0b90b",
+  accent: "#F0B90B", // BNB Chain brand yellow
 };
 
 // ------------------------------------------------------------------ registry
