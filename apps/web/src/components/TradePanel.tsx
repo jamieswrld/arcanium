@@ -5,6 +5,7 @@ import { useAccount, useBalance, usePublicClient, useReadContract, useSwitchChai
 import { formatUnits, parseUnits, type Hex } from "viem";
 import { erc20Abi } from "@/lib/bridgeClient";
 import { explorerTx, getChain, type ChainKey } from "@/lib/chains";
+import { ensureChain } from "@/lib/wagmi";
 import { useToast } from "@/components/ui/Toast";
 import { ConnectButton } from "@/components/ConnectButton";
 import { routerAbi } from "@/lib/launchpad";
@@ -136,7 +137,7 @@ export function TradePanel({ token, pairToken, symbol, chainKey = "arc" }: Trade
   async function submit(): Promise<void> {
     if (address === undefined || parsedAmount === null || ROUTER_ADDRESS === undefined || arcPublic === undefined) return;
     try {
-      if (chainId !== chain.id) await switchChainAsync({ chainId: chain.id });
+      await ensureChain(chain.key, chainId, switchChainAsync);
       const tokenIn = side === "buy" ? pairToken : token;
       const tokenOut = side === "buy" ? token : pairToken;
 

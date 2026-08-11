@@ -10,6 +10,7 @@ import { factoryAbi, LAUNCH_MODES } from "@/lib/launchpad";
 import { liveChains, resolveChain } from "@/lib/chains";
 import { ChainMark } from "@/components/ChainMark";
 import { ArcaneWandIcon, DiviumBillsIcon } from "@/components/ModeIcons";
+import { ensureChain } from "@/lib/wagmi";
 import { useToast } from "@/components/ui/Toast";
 import { ConnectButton } from "@/components/ConnectButton";
 
@@ -147,7 +148,7 @@ export function CreateForm() {
     if (formError !== null) { setState({ step: "error", message: formError }); return; }
     if (address === undefined) { setState({ step: "error", message: "Connect your wallet first." }); return; }
     try {
-      if (chainId !== chain.id) await switchChainAsync({ chainId: chain.id });
+      await ensureChain(chain.key, chainId, switchChainAsync);
 
       // Read the launch fee on-demand so a slow/failed hook read never blocks
       // the launch (it's usually 0 anyway).
