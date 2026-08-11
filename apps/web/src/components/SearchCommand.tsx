@@ -10,6 +10,8 @@ interface IndexToken {
   readonly symbol: string;
   readonly marketCapUsd?: string;
   readonly image?: string | null;
+  /** Chain the token launched on, so results link to the right one. */
+  readonly chain?: string;
 }
 
 interface Item {
@@ -99,7 +101,7 @@ export function SearchCommand() {
       kind: "coin",
       title: t.name,
       subtitle: `$${t.symbol}${t.marketCapUsd !== undefined ? ` · $${Number(t.marketCapUsd).toLocaleString("en-US")}` : ""}`,
-      href: `/tokens/${t.address}`,
+      href: t.chain !== undefined && t.chain !== "arc" ? `/tokens/${t.address}?chain=${t.chain}` : `/tokens/${t.address}`,
       image: t.image,
       symbol: t.symbol,
       score: query === "" ? 50 : score(query, t.symbol, t.name),
