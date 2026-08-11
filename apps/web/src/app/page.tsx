@@ -4,7 +4,7 @@ import { fetchProtocolStats } from "@/lib/protocolStats";
 import { getAllChainTokens } from "@/lib/tokensServer";
 import { ChainFilter } from "@/components/ChainFilter";
 import { NetworkStatusNotice } from "@/components/NetworkStatusNotice";
-import { fetchTokenImages } from "@/lib/tokenImages";
+import { fetchImagesForChainTokens } from "@/lib/tokenImages";
 import { withTimeout } from "@/lib/withTimeout";
 import { TokenCard } from "@/components/TokenCard";
 
@@ -27,7 +27,7 @@ export default async function LaunchpadHome() {
   // Both are bounded: this page is prerendered, so an unbounded read here is an
   // unbounded build. Stats degrade to zeros rather than failing the deploy.
   const [images, stats] = await Promise.all([
-    withTimeout(fetchTokenImages(recent.map((t) => t.token)), {} as Record<string, string>, 4_000, "home images"),
+    withTimeout(fetchImagesForChainTokens(recent), {} as Record<string, string>, 6_000, "home images"),
     withTimeout(
       fetchProtocolStats(arcPublicClient(), tokens),
       { trades: 0, volAllUnits: 0n, vol24hUnits: 0n },

@@ -1,4 +1,7 @@
+import { parseAbiItem } from "viem";
 import { getDb } from "@/lib/db";
+import { chainPublicClient } from "@/lib/chainRpc";
+import { getChain, type ChainKey, type LaunchChain } from "@/lib/chains";
 
 /**
  * Logo lookup for launched tokens. Images are captured at launch (embedded in
@@ -75,4 +78,91 @@ export async function fetchTokenImages(tokens: readonly string[]): Promise<Recor
 
 export async function fetchTokenImage(token: string): Promise<string | null> {
   return (await fetchTokenImages([token]))[token.toLowerCase()] ?? null;
+}
+
+/**
+ * On-chain fallback.
+ *
+ * The DB mirror is only a cache: the logo is embedded in the launch's
+ * metadataUri and lives on-chain forever. Two Robinhood launches showed blank
+ * avatars because the fire-and-forget mirror write never landed, even though
+ * both images were sitting in their Launched events all along. Reading the
+ * chain makes logos survive a failed write, a wiped table, or a new chain the
+ * mirror has never seen.
+ *
+ * One getLogs per chain (not per token), memoised, then matched to addresses.
+ */
+const LAUNCHED_EVENT = parseAbiItem(
+  "event Launched(address indexed token, address indexed creator, address pairToken, address pool, uint256 positionId, string metadataUri)",
+);
+const CHAIN_IMAGES_TTL_MS = 300_000;
+const LOOKBACK_BLOCKS = 400_000n;
+const chainImages = new Map<ChainKey, { at: number; map: Record<string, string> }>();
+
+async function imagesFromChain(chain: LaunchChain): Promise<Record<string, string>> {
+  const hit = chainImages.get(chain.key);
+  if (hit !== undefined && Date.now() - hit.at < CHAIN_IMAGES_TTL_MS) return hit.map;
+
+  const map: Record<string, string> = {};
+  try {
+    const client = chainPublicClient(chain);
+    const head = await client.getBlockNumber();
+    const from = head > LOOKBACK_BLOCKS ? head - LOOKBACK_BLOCKS : 0n;
+    const logs = await Promise.all(
+      chain.factories.map((address) =>
+        client
+          .getLogs({ address, event: LAUNCHED_EVENT, fromBlock: from, toBlock: head })
+          .catch(() => []),
+      ),
+    );
+    for (const log of logs.flat()) {
+      const token = log.args.token;
+      const img = decodeImage(log.args.metadataUri);
+      if (token !== undefined && img !== null) map[token.toLowerCase()] = img;
+    }
+  } catch {
+    // leave empty — the UI falls back to a gradient avatar
+  }
+  chainImages.set(chain.key, { at: Date.now(), map });
+  return map;
+}
+
+/** Logos for one chain's tokens: DB mirror first, then the chain itself. */
+export async function fetchTokenImagesOn(
+  tokens: readonly string[],
+  chain: LaunchChain,
+): Promise<Record<string, string>> {
+  const fromDb = await fetchTokenImages(tokens).catch(() => ({}) as Record<string, string>);
+  const missing = tokens.filter((t) => fromDb[t.toLowerCase()] === undefined);
+  if (missing.length === 0) return fromDb;
+
+  const onChain = await imagesFromChain(chain);
+  const out = { ...fromDb };
+  for (const t of missing) {
+    const img = onChain[t.toLowerCase()];
+    if (img !== undefined) {
+      out[t.toLowerCase()] = img;
+      imageCache.set(t.toLowerCase(), img); // stop negative-caching a real logo
+    }
+  }
+  return out;
+}
+
+/** Logos for a mixed-chain list, one chain lookup each, all in parallel. */
+export async function fetchImagesForChainTokens(
+  tokens: readonly { readonly token: string; readonly chainKey: ChainKey }[],
+): Promise<Record<string, string>> {
+  if (tokens.length === 0) return {};
+  const byChain = new Map<ChainKey, string[]>();
+  for (const t of tokens) {
+    const list = byChain.get(t.chainKey);
+    if (list === undefined) byChain.set(t.chainKey, [t.token]);
+    else list.push(t.token);
+  }
+  const results = await Promise.all(
+    [...byChain.entries()].map(([key, addrs]) =>
+      fetchTokenImagesOn(addrs, getChain(key)).catch(() => ({}) as Record<string, string>),
+    ),
+  );
+  return Object.assign({}, ...results) as Record<string, string>;
 }

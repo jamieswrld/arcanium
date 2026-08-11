@@ -3,7 +3,7 @@ import { getTokensForFilter } from "@/lib/tokensServer";
 import { CHAINS, resolveChain, type ChainKey } from "@/lib/chains";
 import { ChainFilter, type ChainFilterStatus } from "@/components/ChainFilter";
 import { NetworkStatusNotice } from "@/components/NetworkStatusNotice";
-import { fetchTokenImages } from "@/lib/tokenImages";
+import { fetchImagesForChainTokens } from "@/lib/tokenImages";
 import { withTimeout } from "@/lib/withTimeout";
 import { TokenCard } from "@/components/TokenCard";
 
@@ -69,9 +69,9 @@ export default async function TokensPage({ searchParams }: TokensPageProps) {
   }
 
   const images = await withTimeout(
-    fetchTokenImages(tokens.map((t) => t.token)),
+    fetchImagesForChainTokens(tokens),
     {} as Record<string, string>,
-    4_000,
+    6_000,
     "token logos",
   );
 

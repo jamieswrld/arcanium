@@ -1,7 +1,7 @@
 import { getChainTokens } from "@/lib/tokensServer";
 import { resolveChain, CHAINS } from "@/lib/chains";
 import { ChainFilter, type ChainFilterStatus } from "@/components/ChainFilter";
-import { fetchTokenImages } from "@/lib/tokenImages";
+import { fetchImagesForChainTokens } from "@/lib/tokenImages";
 import { withTimeout } from "@/lib/withTimeout";
 import { PortfolioDashboard, type SerializedToken } from "@/components/PortfolioDashboard";
 
@@ -25,9 +25,9 @@ export default async function PortfolioPage({ searchParams }: PortfolioPageProps
   const tokens = result.tokens;
 
   const images = await withTimeout(
-    fetchTokenImages(tokens.map((t) => t.token)),
+    fetchImagesForChainTokens(tokens),
     {} as Record<string, string>,
-    4_000,
+    6_000,
     "token logos",
   );
 
