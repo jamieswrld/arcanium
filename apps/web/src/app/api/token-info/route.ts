@@ -63,7 +63,9 @@ export async function GET(request: Request): Promise<NextResponse> {
         pairSymbol: chain.quote.symbol,
         graduated: t.graduated,
         marketCapUsd: (Number(t.marketCapUnits) / 1e6).toFixed(0),
-        image: images[t.token.toLowerCase()] ?? null,
+        // Stable https URL, not the raw data URI: terminals and
+        // aggregators can fetch and cache this one.
+        image: `https://arcanium.trade/api/token-image/${t.token}?chain=${chain.key}`,
         detail: `https://arcanium.trade/api/token-info/${t.token}?chain=${chain.key}`,
       })),
     },
