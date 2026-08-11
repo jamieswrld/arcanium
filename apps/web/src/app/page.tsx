@@ -5,6 +5,7 @@ import { getAllChainTokens } from "@/lib/tokensServer";
 import { ChainFilter } from "@/components/ChainFilter";
 import { NetworkStatusNotice } from "@/components/NetworkStatusNotice";
 import { fetchTokenImages } from "@/lib/tokenImages";
+import { withTimeout } from "@/lib/withTimeout";
 import { TokenCard } from "@/components/TokenCard";
 
 /**
@@ -23,9 +24,16 @@ export default async function LaunchpadHome() {
   const unreachable = tokens.length === 0 && down.length > 0;
 
   const recent = tokens.slice(0, 6);
+  // Both are bounded: this page is prerendered, so an unbounded read here is an
+  // unbounded build. Stats degrade to zeros rather than failing the deploy.
   const [images, stats] = await Promise.all([
-    fetchTokenImages(recent.map((t) => t.token)),
-    fetchProtocolStats(arcPublicClient(), tokens).catch(() => ({ trades: 0, volAllUnits: 0n, vol24hUnits: 0n })),
+    withTimeout(fetchTokenImages(recent.map((t) => t.token)), {} as Record<string, string>, 4_000, "home images"),
+    withTimeout(
+      fetchProtocolStats(arcPublicClient(), tokens),
+      { trades: 0, volAllUnits: 0n, vol24hUnits: 0n },
+      5_000,
+      "home protocol stats",
+    ),
   ]);
   const graduated = tokens.filter((t) => t.graduated).length;
 

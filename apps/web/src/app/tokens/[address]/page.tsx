@@ -13,6 +13,7 @@ import { CopyButton } from "@/components/CopyButton";
 import { CreatorFees } from "@/components/CreatorFees";
 import { TokenMode } from "@/components/TokenMode";
 import { fetchTokenImage } from "@/lib/tokenImages";
+import { withTimeout } from "@/lib/withTimeout";
 
 export const revalidate = 10; // edge-cached shell; 2s client polling keeps the terminal live
 
@@ -76,7 +77,7 @@ export default async function TokenPage({ params, searchParams }: TokenPageProps
     detail.quoteBalance >= chain.graduationUnits
       ? 100
       : Number((detail.quoteBalance * 100n) / chain.graduationUnits);
-  const image = await fetchTokenImage(detail.token);
+  const image = await withTimeout(fetchTokenImage(detail.token), null, 4_000, "token logo");
 
   return (
     <div className="arch-stack" style={{ maxWidth: 1100, margin: "0 auto" }}>

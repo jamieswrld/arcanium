@@ -4,6 +4,7 @@ import { CHAINS, resolveChain, type ChainKey } from "@/lib/chains";
 import { ChainFilter, type ChainFilterStatus } from "@/components/ChainFilter";
 import { NetworkStatusNotice } from "@/components/NetworkStatusNotice";
 import { fetchTokenImages } from "@/lib/tokenImages";
+import { withTimeout } from "@/lib/withTimeout";
 import { TokenCard } from "@/components/TokenCard";
 
 export const dynamic = "force-dynamic";
@@ -67,7 +68,12 @@ export default async function TokensPage({ searchParams }: TokensPageProps) {
     tokens = [...tokens].reverse();
   }
 
-  const images = await fetchTokenImages(tokens.map((t) => t.token));
+  const images = await withTimeout(
+    fetchTokenImages(tokens.map((t) => t.token)),
+    {} as Record<string, string>,
+    4_000,
+    "token logos",
+  );
 
   const pills = [
     { key: "newest", label: "Newest" },

@@ -2,6 +2,7 @@ import { getChainTokens } from "@/lib/tokensServer";
 import { resolveChain, CHAINS } from "@/lib/chains";
 import { ChainFilter, type ChainFilterStatus } from "@/components/ChainFilter";
 import { fetchTokenImages } from "@/lib/tokenImages";
+import { withTimeout } from "@/lib/withTimeout";
 import { PortfolioDashboard, type SerializedToken } from "@/components/PortfolioDashboard";
 
 export const metadata = { title: "Portfolio - Arcanium" };
@@ -23,7 +24,12 @@ export default async function PortfolioPage({ searchParams }: PortfolioPageProps
   const result = await getChainTokens(chain);
   const tokens = result.tokens;
 
-  const images = await fetchTokenImages(tokens.map((t) => t.token));
+  const images = await withTimeout(
+    fetchTokenImages(tokens.map((t) => t.token)),
+    {} as Record<string, string>,
+    4_000,
+    "token logos",
+  );
 
   const serialized: SerializedToken[] = tokens.map((t) => ({
     token: t.token,
