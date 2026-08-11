@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { arcPublicClient, formatUsdCompact } from "@/lib/launchpad";
-import { fetchProtocolStats } from "@/lib/protocolStats";
+import { formatUsdCompact } from "@/lib/launchpad";
+import { fetchProtocolStatsMulti } from "@/lib/protocolStats";
 import { getAllChainTokens } from "@/lib/tokensServer";
 import { ChainFilter } from "@/components/ChainFilter";
 import { NetworkStatusNotice } from "@/components/NetworkStatusNotice";
@@ -29,9 +29,10 @@ export default async function LaunchpadHome() {
   const [images, stats] = await Promise.all([
     withTimeout(fetchImagesForChainTokens(recent), {} as Record<string, string>, 6_000, "home images"),
     withTimeout(
-      fetchProtocolStats(arcPublicClient(), tokens),
+      // Every chain, each with its own client and its own quote decimals.
+      fetchProtocolStatsMulti(results.map((r) => ({ chain: r.chain, tokens: r.tokens }))),
       { trades: 0, volAllUnits: 0n, vol24hUnits: 0n },
-      5_000,
+      6_000,
       "home protocol stats",
     ),
   ]);
