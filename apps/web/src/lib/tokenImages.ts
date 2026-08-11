@@ -26,7 +26,11 @@ function decodeImage(uri: string | null | undefined): string | null {
 }
 
 /** Logos are write-once: positive hits cache forever; misses expire quickly so
- *  a just-launched token's logo appears as soon as it's stored. */
+ *  a just-launched token's logo appears as soon as it's stored.
+ *
+ *  NOTE: keys must be chain-scoped. Our factory deploys to the same address on
+ *  every chain, so the first launch on each chain gets the SAME token address --
+ *  an address-keyed cache serves one chain's logo for another chain's token. */
 const NEGATIVE_TTL_MS = 30_000;
 const imageStore = new Map<string, { img: string | null; at: number }>();
 const imageCache = {
@@ -132,20 +136,22 @@ export async function fetchTokenImagesOn(
   tokens: readonly string[],
   chain: LaunchChain,
 ): Promise<Record<string, string>> {
-  const fromDb = await fetchTokenImages(tokens).catch(() => ({}) as Record<string, string>);
-  const missing = tokens.filter((t) => fromDb[t.toLowerCase()] === undefined);
-  if (missing.length === 0) return fromDb;
-
+  // The chain is consulted FIRST and wins. The token_metadata mirror is keyed by
+  // address only, and addresses repeat across chains (same factory address, same
+  // nonce), so trusting it first would serve one chain's logo for another's
+  // token -- exactly what happened with TEST on Robinhood and MONKE on BNB.
   const onChain = await imagesFromChain(chain);
-  const out = { ...fromDb };
-  for (const t of missing) {
+  const out: Record<string, string> = {};
+  const missing: string[] = [];
+  for (const t of tokens) {
     const img = onChain[t.toLowerCase()];
-    if (img !== undefined) {
-      out[t.toLowerCase()] = img;
-      imageCache.set(t.toLowerCase(), img); // stop negative-caching a real logo
-    }
+    if (img !== undefined) out[t.toLowerCase()] = img;
+    else missing.push(t);
   }
-  return out;
+  if (missing.length === 0) return out;
+
+  const fromDb = await fetchTokenImages(missing).catch(() => ({}) as Record<string, string>);
+  return { ...fromDb, ...out };
 }
 
 /** Logos for a mixed-chain list, one chain lookup each, all in parallel. */
@@ -250,6 +256,9 @@ async function metaFromChain(chain: LaunchChain): Promise<Record<string, TokenMe
 /** Full launch metadata for one token: DB mirror first, then the chain. */
 export async function fetchTokenMeta(token: string, chain: LaunchChain): Promise<TokenMeta> {
   const key = token.toLowerCase();
+  // Chain first, for the address-collision reason above.
+  const onChain = (await metaFromChain(chain))[key];
+  if (onChain !== undefined) return onChain;
   const sql = getDb();
   if (sql !== null) {
     try {
@@ -257,13 +266,10 @@ export async function fetchTokenMeta(token: string, chain: LaunchChain): Promise
         SELECT metadata_uri FROM token_metadata WHERE token_address = ${key} LIMIT 1
       `;
       const uri = rows[0]?.metadata_uri;
-      if (uri !== undefined) {
-        const m = decodeMeta(uri);
-        if (m.image !== null || m.website !== null || m.twitter !== null || m.telegram !== null) return m;
-      }
+      if (uri !== undefined) return decodeMeta(uri);
     } catch {
       // mirror unavailable — the chain is authoritative anyway
     }
   }
-  return (await metaFromChain(chain))[key] ?? EMPTY_META;
+  return EMPTY_META;
 }
