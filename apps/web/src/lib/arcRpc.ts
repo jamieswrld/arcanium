@@ -61,8 +61,12 @@ export function arcTransport(opts?: { readonly browser?: boolean }): Transport {
     : arcRpcUrls();
   const seen = new Set<string>();
   const unique = urls.filter((u) => (seen.has(u) ? false : (seen.add(u), true)));
+  // Short per-endpoint budget with no retry. A healthy node answers in well
+  // under a second; a dead one must fail fast so the fallback list is exhausted
+  // quickly and the caller can serve its snapshot. With 12s + a retry per
+  // endpoint, a gated chain took long enough to stall page renders.
   return fallback(
-    unique.map((url) => http(url, { timeout: 12_000, retryCount: 1 })),
+    unique.map((url) => http(url, { timeout: 2_500, retryCount: 0 })),
     { rank: { interval: 60_000, sampleCount: 3 } },
   );
 }

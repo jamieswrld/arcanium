@@ -62,8 +62,12 @@ export function chainTransport(chain: LaunchChain, opts?: { readonly browser?: b
     opts?.browser === true
       ? unique([`/api/rpc/${chain.key}`, ...chain.rpcUrls])
       : rpcUrls(chain);
+  // Short per-endpoint budget with no retry. A healthy node answers in well
+  // under a second; a dead one must fail fast so the fallback list is exhausted
+  // quickly and the caller can serve its snapshot. With 12s + a retry per
+  // endpoint, a gated chain took long enough to stall page renders.
   return fallback(
-    urls.map((url) => http(url, { timeout: 12_000, retryCount: 1 })),
+    urls.map((url) => http(url, { timeout: 2_500, retryCount: 0 })),
     { rank: { interval: 60_000, sampleCount: 3 } },
   );
 }
