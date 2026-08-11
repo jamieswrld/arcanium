@@ -17,7 +17,10 @@ export default async function LaunchpadHome() {
   // Every chain in parallel — one being down never empties the others.
   const results = await getAllChainTokens();
   const tokens = results.flatMap((r) => [...r.tokens]);
-  const unreachable = results.length > 0 && results.every((r) => r.unreachable) && tokens.length === 0;
+  const down = results.filter((r) => r.unreachable);
+  // Never say "no tokens launched" while a chain is unreachable - an outage
+  // is not an empty pad.
+  const unreachable = tokens.length === 0 && down.length > 0;
 
   const recent = tokens.slice(0, 6);
   const [images, stats] = await Promise.all([
@@ -88,7 +91,7 @@ export default async function LaunchpadHome() {
             />
           </div>
           {unreachable ? (
-            <NetworkStatusNotice />
+            <NetworkStatusNotice chains={down.map((r) => r.chain)} />
           ) : recent.length === 0 ? (
             <section className="arch-card" style={{ textAlign: "center", padding: "3rem 1rem" }}>
               <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>◆</div>

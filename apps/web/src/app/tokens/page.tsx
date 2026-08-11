@@ -79,9 +79,13 @@ export default async function TokensPage({ searchParams }: TokensPageProps) {
   const carry: Record<string, string> = {};
   if (query.length > 0) carry["q"] = q;
 
-  /** Only an outage with nothing to show at all warrants the notice. */
-  const everythingDown = results.length > 0 && results.every((r) => r.unreachable) && tokens.length === 0;
   const partialOutage = results.filter((r) => r.unreachable);
+  /**
+   * With nothing to show, never claim the launchpad is empty while a chain is
+   * unreachable — an outage is not an empty pad. The notice wins over the
+   * "be the first" empty state whenever any chain failed to answer.
+   */
+  const everythingDown = tokens.length === 0 && partialOutage.length > 0 && query.length === 0;
 
   return (
     <div className="arch-stack">
@@ -121,7 +125,7 @@ export default async function TokensPage({ searchParams }: TokensPageProps) {
       </div>
 
       {everythingDown ? (
-        <NetworkStatusNotice />
+        <NetworkStatusNotice chains={partialOutage.map((r) => r.chain)} />
       ) : (
         <>
           {partialOutage.length > 0 && tokens.length > 0 ? (

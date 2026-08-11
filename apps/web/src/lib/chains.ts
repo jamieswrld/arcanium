@@ -81,6 +81,19 @@ function envUrls(raw: string | undefined): string[] {
   return raw.split(",").map((s) => s.trim()).filter((s) => /^https?:\/\//.test(s));
 }
 
+/**
+ * Factory generations, newest first, with duplicates removed. An env override
+ * naming an address that is also a built-in default must not list that factory
+ * twice — every token on it would be read (and shown) twice.
+ */
+function factoryList(envValue: string | undefined, defaults: readonly Hex[]): Hex[] {
+  const seen = new Set<string>();
+  return [...envList(envValue), ...defaults].filter((a) => {
+    const k = a.toLowerCase();
+    return seen.has(k) ? false : (seen.add(k), true);
+  });
+}
+
 function addr(raw: string | undefined): Hex | undefined {
   return raw !== undefined && /^0x[0-9a-fA-F]{40}$/.test(raw.trim()) ? (raw.trim() as Hex) : undefined;
 }
@@ -120,13 +133,12 @@ const ARC: LaunchChain = {
       "0x2626664c2603336E57B271c5C0b26F421741e481") as Hex,
   },
   poolFee: 10_000,
-  factories: [
-    ...envList(process.env["NEXT_PUBLIC_ARCH_LAUNCHPAD_FACTORY_ADDRESS"]),
+  factories: factoryList(process.env["NEXT_PUBLIC_ARCH_LAUNCHPAD_FACTORY_ADDRESS"], [
     "0x8e5732B520a318251a702a680AA7F123fb92AF52", // v4 — launch modes
     "0xE2aA88806872C2a02A4ab439584d457002983600", // v3 — fee recipient
     "0xA024664AD5d30F3c0b18b931DdB6f64A96DE8ED3", // v2 — SwapRouter02 fix
     "0x1d65ab4cDCDdA6f38A9c93a24EF64bE8905e19d5", // v1 — original
-  ],
+  ]),
   liquidityVault: addr(process.env["NEXT_PUBLIC_ARCH_LIQUIDITY_VAULT_ADDRESS"]),
   modeDistributor:
     addr(process.env["NEXT_PUBLIC_ARCH_MODE_DISTRIBUTOR_ADDRESS"]) ??
@@ -165,12 +177,18 @@ const ROBINHOOD: LaunchChain = {
     quoter: "0x33e885ED0EC9bF04eCFB19341582AaDCb4c8a9E7",
   },
   poolFee: 10_000,
-  factories: envList(process.env["NEXT_PUBLIC_ROBINHOOD_FACTORY_ADDRESS"]),
-  liquidityVault: addr(process.env["NEXT_PUBLIC_ROBINHOOD_LIQUIDITY_VAULT_ADDRESS"]),
-  modeDistributor: addr(process.env["NEXT_PUBLIC_ROBINHOOD_MODE_DISTRIBUTOR_ADDRESS"]),
+  factories: factoryList(process.env["NEXT_PUBLIC_ROBINHOOD_FACTORY_ADDRESS"], [
+    "0x81D414D2cD66bf4422036846f569a6189996Fd59", // v5 — decimals-aware pricing
+  ]),
+  liquidityVault:
+    addr(process.env["NEXT_PUBLIC_ROBINHOOD_LIQUIDITY_VAULT_ADDRESS"]) ??
+    "0x4297254E5ae2df2b0d3920A08Df582D61b3e7766",
+  modeDistributor:
+    addr(process.env["NEXT_PUBLIC_ROBINHOOD_MODE_DISTRIBUTOR_ADDRESS"]) ??
+    "0x472580431Fb124e376E8b07802e64d2cEc4001DE",
   graduationUnits: graduationUnits(6),
-  launchGasFloor: 2_000_000_000_000_000n, // 0.002 ETH � a launch costs ~0.0005
-  live: envList(process.env["NEXT_PUBLIC_ROBINHOOD_FACTORY_ADDRESS"]).length > 0,
+  launchGasFloor: 2_000_000_000_000_000n, // 0.002 ETH — a launch costs ~0.0005
+  live: true,
   accent: "#00c805",
 };
 
@@ -208,12 +226,18 @@ const BNB: LaunchChain = {
     quoter: "0x78D78E420Da98ad378D7799bE8f4AF69033EB077",
   },
   poolFee: 10_000,
-  factories: envList(process.env["NEXT_PUBLIC_BNB_FACTORY_ADDRESS"]),
-  liquidityVault: addr(process.env["NEXT_PUBLIC_BNB_LIQUIDITY_VAULT_ADDRESS"]),
-  modeDistributor: addr(process.env["NEXT_PUBLIC_BNB_MODE_DISTRIBUTOR_ADDRESS"]),
+  factories: factoryList(process.env["NEXT_PUBLIC_BNB_FACTORY_ADDRESS"], [
+    "0x81D414D2cD66bf4422036846f569a6189996Fd59", // v5 — decimals-aware pricing
+  ]),
+  liquidityVault:
+    addr(process.env["NEXT_PUBLIC_BNB_LIQUIDITY_VAULT_ADDRESS"]) ??
+    "0x4297254E5ae2df2b0d3920A08Df582D61b3e7766",
+  modeDistributor:
+    addr(process.env["NEXT_PUBLIC_BNB_MODE_DISTRIBUTOR_ADDRESS"]) ??
+    "0x472580431Fb124e376E8b07802e64d2cEc4001DE",
   graduationUnits: graduationUnits(18),
-  launchGasFloor: 2_000_000_000_000_000n, // 0.002 BNB � a launch costs ~0.0005
-  live: envList(process.env["NEXT_PUBLIC_BNB_FACTORY_ADDRESS"]).length > 0,
+  launchGasFloor: 2_000_000_000_000_000n, // 0.002 BNB — a launch costs ~0.0005
+  live: true,
   accent: "#f0b90b",
 };
 

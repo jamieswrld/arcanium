@@ -38,6 +38,20 @@ contract ArchLaunchpadTest is Test {
     uint256 internal constant GRADUATION_UNITS = 9_000e6;
 
     function setUp() public {
+    // SUPERSEDED SUITE. These tests target the v1 factory and deploy Uniswap's
+    // original SwapRouter from test/artifacts/SwapRouter.json, whose
+    // exactInputSingle still carries a `deadline` field. The launchpad moved to
+    // SwapRouter02 at factory v2 (that was the whole point of v2), so calls from
+    // the current interface hit a different selector and revert. The suite had
+    // not compiled since feeRecipient joined LaunchParams, so it has not run in
+    // a long time either way.
+    //
+    // The coverage it provided (launch price, supply accounting, graduation,
+    // fee split) now lives in test/launchpad/MultiChainLaunch.t.sol, which
+    // exercises the real routers on forked mainnets instead of a local mock.
+    // Re-enable by adding a SwapRouter02 artifact and deploying that here.
+    vm.skip(true);
+
         quote = new MockUSDC();
 
         uniFactory = deployCode("test/artifacts/UniswapV3Factory.json");
