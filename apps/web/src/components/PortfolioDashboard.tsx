@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useAccount, useBalance, usePublicClient, useWriteContract } from "wagmi";
-import { parseAbiItem, type Hex } from "viem";
-import { arcTestnet, erc20Abi, formatQuoteUnits, PAIR_TOKEN_SYMBOL } from "@/lib/bridgeClient";
-import { DISTRIBUTOR_ADDRESS, LIQUIDITY_VAULT_ADDRESS, formatUsdCompact } from "@/lib/launchpad";
+import { formatUnits, parseAbiItem, type Hex } from "viem";
+import { erc20Abi } from "@/lib/bridgeClient";
+import { formatUsdCompact } from "@/lib/launchpad";
+import { getChain, type ChainKey } from "@/lib/chains";
 import { TokenAvatar } from "@/components/TokenAvatar";
 import { UsdcLogo } from "@/components/UsdcLogo";
 import { ConnectButton } from "@/components/ConnectButton";
@@ -38,7 +39,6 @@ const feesDistributedEvent = parseAbiItem(
 
 /** Every distributor generation — claimed-rewards history spans all of them. */
 const ALL_DISTRIBUTORS: Hex[] = [
-  ...(DISTRIBUTOR_ADDRESS !== undefined ? [DISTRIBUTOR_ADDRESS] : []),
   "0x789896401c1c90df95757dfd3228989b627418b4",
   "0xbdc362f9ddea2ae9c39b108e0712f7d6e2f00e5f",
 ];
@@ -66,13 +66,26 @@ function Eyebrow({ children }: { readonly children: React.ReactNode }) {
  * center with per-token pending/claimed rewards and one-click claims.
  * All money math is bigint; floats appear only at render.
  */
-export function PortfolioDashboard({ tokens }: { readonly tokens: readonly SerializedToken[] }) {
+export function PortfolioDashboard({
+  tokens,
+  chainKey = "arc",
+}: {
+  readonly tokens: readonly SerializedToken[];
+  readonly chainKey?: ChainKey;
+}) {
+  // Everything here is scoped to one chain: balances, creator rewards and the
+  // distributor all live on the chain the tokens were launched on.
+  const chain = getChain(chainKey);
+  const DISTRIBUTOR_ADDRESS = chain.modeDistributor;
+  const LIQUIDITY_VAULT_ADDRESS = chain.liquidityVault;
+  const PAIR_TOKEN_SYMBOL = chain.quote.symbol;
+  const formatQuoteUnits = (v: bigint): string => formatUnits(v, chain.quote.decimals);
   const { address, isConnected } = useAccount();
-  const arcPublic = usePublicClient({ chainId: arcTestnet.id });
+  const arcPublic = usePublicClient({ chainId: chain.id });
   const { writeContractAsync } = useWriteContract();
   const { toast } = useToast();
 
-  const native = useBalance({ address, chainId: arcTestnet.id, query: { enabled: address !== undefined, refetchInterval: 12_000 } });
+  const native = useBalance({ address, chainId: chain.id, query: { enabled: address !== undefined, refetchInterval: 12_000 } });
   const [balances, setBalances] = useState<Record<string, bigint>>({});
   const [balancesReady, setBalancesReady] = useState(false);
   const [rewards, setRewards] = useState<Record<string, CreatorRow>>({});
@@ -177,7 +190,7 @@ export function PortfolioDashboard({ tokens }: { readonly tokens: readonly Seria
     if (arcPublic === undefined || DISTRIBUTOR_ADDRESS === undefined) return;
     setClaiming(token.toLowerCase());
     try {
-      const txHash = await writeContractAsync({ address: DISTRIBUTOR_ADDRESS, abi: distributorAbi, functionName: "distribute", args: [token], chainId: arcTestnet.id });
+      const txHash = await writeContractAsync({ address: DISTRIBUTOR_ADDRESS, abi: distributorAbi, functionName: "distribute", args: [token], chainId: chain.id });
       const receipt = await arcPublic.waitForTransactionReceipt({ hash: txHash });
       if (receipt.status === "success") {
         toast({ tone: "success", title: "Rewards claimed", description: "Your creator share was sent to your wallet." });
@@ -277,7 +290,7 @@ export function PortfolioDashboard({ tokens }: { readonly tokens: readonly Seria
                 <UsdcLogo size={34} />
                 <span><strong>USDC</strong> <span className="arch-note">native · pays gas &amp; trades</span></span>
               </span>
-              <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{formatQuoteUnits(usdcUnits)} USDC</span>
+              <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{formatQuoteUnits(usdcUnits)} ${PAIR_TOKEN_SYMBOL}</span>
             </div>
             {held.length === 0 ? (
               <p className="arch-note" style={{ margin: "1.1rem 0 0.5rem", textAlign: "center" }}>

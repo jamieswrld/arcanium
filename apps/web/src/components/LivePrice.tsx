@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePublicClient } from "wagmi";
-import { arcTestnet } from "@/lib/bridgeClient";
+import { getChain, type ChainKey } from "@/lib/chains";
 import { poolAbi, priceUsdE18, formatPriceE18 } from "@/lib/launchpad";
 import type { Hex } from "viem";
 
@@ -15,12 +15,15 @@ export function LivePrice({
   pool,
   tokenIsToken0,
   initial,
+  chainKey = "arc",
 }: {
   readonly pool: Hex;
   readonly tokenIsToken0: boolean;
   readonly initial: string;
+  readonly chainKey?: ChainKey;
 }) {
-  const arc = usePublicClient({ chainId: arcTestnet.id });
+  const chain = getChain(chainKey);
+  const arc = usePublicClient({ chainId: chain.id });
   const [text, setText] = useState(initial);
 
   useEffect(() => {
@@ -30,7 +33,7 @@ export function LivePrice({
     const tick = async (): Promise<void> => {
       try {
         const slot0 = await arc.readContract({ address: pool, abi: poolAbi, functionName: "slot0" });
-        if (!cancelled) setText(formatPriceE18(priceUsdE18(slot0[0], tokenIsToken0)));
+        if (!cancelled) setText(formatPriceE18(priceUsdE18(slot0[0], tokenIsToken0, chain.quote.decimals)));
       } catch { /* transient */ }
       if (!cancelled) timer = setTimeout(() => void tick(), 3_000);
     };

@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 import type { Hex } from "viem";
-import { arcTestnet, formatQuoteUnits, PAIR_TOKEN_SYMBOL } from "@/lib/bridgeClient";
-import { MODE_DISTRIBUTOR_ADDRESS, modeDistributorAbi, launchTokenAbi } from "@/lib/launchpad";
+import { formatUnits } from "viem";
+import { getChain, type ChainKey } from "@/lib/chains";
+import { modeDistributorAbi, launchTokenAbi } from "@/lib/launchpad";
 import { ArcaneWandIcon, DiviumBillsIcon } from "@/components/ModeIcons";
 import { useToast } from "@/components/ui/Toast";
 
@@ -14,25 +15,36 @@ import { useToast } from "@/components/ui/Toast";
  * USDC accrual and a one-click claim. Anyone can also trigger fee collection,
  * which is what pushes new rewards (or burns) through.
  */
-export function TokenMode({ token }: { readonly token: Hex }) {
+export function TokenMode({
+  token,
+  chainKey = "arc",
+}: {
+  readonly token: Hex;
+  readonly chainKey?: ChainKey;
+}) {
+  const chain = getChain(chainKey);
+  const MODE_DISTRIBUTOR_ADDRESS = chain.modeDistributor;
+  const PAIR_TOKEN_SYMBOL = chain.quote.symbol;
+  const formatQuoteUnits = (v: bigint): string => formatUnits(v, chain.quote.decimals);
   const { address, isConnected } = useAccount();
-  const arc = usePublicClient({ chainId: arcTestnet.id });
+  const arc = usePublicClient({ chainId: chain.id });
   const { writeContractAsync } = useWriteContract();
   const { toast } = useToast();
 
   const [mode, setMode] = useState<number | null>(null);
   const [claimable, setClaimable] = useState<bigint | null>(null);
   const [busy, setBusy] = useState<"claim" | "distribute" | null>(null);
-  const [dist, setDist] = useState<Hex>(MODE_DISTRIBUTOR_ADDRESS);
+  const [dist, setDist] = useState<Hex | undefined>(MODE_DISTRIBUTOR_ADDRESS);
 
   useEffect(() => {
-    if (arc === undefined) return;
+    if (arc === undefined || MODE_DISTRIBUTOR_ADDRESS === undefined) return;
+    const fallbackDist = MODE_DISTRIBUTOR_ADDRESS;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const tick = async (): Promise<void> => {
       try {
         // The token names its own distributor; always talk to that one.
-        const own = await arc.readContract({ address: token, abi: launchTokenAbi, functionName: "taxRecipient" }).catch(() => MODE_DISTRIBUTOR_ADDRESS);
+        const own = await arc.readContract({ address: token, abi: launchTokenAbi, functionName: "taxRecipient" }).catch(() => fallbackDist);
         if (!cancelled) setDist(own);
         const isSet = await arc.readContract({ address: own, abi: modeDistributorAbi, functionName: "modeSet", args: [token] });
         if (!isSet) { if (!cancelled) setMode(-1); return; } // pre-v4 launch
@@ -55,15 +67,17 @@ export function TokenMode({ token }: { readonly token: Hex }) {
   const isDivium = mode === 1;
 
   async function run(kind: "claim" | "distribute"): Promise<void> {
-    if (arc === undefined) return;
+    if (arc === undefined || MODE_DISTRIBUTOR_ADDRESS === undefined) return;
+    const fallbackDist = MODE_DISTRIBUTOR_ADDRESS;
     setBusy(kind);
     try {
+      if (dist === undefined) return;
       const hash = await writeContractAsync({
         address: dist,
         abi: modeDistributorAbi,
         functionName: kind === "claim" ? "claimRewards" : "distribute",
         args: [token],
-        chainId: arcTestnet.id,
+        chainId: chain.id,
       });
       const r = await arc.waitForTransactionReceipt({ hash });
       if (r.status === "success") {

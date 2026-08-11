@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 import type { Hex } from "viem";
-import { arcTestnet, PAIR_TOKEN_SYMBOL } from "@/lib/bridgeClient";
-import { DISTRIBUTOR_ADDRESS, LIQUIDITY_VAULT_ADDRESS, MODE_DISTRIBUTOR_ADDRESS, modeDistributorAbi, launchTokenAbi } from "@/lib/launchpad";
-import { formatQuoteUnits } from "@/lib/onchain";
+import { formatUnits } from "viem";
+import { getChain, type ChainKey } from "@/lib/chains";
+import { modeDistributorAbi, launchTokenAbi } from "@/lib/launchpad";
 import { useToast } from "@/components/ui/Toast";
 
 const vaultAbi = [
@@ -27,14 +27,22 @@ export function CreatorFees({
   creator,
   pairToken,
   positionId,
+  chainKey = "arc",
 }: {
+  readonly chainKey?: ChainKey;
   readonly token: Hex;
   readonly creator: Hex;
   readonly pairToken: Hex;
   readonly positionId: bigint;
 }) {
+  const chain = getChain(chainKey);
+  const DISTRIBUTOR_ADDRESS = chain.modeDistributor;
+  const LIQUIDITY_VAULT_ADDRESS = chain.liquidityVault;
+  const MODE_DISTRIBUTOR_ADDRESS = chain.modeDistributor;
+  const PAIR_TOKEN_SYMBOL = chain.quote.symbol;
+  const formatQuoteUnits = (v: bigint): string => formatUnits(v, chain.quote.decimals);
   const { address, isConnected } = useAccount();
-  const arcPublic = usePublicClient({ chainId: arcTestnet.id });
+  const arcPublic = usePublicClient({ chainId: chain.id });
   const { writeContractAsync } = useWriteContract();
   const { toast } = useToast();
   const [pending, setPending] = useState<bigint | null>(null);
@@ -48,10 +56,11 @@ export function CreatorFees({
   const tokenIsToken0 = token.toLowerCase() < pairToken.toLowerCase();
 
   useEffect(() => {
-    if (arcPublic === undefined) return;
+    if (arcPublic === undefined || MODE_DISTRIBUTOR_ADDRESS === undefined) return;
+    const fallbackDist = MODE_DISTRIBUTOR_ADDRESS;
     let cancelled = false;
     (async () => {
-      const own = await arcPublic.readContract({ address: token, abi: launchTokenAbi, functionName: "taxRecipient" }).catch(() => MODE_DISTRIBUTOR_ADDRESS);
+      const own = await arcPublic.readContract({ address: token, abi: launchTokenAbi, functionName: "taxRecipient" }).catch(() => fallbackDist);
       const isSet = await arcPublic.readContract({ address: own, abi: modeDistributorAbi, functionName: "modeSet", args: [token] }).catch(() => false);
       const m = isSet
         ? Number(await arcPublic.readContract({ address: own, abi: modeDistributorAbi, functionName: "modeOf", args: [token] }).catch(() => 0))
@@ -106,7 +115,7 @@ export function CreatorFees({
         abi: distributorAbi,
         functionName: "distribute",
         args: [token],
-        chainId: arcTestnet.id,
+        chainId: chain.id,
       });
       const receipt = await arcPublic.waitForTransactionReceipt({ hash: txHash });
       if (receipt.status === "success") {

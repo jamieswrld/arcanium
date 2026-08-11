@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePublicClient } from "wagmi";
 import { parseAbiItem, type Hex } from "viem";
-import { arcTestnet, ARC_EXPLORER, erc20Abi } from "@/lib/bridgeClient";
+import { formatUnits } from "viem";
+import { erc20Abi } from "@/lib/bridgeClient";
+import { explorerAddress, explorerTx, getChain, type ChainKey, type LaunchChain } from "@/lib/chains";
 import { formatPriceE18, formatUsdCompact, priceUsdE18, poolAbi } from "@/lib/launchpad";
-import { formatQuoteUnits } from "@/lib/onchain";
 import { CandleChart, type Candle } from "@/components/CandleChart";
 
 const transferEvent = parseAbiItem(
@@ -38,6 +39,8 @@ interface MarketPanelsProps {
   readonly pairToken: Hex;
   readonly symbol: string;
   readonly creator: Hex;
+  /** Chain the token was launched on. */
+  readonly chainKey?: ChainKey;
 }
 
 /** Blockdaemon caps eth_getLogs at 100k blocks and 20k results per call, so
@@ -95,8 +98,10 @@ function toCandles(swaps: readonly SwapPoint[], spotE18: bigint | null, interval
  * Trading terminal panels: TradingView-engine candles (live-ticking), trades
  * feed, holders. One fast initial getLogs, then 2s incremental polling.
  */
-export function MarketPanels({ pool, token, pairToken, symbol, creator }: MarketPanelsProps) {
-  const arcPublic = usePublicClient({ chainId: arcTestnet.id });
+export function MarketPanels({ pool, token, pairToken, symbol, creator, chainKey = "arc" }: MarketPanelsProps) {
+  const chain = getChain(chainKey);
+  const formatQuoteUnits = (v: bigint): string => formatUnits(v, chain.quote.decimals);
+  const arcPublic = usePublicClient({ chainId: chain.id });
   const [swaps, setSwaps] = useState<SwapPoint[] | null>(null);
   const [spotE18, setSpotE18] = useState<bigint | null>(null);
   const [tab, setTab] = useState<"chart" | "trades" | "holders">("chart");
@@ -115,7 +120,7 @@ export function MarketPanels({ pool, token, pairToken, symbol, creator }: Market
     return {
       block: l.blockNumber ?? 0n,
       timeMs,
-      priceE18: priceUsdE18(l.args.sqrtPriceX96, tokenIsToken0),
+      priceE18: priceUsdE18(l.args.sqrtPriceX96, tokenIsToken0, chain.quote.decimals),
       quoteVolume: quoteDelta < 0n ? -quoteDelta : quoteDelta,
       isBuy: quoteDelta > 0n,
       wallet: (l.args.recipient ?? "0x") as Hex,
@@ -133,7 +138,7 @@ export function MarketPanels({ pool, token, pairToken, symbol, creator }: Market
 
     const readSpot = async (): Promise<void> => {
       const slot0 = await arcPublic.readContract({ address: pool, abi: poolAbi, functionName: "slot0" }).catch(() => null);
-      if (slot0 !== null && !cancelled) setSpotE18(priceUsdE18(slot0[0], tokenIsToken0));
+      if (slot0 !== null && !cancelled) setSpotE18(priceUsdE18(slot0[0], tokenIsToken0, chain.quote.decimals));
     };
 
     const initial = async (): Promise<void> => {
@@ -300,15 +305,16 @@ export function MarketPanels({ pool, token, pairToken, symbol, creator }: Market
           </div>
         </div>
       ) : tab === "trades" ? (
-        <div className="arch-scroll-x"><TradesTable swaps={s} symbol={symbol} /></div>
+        <div className="arch-scroll-x"><TradesTable chain={chain} swaps={s} symbol={symbol} /></div>
       ) : (
-        <div className="arch-scroll-x"><HoldersTable holders={holders} pool={pool} symbol={symbol} /></div>
+        <div className="arch-scroll-x"><HoldersTable chain={chain} holders={holders} pool={pool} symbol={symbol} /></div>
       )}
     </div>
   );
 }
 
-function TradesTable({ swaps, symbol }: { readonly swaps: SwapPoint[]; readonly symbol: string }) {
+function TradesTable({ swaps, symbol, chain }: { readonly swaps: SwapPoint[]; readonly symbol: string; readonly chain: LaunchChain }) {
+  const formatQuoteUnits = (v: bigint): string => formatUnits(v, chain.quote.decimals);
   const rows = [...swaps].reverse().slice(0, 25);
   if (rows.length === 0) return <p className="arch-note">No trades yet.</p>;
   return (
@@ -319,7 +325,7 @@ function TradesTable({ swaps, symbol }: { readonly swaps: SwapPoint[]; readonly 
       {rows.map((s) => (
         <a
           key={`${s.txHash}-${s.block}`}
-          href={`${ARC_EXPLORER}/tx/${s.txHash}`}
+          href={explorerTx(chain, s.txHash)}
           target="_blank"
           rel="noreferrer"
           style={{ display: "grid", gridTemplateColumns: "56px 1fr 110px 90px", gap: "0.5rem", fontSize: "0.85rem", padding: "0.25rem 0", borderBottom: "1px solid var(--arch-border)" }}
@@ -336,7 +342,7 @@ function TradesTable({ swaps, symbol }: { readonly swaps: SwapPoint[]; readonly 
   );
 }
 
-function HoldersTable({ holders, pool, symbol }: { readonly holders: Array<{ wallet: Hex; balance: bigint }> | null; readonly pool: Hex; readonly symbol: string }) {
+function HoldersTable({ holders, pool, symbol, chain }: { readonly holders: Array<{ wallet: Hex; balance: bigint }> | null; readonly pool: Hex; readonly symbol: string; readonly chain: LaunchChain }) {
   if (holders === null) return <p className="arch-note">Reading holders…</p>;
   if (holders.length === 0) return <p className="arch-note">No holders found in the recent window.</p>;
   const SUPPLY = 1_000_000_000n * 10n ** 18n;
@@ -349,7 +355,7 @@ function HoldersTable({ holders, pool, symbol }: { readonly holders: Array<{ wal
         const isPool = h.wallet.toLowerCase() === pool.toLowerCase();
         const pctBps = Number((h.balance * 10_000n) / SUPPLY);
         return (
-          <a key={h.wallet} href={`${ARC_EXPLORER}/address/${h.wallet}`} target="_blank" rel="noreferrer"
+          <a key={h.wallet} href={explorerAddress(chain, h.wallet)} target="_blank" rel="noreferrer"
             style={{ display: "grid", gridTemplateColumns: "32px 1fr 140px 70px", gap: "0.5rem", fontSize: "0.85rem", padding: "0.25rem 0", borderBottom: "1px solid var(--arch-border)" }}>
             <span className="arch-note">{i + 1}</span>
             <span style={{ fontFamily: "monospace" }}>

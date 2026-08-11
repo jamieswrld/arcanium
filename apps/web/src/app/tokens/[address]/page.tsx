@@ -94,7 +94,7 @@ export default async function TokenPage({ params, searchParams }: TokenPageProps
           </div>
           <span style={{ marginLeft: "auto", display: "grid", justifyItems: "end", gap: "0.25rem" }}>
             <span className="arch-token-price-big">
-              <LivePrice pool={detail.pool} tokenIsToken0={detail.token.toLowerCase() < detail.pairToken.toLowerCase()} initial={formatPriceE18(detail.priceE18)} />
+              <LivePrice chainKey={chain.key} pool={detail.pool} tokenIsToken0={detail.token.toLowerCase() < detail.pairToken.toLowerCase()} initial={formatPriceE18(detail.priceE18)} />
             </span>
             {detail.graduated ? (
               <Badge label="Graduated" tone="positive" />
@@ -122,6 +122,7 @@ export default async function TokenPage({ params, searchParams }: TokenPageProps
       <div className="arch-terminal">
         <Card>
           <MarketPanels
+            chainKey={chain.key}
             pool={detail.pool}
             token={detail.token}
             pairToken={detail.pairToken}
@@ -135,9 +136,10 @@ export default async function TokenPage({ params, searchParams }: TokenPageProps
             <TradePanel token={detail.token} pairToken={detail.pairToken} symbol={detail.symbol} chainKey={chain.key} />
           </Card>
 
-          <TokenMode token={detail.token} />
+          <TokenMode token={detail.token} chainKey={chain.key} />
 
           <CreatorFees
+            chainKey={chain.key}
             token={detail.token}
             creator={detail.creator}
             pairToken={detail.pairToken}
