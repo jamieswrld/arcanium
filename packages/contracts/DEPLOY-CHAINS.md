@@ -32,11 +32,15 @@ carries Arc-era values that are wrong for a new chain.
 - `unset GRADUATION_QUOTE_UNITS` — let the script scale 9,000 to the quote
   asset's decimals. The `.env` value is `9e9` (9,000 at 6dp); reusing it on an
   18-decimal quote would mark every token graduated the moment it launched.
+- `unset LAUNCH_FEE_QUOTE_UNITS` — launching is free. The `.env` value is
+  `5000000`, left over from when there was a launch fee. This one got through on
+  the first Robinhood/BNB deploy and had to be corrected afterwards with
+  `setLaunchFee(0)`; the post-deploy check in step 3b is what caught it.
 
 ```bash
 cd packages/contracts
 set -a; . ../../.env; set +a
-unset GRADUATION_QUOTE_UNITS
+unset GRADUATION_QUOTE_UNITS LAUNCH_FEE_QUOTE_UNITS
 export PAIR_FEE_CREATOR_SHARE_BPS=1000
 
 # --- Robinhood Chain (4663) — USDG, 6dp ---
@@ -78,6 +82,17 @@ A chain flips from "Coming soon" to live in the switcher as soon as its
 Optional private/paid RPCs, server-side only, tried ahead of the public list:
 `ROBINHOOD_RPC_URLS`, `BNB_RPC_URLS` (comma-separated).
 
+## 3b. Check the deploy before trusting it
+
+Never trust the script's own output — read the deployed contracts back:
+
+```bash
+cd apps/web && node scripts/verify-deploy.mjs   # every wiring + price constant
+node scripts/simulate-launch.mjs                # dry-runs all 3 modes, creates nothing
+```
+
+`verify-deploy` is what caught `launchFee = 5000000` on the live deploy.
+
 ## 4. Verify with a real launch
 
 Do one small launch per chain before announcing, exactly as we did on Arc:
@@ -96,3 +111,19 @@ Do one small launch per chain before announcing, exactly as we did on Arc:
 3. Add an entry to `CHAINS` in `apps/web/src/lib/chains.ts`.
 4. Add a fork test case to `MultiChainLaunch.t.sol` and make it pass.
 5. Follow steps 1–4 above.
+
+## Deployed addresses
+
+Both chains landed on the same addresses — a fresh deployer nonce sequence on
+each, so CREATE produced identical results.
+
+| Contract | Robinhood (4663) & BNB (56) |
+| --- | --- |
+| ArchLaunchpadFactoryV5 | `0x81D414D2cD66bf4422036846f569a6189996Fd59` |
+| ArchLiquidityVault | `0x4297254E5ae2df2b0d3920A08Df582D61b3e7766` |
+| ArchModeDistributor | `0x472580431Fb124e376E8b07802e64d2cEc4001DE` |
+| GraduationRegistry | `0x8Ff4Bafacba3fB58d9eB6d2822B1273070442bF3` |
+
+Owner / admin: `0x582525844FC8D68C5B7515d2199CDd4f72C6816a`.
+`protocolTreasury` is currently that same wallet on both chains — point it at a
+fee splitter when one is deployed per chain, the way Arc does.
