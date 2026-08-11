@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { TokenAvatar } from "@/components/TokenAvatar";
-import { formatPriceE18, formatUsdCompact, GRADUATION_UNITS, type LaunchpadToken } from "@/lib/launchpad";
-import { ARC_EXPLORER } from "@/lib/bridgeClient";
+import { formatPriceE18, formatUsdCompact, type LaunchpadToken } from "@/lib/launchpad";
+import { explorerAddress, getChain, type ChainKey } from "@/lib/chains";
+import { ChainBadge } from "@/components/ChainMark";
 import { ArcaneWandIcon, DiviumBillsIcon } from "@/components/ModeIcons";
 
 /**
@@ -10,14 +11,25 @@ import { ArcaneWandIcon, DiviumBillsIcon } from "@/components/ModeIcons";
  * stretched link; the dev link sits above it so both stay clickable without
  * nesting anchors.
  */
-export function TokenCard({ token, image }: { readonly token: LaunchpadToken; readonly image?: string | undefined }) {
+export function TokenCard({
+  token,
+  image,
+  chainKey = "arc",
+}: {
+  readonly token: LaunchpadToken;
+  readonly image?: string | undefined;
+  readonly chainKey?: ChainKey;
+}) {
+  // Graduation is 9,000 of the pair asset, whose decimals differ per chain.
+  const chain = getChain(chainKey);
+  const target = chain.graduationUnits;
   const progressPct =
-    token.quoteBalance >= GRADUATION_UNITS ? 100 : Number((token.quoteBalance * 100n) / GRADUATION_UNITS);
+    token.quoteBalance >= target ? 100 : Number((token.quoteBalance * 100n) / target);
 
   return (
     <div className="arch-token-card" style={{ position: "relative" }}>
       <Link
-        href={`/tokens/${token.token}`}
+        href={chainKey === "arc" ? `/tokens/${token.token}` : `/tokens/${token.token}?chain=${chainKey}`}
         aria-label={`${token.name} (${token.symbol})`}
         style={{ position: "absolute", inset: 0, zIndex: 1, borderRadius: 16 }}
       />
@@ -74,9 +86,12 @@ export function TokenCard({ token, image }: { readonly token: LaunchpadToken; re
       )}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
-        <span className="arch-note" style={{ fontSize: "0.7rem" }}>Dev</span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+          <ChainBadge chain={chain} />
+          <span className="arch-note" style={{ fontSize: "0.7rem" }}>Dev</span>
+        </span>
         <a
-          href={`${ARC_EXPLORER}/address/${token.creator}`}
+          href={explorerAddress(chain, token.creator)}
           target="_blank"
           rel="noreferrer"
           className="arch-note"

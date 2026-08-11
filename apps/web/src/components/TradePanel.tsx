@@ -2,16 +2,19 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useAccount, useBalance, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
-import type { Hex } from "viem";
-import { arcTestnet, erc20Abi, formatQuoteUnits, parseQuoteUnits, ARC_EXPLORER, PAIR_TOKEN_SYMBOL } from "@/lib/bridgeClient";
+import { formatUnits, parseUnits, type Hex } from "viem";
+import { erc20Abi } from "@/lib/bridgeClient";
+import { explorerTx, getChain, type ChainKey } from "@/lib/chains";
 import { useToast } from "@/components/ui/Toast";
 import { ConnectButton } from "@/components/ConnectButton";
-import { ROUTER_ADDRESS, routerAbi } from "@/lib/launchpad";
+import { routerAbi } from "@/lib/launchpad";
 
 interface TradePanelProps {
   readonly token: Hex;
   readonly pairToken: Hex;
   readonly symbol: string;
+  /** The chain the token was launched on — trades route to its own router. */
+  readonly chainKey?: ChainKey;
 }
 
 type TradeState =
@@ -29,10 +32,11 @@ function formatNativeShort(wei: bigint): string {
 
 /** Live estimated gas cost (swap budget × live gas price) and gas balance,
  *  with the inline gas-station fallback when the wallet has no Arc gas. */
-function GasRows() {
+function GasRows({ chainKey = "arc" }: { readonly chainKey?: ChainKey }) {
+  const chain = getChain(chainKey);
   const { address } = useAccount();
-  const arcPublic = usePublicClient({ chainId: arcTestnet.id });
-  const native = useBalance({ address, chainId: arcTestnet.id, query: { refetchInterval: 20_000 } });
+  const arcPublic = usePublicClient({ chainId: chain.id });
+  const native = useBalance({ address, chainId: chain.id, query: { refetchInterval: 20_000 } });
   const [gasCost, setGasCost] = useState<bigint | null>(null);
 
   useEffect(() => {
@@ -82,11 +86,18 @@ function parseToken18(value: string): bigint {
  * the 1% tier — no extra router fees, ever. Slippage is enforced via
  * amountOutMinimum computed from user settings.
  */
-export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
+export function TradePanel({ token, pairToken, symbol, chainKey = "arc" }: TradePanelProps) {
+  // Trades execute on the chain the token launched on, against that chain's
+  // own Uniswap router and quote asset (Arc USDC, Robinhood USDG, BNB USDT).
+  const chain = getChain(chainKey);
+  const ROUTER_ADDRESS = chain.uniswap.swapRouter;
+  const PAIR_TOKEN_SYMBOL = chain.quote.symbol;
+  const formatQuoteUnits = (v: bigint): string => formatUnits(v, chain.quote.decimals);
+  const parseQuoteUnits = (v: string): bigint => parseUnits(v, chain.quote.decimals);
   const { address, isConnected, chainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
-  const arcPublic = usePublicClient({ chainId: arcTestnet.id });
+  const arcPublic = usePublicClient({ chainId: chain.id });
   const { toast } = useToast();
 
   const [side, setSide] = useState<"buy" | "sell">("buy");
@@ -99,7 +110,7 @@ export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
     abi: erc20Abi,
     functionName: "balanceOf",
     args: address === undefined ? undefined : [address],
-    chainId: arcTestnet.id,
+    chainId: chain.id,
     query: { enabled: address !== undefined, refetchInterval: 8_000 },
   });
   const tokenBalance = useReadContract({
@@ -107,7 +118,7 @@ export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
     abi: erc20Abi,
     functionName: "balanceOf",
     args: address === undefined ? undefined : [address],
-    chainId: arcTestnet.id,
+    chainId: chain.id,
     query: { enabled: address !== undefined, refetchInterval: 8_000 },
   });
 
@@ -125,7 +136,7 @@ export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
   async function submit(): Promise<void> {
     if (address === undefined || parsedAmount === null || ROUTER_ADDRESS === undefined || arcPublic === undefined) return;
     try {
-      if (chainId !== arcTestnet.id) await switchChainAsync({ chainId: arcTestnet.id });
+      if (chainId !== chain.id) await switchChainAsync({ chainId: chain.id });
       const tokenIn = side === "buy" ? pairToken : token;
       const tokenOut = side === "buy" ? token : pairToken;
 
@@ -142,7 +153,7 @@ export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
           abi: erc20Abi,
           functionName: "approve",
           args: [ROUTER_ADDRESS, parsedAmount],
-          chainId: arcTestnet.id,
+          chainId: chain.id,
         });
         await arcPublic.waitForTransactionReceipt({ hash: approveTx });
       }
@@ -181,7 +192,7 @@ export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
           amountOutMinimum: minOut,
           sqrtPriceLimitX96: 0n,
         }],
-        chainId: arcTestnet.id,
+        chainId: chain.id,
       });
       const receipt = await arcPublic.waitForTransactionReceipt({ hash: txHash });
       if (receipt.status !== "success") {
@@ -193,7 +204,7 @@ export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
       // Refresh both balances immediately so the trade feels instant.
       void quoteBalance.refetch();
       void tokenBalance.refetch();
-      toast({ tone: "success", title: side === "buy" ? `Bought ${symbol}` : `Sold ${symbol}`, description: "Swap confirmed on Arc.", href: `${ARC_EXPLORER}/tx/${txHash}`, hrefLabel: "View transaction" });
+      toast({ tone: "success", title: side === "buy" ? `Bought ${symbol}` : `Sold ${symbol}`, description: "Swap confirmed on Arc.", href: `${explorerTx(chain, txHash)}`, hrefLabel: "View transaction" });
     } catch (err) {
       const message = err instanceof Error ? (err.message.split("\n")[0] ?? "failed") : "failed";
       setState({
@@ -240,7 +251,7 @@ export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
         <input id="trade-slippage" value={slippagePct} onChange={(e) => setSlippagePct(e.target.value)} inputMode="decimal" disabled={busy} />
       </div>
 
-      <GasRows />
+      <GasRows chainKey={chainKey} />
 
       <p className="arch-note">
         Trades route through the standard Uniswap v3 pool at its 1% fee tier. Arcanium adds no router fee.
@@ -268,7 +279,7 @@ export function TradePanel({ token, pairToken, symbol }: TradePanelProps) {
       {state.step === "done" ? (
         <p className="arch-note" style={{ color: "var(--arch-positive)" }}>
           ✓ Swap confirmed.{" "}
-          <a href={`${ARC_EXPLORER}/tx/${state.txHash}`} target="_blank" rel="noreferrer" style={{ textDecoration: "underline" }}>
+          <a href={`${explorerTx(chain, state.txHash)}`} target="_blank" rel="noreferrer" style={{ textDecoration: "underline" }}>
             View transaction
           </a>
         </p>

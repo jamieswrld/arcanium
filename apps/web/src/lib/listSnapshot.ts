@@ -1,18 +1,25 @@
 import { getDb } from "@/lib/db";
 import type { LaunchpadToken } from "@/lib/launchpad";
+import type { ChainKey } from "@/lib/chains";
 
 /**
- * Durable snapshot of the launch list. Every successful chain read is written
- * here; when the chain is unreachable (Arc's private-mainnet RPC gate, a
- * provider outage) the site serves the last known list instead of an empty
- * page. Tokens never disappear from the launchpad just because we can't reach
- * a node — the data is still true, only staleness changes.
+ * Durable snapshot of the launch list, per chain. Every successful chain read is
+ * written here; when a chain is unreachable (Arc's private-mainnet RPC gate, a
+ * provider outage) the site serves that chain's last known list instead of an
+ * empty page. Tokens never disappear from the launchpad just because we can't
+ * reach a node — the data is still true, only staleness changes.
+ *
+ * Arc keeps row id 1 so existing snapshots survive; other chains get their own
+ * rows keyed by chain.
  */
 
 interface Row {
   readonly payload: string;
   readonly saved_at: string;
 }
+
+/** Stable row id per chain. Arc is 1 for backwards compatibility. */
+const ROW_ID: Record<ChainKey, number> = { arc: 1, robinhood: 2, bnb: 3 };
 
 /** bigint-safe serialisation (LaunchpadToken carries several). */
 function serialize(tokens: readonly LaunchpadToken[]): string {
@@ -25,24 +32,31 @@ function deserialize(payload: string): LaunchpadToken[] {
 }
 
 /** In-process copy so an outage costs at most one DB round trip. */
-let memo: { tokens: LaunchpadToken[]; at: number } | null = null;
+const memo = new Map<ChainKey, { tokens: LaunchpadToken[]; at: number }>();
 
-export async function saveSnapshot(tokens: readonly LaunchpadToken[]): Promise<void> {
+async function ensureTable(sql: NonNullable<ReturnType<typeof getDb>>): Promise<void> {
+  await sql`
+    CREATE TABLE IF NOT EXISTS token_list_snapshot (
+      id int PRIMARY KEY DEFAULT 1,
+      payload text NOT NULL,
+      saved_at timestamptz NOT NULL DEFAULT now()
+    )
+  `;
+}
+
+export async function saveSnapshot(
+  tokens: readonly LaunchpadToken[],
+  chain: ChainKey = "arc",
+): Promise<void> {
   if (tokens.length === 0) return; // never overwrite a good list with nothing
-  memo = { tokens: [...tokens], at: Date.now() };
+  memo.set(chain, { tokens: [...tokens], at: Date.now() });
   const sql = getDb();
   if (sql === null) return;
   try {
-    await sql`
-      CREATE TABLE IF NOT EXISTS token_list_snapshot (
-        id int PRIMARY KEY DEFAULT 1,
-        payload text NOT NULL,
-        saved_at timestamptz NOT NULL DEFAULT now()
-      )
-    `;
+    await ensureTable(sql);
     await sql`
       INSERT INTO token_list_snapshot (id, payload, saved_at)
-      VALUES (1, ${serialize(tokens)}, now())
+      VALUES (${ROW_ID[chain]}, ${serialize(tokens)}, now())
       ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, saved_at = now()
     `;
   } catch {
@@ -50,17 +64,23 @@ export async function saveSnapshot(tokens: readonly LaunchpadToken[]): Promise<v
   }
 }
 
-export async function loadSnapshot(): Promise<{ tokens: LaunchpadToken[]; savedAt: number } | null> {
-  if (memo !== null) return { tokens: memo.tokens, savedAt: memo.at };
+export async function loadSnapshot(
+  chain: ChainKey = "arc",
+): Promise<{ tokens: LaunchpadToken[]; savedAt: number } | null> {
+  const hit = memo.get(chain);
+  if (hit !== undefined) return { tokens: hit.tokens, savedAt: hit.at };
   const sql = getDb();
   if (sql === null) return null;
   try {
-    const rows = await sql<Row[]>`SELECT payload, saved_at FROM token_list_snapshot WHERE id = 1 LIMIT 1`;
+    const rows = await sql<Row[]>`
+      SELECT payload, saved_at FROM token_list_snapshot WHERE id = ${ROW_ID[chain]} LIMIT 1
+    `;
     const row = rows[0];
     if (row === undefined) return null;
     const tokens = deserialize(row.payload);
-    memo = { tokens, at: new Date(row.saved_at).getTime() };
-    return { tokens, savedAt: memo.at };
+    const at = new Date(row.saved_at).getTime();
+    memo.set(chain, { tokens, at });
+    return { tokens, savedAt: at };
   } catch {
     return null;
   }

@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { arcPublicClient, arcUnreachable, fetchAllTokens, formatUsdCompact } from "@/lib/launchpad";
+import { arcPublicClient, formatUsdCompact } from "@/lib/launchpad";
 import { fetchProtocolStats } from "@/lib/protocolStats";
-import { getTokens } from "@/lib/tokensServer";
+import { getAllChainTokens } from "@/lib/tokensServer";
+import { ChainFilter } from "@/components/ChainFilter";
 import { NetworkStatusNotice } from "@/components/NetworkStatusNotice";
 import { fetchTokenImages } from "@/lib/tokenImages";
 import { TokenCard } from "@/components/TokenCard";
@@ -13,8 +14,10 @@ import { TokenCard } from "@/components/TokenCard";
 export const revalidate = 15; // edge-cached HTML; client polling keeps data live
 
 export default async function LaunchpadHome() {
-  const { tokens: fetchedTokens, unreachable } = await getTokens();
-  const tokens = fetchedTokens;
+  // Every chain in parallel — one being down never empties the others.
+  const results = await getAllChainTokens();
+  const tokens = results.flatMap((r) => [...r.tokens]);
+  const unreachable = results.length > 0 && results.every((r) => r.unreachable) && tokens.length === 0;
 
   const recent = tokens.slice(0, 6);
   const [images, stats] = await Promise.all([
@@ -31,13 +34,13 @@ export default async function LaunchpadHome() {
           <img src="/arcanium-mark.png" alt="" width={86} height={68} />
         </div>
         <h1>
-          Launch a token on Arc.
+          Launch a token anywhere.
           <br />
           <span className="arch-gradient-text">Live from block one.</span>
         </h1>
-        <p className="arch-note" style={{ fontSize: "1.02rem", maxWidth: 480, margin: "1.1rem auto 0" }}>
-          Every token pairs with native USDC on real Uniswap liquidity that&apos;s
-          permanently locked.
+        <p className="arch-note" style={{ fontSize: "1.02rem", maxWidth: 520, margin: "1.1rem auto 0" }}>
+          Launch on Arc, Robinhood or BNB. Every token pairs with a real stablecoin
+          on Uniswap liquidity that&apos;s permanently locked.
         </p>
         <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", marginTop: "1.6rem", flexWrap: "wrap" }}>
           <Link href="/create" className="arch-primary-button" style={{ width: "auto", padding: "0.85rem 1.8rem", textDecoration: "none" }}>
@@ -78,6 +81,12 @@ export default async function LaunchpadHome() {
             <h2>Recent launches</h2>
             <Link href="/tokens" className="arch-note" style={{ textDecoration: "underline" }}>View all</Link>
           </div>
+          <div style={{ marginBottom: "0.9rem" }}>
+            <ChainFilter
+              active="all"
+              statuses={results.map((r) => ({ key: r.chain.key, unreachable: r.unreachable, count: r.tokens.length }))}
+            />
+          </div>
           {unreachable ? (
             <NetworkStatusNotice />
           ) : recent.length === 0 ? (
@@ -91,7 +100,12 @@ export default async function LaunchpadHome() {
           ) : (
             <div className="arch-token-grid">
               {recent.map((t) => (
-                <TokenCard key={t.token} token={t} image={images[t.token.toLowerCase()]} />
+                <TokenCard
+                  key={`${t.chainKey}:${t.token}`}
+                  token={t}
+                  image={images[t.token.toLowerCase()]}
+                  chainKey={t.chainKey}
+                />
               ))}
             </div>
           )}
@@ -108,7 +122,7 @@ export default async function LaunchpadHome() {
           </div>
           <div className="arch-step arch-step-active">
             <strong style={{ color: "var(--foreground)" }}>3 · Trade &amp; earn</strong>
-            <p style={{ margin: "0.35rem 0 0" }}>Buy and sell in native USDC from block one. Creators earn fees forever.</p>
+            <p style={{ margin: "0.35rem 0 0" }}>Buy and sell in USDC, USDG or USDT from block one. Creators earn fees forever.</p>
           </div>
         </section>
       </div>

@@ -1,18 +1,14 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAccount, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
 import { decodeEventLog, parseAbiItem, type Hex } from "viem";
-import {
-  arcTestnet,
-  erc20Abi,
-  formatQuoteUnits,
-  PAIR_TOKEN_ADDRESS,
-  PAIR_TOKEN_SYMBOL,
-  parseQuoteUnits,
-} from "@/lib/bridgeClient";
-import { FACTORY_ADDRESS, factoryAbi, LAUNCH_MODES } from "@/lib/launchpad";
+import { formatUnits, parseUnits } from "viem";
+import { erc20Abi } from "@/lib/bridgeClient";
+import { factoryAbi, LAUNCH_MODES } from "@/lib/launchpad";
+import { liveChains, resolveChain } from "@/lib/chains";
+import { ChainMark } from "@/components/ChainMark";
 import { ArcaneWandIcon, DiviumBillsIcon } from "@/components/ModeIcons";
 import { useToast } from "@/components/ui/Toast";
 import { ConnectButton } from "@/components/ConnectButton";
@@ -27,9 +23,6 @@ type CreateState =
   | { readonly step: "approving" }
   | { readonly step: "launching" }
   | { readonly step: "error"; readonly message: string };
-
-/** Native gas floor for a full launch (token + pool + lock is gas-heavy). */
-const LAUNCH_GAS_FLOOR = 40_000_000_000_000_000n; // ~0.04 native USDC
 
 /** Downscale + compress a picked image to a small data URI so it embeds in the
  *  launch cheaply. WebP when supported (keeps transparency, tiny), else PNG. */
@@ -50,19 +43,29 @@ async function compressImage(file: File): Promise<string> {
 }
 
 /**
- * Live launch form. A token is created on Arc, paired with the canonical pair
- * token (native Arc USDC), with its Uniswap v3 pool and permanently locked
+ * Live launch form. A token is created on the selected chain, paired with that
+ * chain's quote asset (Arc USDC, Robinhood USDG, BNB USDT), with its Uniswap v3 pool and locked
  * liquidity in one atomic transaction. Launching is free (network gas only);
  * any optional initial buy is paid in the pair token — which on Arc is the
- * chain's native USDC, so a wallet holding Arc USDC can launch directly.
  */
 export function CreateForm() {
   const router = useRouter();
+  const params = useSearchParams();
   const { address, isConnected, chainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
-  const arcPublic = usePublicClient({ chainId: arcTestnet.id });
   const { toast } = useToast();
+
+  const available = liveChains();
+  const chain = resolveChain(params.get("chain"));
+  const factory = chain.factories[0];
+  const quote = chain.quote.address;
+  const quoteSymbol = chain.quote.symbol;
+  const quoteDecimals = chain.quote.decimals;
+  const chainPublic = usePublicClient({ chainId: chain.id });
+
+  const fmtQuote = (v: bigint): string => formatUnits(v, quoteDecimals);
+  const parseQuote = (v: string): bigint => parseUnits(v, quoteDecimals);
 
   const [name, setName] = useState("");
   const [ticker, setTicker] = useState("");
@@ -92,19 +95,19 @@ export function CreateForm() {
   }
 
   const launchFee = useReadContract({
-    address: FACTORY_ADDRESS,
+    address: factory,
     abi: factoryAbi,
     functionName: "launchFee",
-    chainId: arcTestnet.id,
-    query: { enabled: FACTORY_ADDRESS !== undefined, refetchInterval: 60_000 },
+    chainId: chain.id,
+    query: { enabled: factory !== undefined, refetchInterval: 60_000 },
   });
   const pairBalance = useReadContract({
-    address: PAIR_TOKEN_ADDRESS,
+    address: quote,
     abi: erc20Abi,
     functionName: "balanceOf",
     args: address === undefined ? undefined : [address],
-    chainId: arcTestnet.id,
-    query: { enabled: address !== undefined && PAIR_TOKEN_ADDRESS !== undefined, refetchInterval: 15_000 },
+    chainId: chain.id,
+    query: { enabled: address !== undefined, refetchInterval: 15_000 },
   });
 
   const tickerNormalized = ticker.trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10);
@@ -112,8 +115,8 @@ export function CreateForm() {
 
   const buyAmount = useMemo<bigint>(() => {
     if (creatorBuy.trim() === "") return 0n;
-    try { return parseQuoteUnits(creatorBuy); } catch { return 0n; }
-  }, [creatorBuy]);
+    try { return parseQuote(creatorBuy); } catch { return 0n; }
+  }, [creatorBuy, quoteDecimals]);
 
   const totalNeeded = (launchFee.data ?? 0n) + buyAmount;
 
@@ -135,8 +138,8 @@ export function CreateForm() {
 
   async function submit(): Promise<void> {
     // Validate with explicit feedback — never fail silently.
-    if (FACTORY_ADDRESS === undefined || PAIR_TOKEN_ADDRESS === undefined || arcPublic === undefined) {
-      setState({ step: "error", message: "Launchpad isn't configured on this deployment." });
+    if (factory === undefined || chainPublic === undefined) {
+      setState({ step: "error", message: `The launchpad is not deployed on ${chain.name} yet.` });
       return;
     }
     if (name.trim().length === 0) { setState({ step: "error", message: "Enter a token name." }); return; }
@@ -144,27 +147,27 @@ export function CreateForm() {
     if (formError !== null) { setState({ step: "error", message: formError }); return; }
     if (address === undefined) { setState({ step: "error", message: "Connect your wallet first." }); return; }
     try {
-      if (chainId !== arcTestnet.id) await switchChainAsync({ chainId: arcTestnet.id });
+      if (chainId !== chain.id) await switchChainAsync({ chainId: chain.id });
 
       // Read the launch fee on-demand so a slow/failed hook read never blocks
       // the launch (it's usually 0 anyway).
-      const fee = launchFee.data ?? await arcPublic.readContract({
-        address: FACTORY_ADDRESS, abi: factoryAbi, functionName: "launchFee",
+      const fee = launchFee.data ?? await chainPublic.readContract({
+        address: factory, abi: factoryAbi, functionName: "launchFee",
       }).catch(() => 0n);
       const needed = fee + buyAmount;
 
-      const bal = pairBalance.data ?? await arcPublic.readContract({
-        address: PAIR_TOKEN_ADDRESS, abi: erc20Abi, functionName: "balanceOf", args: [address],
+      const bal = pairBalance.data ?? await chainPublic.readContract({
+        address: quote, abi: erc20Abi, functionName: "balanceOf", args: [address],
       }).catch(() => undefined);
       if (bal !== undefined && bal < needed) {
-        setState({ step: "error", message: `Need ${formatQuoteUnits(needed)} ${PAIR_TOKEN_SYMBOL} (fee + buy); you have ${formatQuoteUnits(bal)}` });
+        setState({ step: "error", message: `Need ${fmtQuote(needed)} ${quoteSymbol} (fee + buy); you have ${fmtQuote(bal)}` });
         return;
       }
 
       // A full launch is gas-heavy; fail fast with a clear message if the
       // wallet can't cover it rather than a cryptic wallet error.
-      const gasBal = await arcPublic.getBalance({ address }).catch(() => LAUNCH_GAS_FLOOR);
-      if (gasBal < LAUNCH_GAS_FLOOR) { setState({ step: "needs_gas" }); return; }
+      const gasBal = await chainPublic.getBalance({ address }).catch(() => chain.launchGasFloor);
+      if (gasBal < chain.launchGasFloor) { setState({ step: "needs_gas" }); return; }
 
       const metadata = {
         name: name.trim(), symbol: tickerNormalized, description: description.trim(),
@@ -173,31 +176,31 @@ export function CreateForm() {
       };
       const metadataUri = `data:application/json;base64,${btoa(JSON.stringify(metadata))}`;
 
-      const allowance = await arcPublic.readContract({
-        address: PAIR_TOKEN_ADDRESS, abi: erc20Abi, functionName: "allowance", args: [address, FACTORY_ADDRESS],
+      const allowance = await chainPublic.readContract({
+        address: quote, abi: erc20Abi, functionName: "allowance", args: [address, factory],
       });
       if (needed > 0n && allowance < needed) {
         setState({ step: "approving" });
         const approveTx = await writeContractAsync({
-          address: PAIR_TOKEN_ADDRESS, abi: erc20Abi, functionName: "approve", args: [FACTORY_ADDRESS, needed], chainId: arcTestnet.id,
+          address: quote, abi: erc20Abi, functionName: "approve", args: [factory, needed], chainId: chain.id,
         });
-        await arcPublic.waitForTransactionReceipt({ hash: approveTx });
+        await chainPublic.waitForTransactionReceipt({ hash: approveTx });
       }
 
       setState({ step: "launching" });
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 600);
       const txHash = await writeContractAsync({
-        address: FACTORY_ADDRESS, abi: factoryAbi, functionName: "launch",
+        address: factory, abi: factoryAbi, functionName: "launch",
         args: [{
-          name: name.trim(), symbol: tickerNormalized, metadataUri, pairToken: PAIR_TOKEN_ADDRESS,
+          name: name.trim(), symbol: tickerNormalized, metadataUri, pairToken: quote,
           creatorBuyAmount: buyAmount, minTokensOut: 0n, deadline,
           feeRecipient: (feeWalletValid && feeWalletTrimmed !== "" ? feeWalletTrimmed : "0x0000000000000000000000000000000000000000") as Hex,
           taxBps: 0n,
           mode,
         }],
-        chainId: arcTestnet.id,
+        chainId: chain.id,
       });
-      const receipt = await arcPublic.waitForTransactionReceipt({ hash: txHash });
+      const receipt = await chainPublic.waitForTransactionReceipt({ hash: txHash });
       if (receipt.status !== "success") { setState({ step: "error", message: "Launch transaction reverted" }); return; }
       let newToken: string | null = null;
       for (const log of receipt.logs) {
@@ -226,6 +229,36 @@ export function CreateForm() {
 
   return (
     <div>
+      <div className="arch-form-row" style={{ marginBottom: "0.9rem" }}>
+        <label>Launch on</label>
+        <div className="arch-chain-choices">
+          {available.map((c) => {
+            const on = c.key === chain.key;
+            return (
+              <button
+                key={c.key}
+                type="button"
+                disabled={busy}
+                aria-pressed={on}
+                onClick={() => router.replace(`/create?chain=${c.key}`, { scroll: false })}
+                className={on ? "arch-chain-choice arch-chain-choice-active" : "arch-chain-choice"}
+                style={{ ["--chain-accent" as string]: c.accent }}
+              >
+                <ChainMark chain={c} size={19} />
+                <span>
+                  <span style={{ display: "block", fontWeight: 700 }}>{c.shortName}</span>
+                  <span className="arch-note" style={{ fontSize: "0.68rem" }}>Pairs with {c.quote.symbol}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="arch-note" style={{ margin: "0.4rem 0 0", fontSize: "0.75rem" }}>
+          Your token launches on {chain.name} and pairs with {chain.quote.symbol}. You pay{" "}
+          {chain.nativeCurrency.symbol} for gas — nothing else.
+        </p>
+      </div>
+
       <div className="arch-form-grid">
         <div className="arch-form-row">
           <label htmlFor="cf-name">Token name *</label>
@@ -284,7 +317,7 @@ export function CreateForm() {
       </details>
 
       <div className="arch-form-row">
-        <label htmlFor="cf-buy">Initial buy (optional, in {PAIR_TOKEN_SYMBOL})</label>
+        <label htmlFor="cf-buy">Initial buy (optional, in {quoteSymbol})</label>
         <input id="cf-buy" value={creatorBuy} onChange={(e) => setCreatorBuy(e.target.value)} placeholder="0.00" inputMode="decimal" disabled={busy} />
         <span className="arch-note">Executed atomically inside the launch — nobody can trade before you.</span>
       </div>
@@ -337,17 +370,17 @@ export function CreateForm() {
       <div style={{ padding: "0.5rem 0", fontSize: "0.875rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", padding: "0.2rem 0" }}>
           <span style={{ color: "var(--arch-text-muted)" }}>Launch fee</span>
-          <span>{launchFee.data === undefined ? "—" : launchFee.data === 0n ? "Free — you only pay gas" : `${formatQuoteUnits(launchFee.data)} ${PAIR_TOKEN_SYMBOL}`}</span>
+          <span>{launchFee.data === undefined ? "—" : launchFee.data === 0n ? "Free — you only pay gas" : `${fmtQuote(launchFee.data)} ${quoteSymbol}`}</span>
         </div>
         {buyAmount > 0n ? (
           <div style={{ display: "flex", justifyContent: "space-between", padding: "0.2rem 0" }}>
             <span style={{ color: "var(--arch-text-muted)" }}>Initial buy</span>
-            <span>{formatQuoteUnits(buyAmount)} {PAIR_TOKEN_SYMBOL}</span>
+            <span>{fmtQuote(buyAmount)} {quoteSymbol}</span>
           </div>
         ) : null}
         <div style={{ display: "flex", justifyContent: "space-between", padding: "0.2rem 0" }}>
-          <span style={{ color: "var(--arch-text-muted)" }}>Your {PAIR_TOKEN_SYMBOL} on Arc</span>
-          <span>{pairBalance.data !== undefined ? `${formatQuoteUnits(pairBalance.data)} ${PAIR_TOKEN_SYMBOL}` : "—"}</span>
+          <span style={{ color: "var(--arch-text-muted)" }}>Your {quoteSymbol} on Arc</span>
+          <span>{pairBalance.data !== undefined ? `${fmtQuote(pairBalance.data)} ${quoteSymbol}` : "—"}</span>
         </div>
       </div>
 
@@ -368,7 +401,7 @@ export function CreateForm() {
           disabled={disabled}
           onClick={() => void submit()}
         >
-          {state.step === "approving" ? `Approving ${PAIR_TOKEN_SYMBOL}…` : state.step === "launching" ? "Launching…" : "Launch token"}
+          {state.step === "approving" ? `Approving ${quoteSymbol}…` : state.step === "launching" ? "Launching…" : "Launch token"}
         </button>
       )}
       {state.step === "error" ? <p className="arch-note" style={{ color: "var(--arch-negative)" }}>{state.message}</p> : null}

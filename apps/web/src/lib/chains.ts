@@ -59,6 +59,9 @@ export interface LaunchChain {
   readonly modeDistributor?: Hex | undefined;
   /** Quote units that mark a token graduated (9,000 of the quote asset). */
   readonly graduationUnits: bigint;
+  /** Native-gas floor for a full launch, so the form can fail fast with a clear
+   *  message instead of a cryptic wallet error. A launch is ~9M gas. */
+  readonly launchGasFloor: bigint;
   /** False until our stack is deployed — the UI shows it as coming soon. */
   readonly live: boolean;
   /** Brand accent for chain chips/badges. */
@@ -129,6 +132,7 @@ const ARC: LaunchChain = {
     addr(process.env["NEXT_PUBLIC_ARCH_MODE_DISTRIBUTOR_ADDRESS"]) ??
     "0x7c148B6a581E32CcB6ffF7Bd59AF4250d5ec1eBc",
   graduationUnits: graduationUnits(6),
+  launchGasFloor: 40_000_000_000_000_000n, // ~0.04 native USDC
   live: true,
   accent: "#8b7dff",
 };
@@ -165,6 +169,7 @@ const ROBINHOOD: LaunchChain = {
   liquidityVault: addr(process.env["NEXT_PUBLIC_ROBINHOOD_LIQUIDITY_VAULT_ADDRESS"]),
   modeDistributor: addr(process.env["NEXT_PUBLIC_ROBINHOOD_MODE_DISTRIBUTOR_ADDRESS"]),
   graduationUnits: graduationUnits(6),
+  launchGasFloor: 2_000_000_000_000_000n, // 0.002 ETH � a launch costs ~0.0005
   live: envList(process.env["NEXT_PUBLIC_ROBINHOOD_FACTORY_ADDRESS"]).length > 0,
   accent: "#00c805",
 };
@@ -207,6 +212,7 @@ const BNB: LaunchChain = {
   liquidityVault: addr(process.env["NEXT_PUBLIC_BNB_LIQUIDITY_VAULT_ADDRESS"]),
   modeDistributor: addr(process.env["NEXT_PUBLIC_BNB_MODE_DISTRIBUTOR_ADDRESS"]),
   graduationUnits: graduationUnits(18),
+  launchGasFloor: 2_000_000_000_000_000n, // 0.002 BNB � a launch costs ~0.0005
   live: envList(process.env["NEXT_PUBLIC_BNB_FACTORY_ADDRESS"]).length > 0,
   accent: "#f0b90b",
 };

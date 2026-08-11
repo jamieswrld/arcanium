@@ -4,6 +4,9 @@ const FACTORY = "0x81D414D2cD66bf4422036846f569a6189996Fd59";
 const VAULT = "0x4297254E5ae2df2b0d3920A08Df582D61b3e7766";
 const DISTRIBUTOR = "0x472580431Fb124e376E8b07802e64d2cEc4001DE";
 const GRADUATION = "0x8Ff4Bafacba3fB58d9eB6d2822B1273070442bF3";
+const SPLITTER = "0xE886Ca14dbF1D8B729c6F5B081392b4Da3c41a1A";
+const FEE_WALLETS = ["0x6bDCaE1573292aadab1fe081142a3f81e8F50A3B","0x7C17a1176CE19d947A0f64c46E1A545d6Aa0a704","0xd5e3D1421e098524B7e1D730Ad9c355483caF3CB","0xdF04c8f699062B8d94f980A1d9d563Adf030e647","0x017f879863Cd169D2d8da21848F43F438bD8AAe3"];
+const FEE_WEIGHTS = [4000n,1500n,1500n,1500n,1500n];
 const DEPLOYER = "0x582525844FC8D68C5B7515d2199CDd4f72C6816a";
 
 const CHAINS = [
@@ -51,6 +54,7 @@ const distAbi = [
   A("owner", [], [{ type: "address" }]),
 ];
 const gradAbi = [A("graduationThreshold", [], [{ type: "uint256" }])];
+const splitAbi = [A("recipientCount", [], [{ type: "uint256" }]), A("recipients", [{ type: "uint256" }], [{ type: "address" }]), A("weightsBps", [{ type: "uint256" }], [{ type: "uint256" }])];
 
 let fails = 0;
 function check(label, actual, expected) {
@@ -90,10 +94,15 @@ for (const c of CHAINS) {
   check("vault.owner", await r(VAULT, vaultAbi, "owner"), DEPLOYER);
 
   check("distributor.creatorShareBps", await r(DISTRIBUTOR, distAbi, "creatorShareBps"), 1000n);
+  check("distributor.protocolTreasury", await r(DISTRIBUTOR, distAbi, "protocolTreasury"), SPLITTER);
+  check("splitter.recipientCount", await r(SPLITTER, splitAbi, "recipientCount"), 5n);
+  for (let i = 0; i < 5; i++) {
+    check(`  splitter wallet ${i}`, await r(SPLITTER, splitAbi, "recipients", [BigInt(i)]), FEE_WALLETS[i]);
+    check(`  splitter weight ${i}`, await r(SPLITTER, splitAbi, "weightsBps", [BigInt(i)]), FEE_WEIGHTS[i]);
+  }
   check("distributor.factory", await r(DISTRIBUTOR, distAbi, "factory"), FACTORY);
   check("distributor.vault", await r(DISTRIBUTOR, distAbi, "vault"), VAULT);
   check("distributor.owner", await r(DISTRIBUTOR, distAbi, "owner"), DEPLOYER);
-  console.log(`    info  protocolTreasury           ${await r(DISTRIBUTOR, distAbi, "protocolTreasury")}`);
 
   const grad = await r(GRADUATION, gradAbi, "graduationThreshold").catch(() => null);
   if (grad !== null) check("graduationThreshold", grad, c.wantGrad);

@@ -681,3 +681,107 @@ main {
   .arch-chain-trigger-label { display: none; }
   .arch-chain-trigger { padding: 0 0.5rem; }
 }
+
+/* Chain filter tabs on the launch list. Same pill language as the sort pills,
+   with a greyed state for a chain we currently cannot reach. */
+.arch-chain-filter {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.arch-chain-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.44rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--background) 55%, var(--card));
+  color: var(--muted, var(--foreground));
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.arch-chain-tab:hover {
+  color: var(--foreground);
+  border-color: color-mix(in oklch, var(--chain-accent, var(--foreground)) 45%, var(--border));
+}
+
+.arch-chain-tab-active {
+  color: var(--foreground);
+  border-color: color-mix(in oklch, var(--chain-accent, var(--foreground)) 55%, var(--border));
+  background: color-mix(in oklch, var(--chain-accent, var(--card)) 14%, var(--card));
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--chain-accent, transparent) 18%, transparent) inset;
+}
+
+/* Unreachable: dimmed, but still clickable — the tokens are real and still
+   listed from snapshot, so we never hide the chain. */
+.arch-chain-tab-down {
+  opacity: 0.5;
+  filter: grayscale(1);
+}
+.arch-chain-tab-down:hover { opacity: 0.75; }
+
+.arch-chain-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #f0a63a;
+  box-shadow: 0 0 0 3px color-mix(in oklch, #f0a63a 22%, transparent);
+}
+
+.arch-chain-tab-marks {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.arch-chain-tab-count {
+  padding: 0.02rem 0.34rem;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 10%, transparent);
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 520px) {
+  .arch-chain-tab { padding: 0.4rem 0.62rem; font-size: 0.78rem; }
+}
+
+/* Chain choice cards on the create form — same pill language, larger tap area. */
+.arch-chain-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.5rem;
+}
+
+.arch-chain-choice {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--background) 55%, var(--card));
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.arch-chain-choice:hover:not(:disabled) {
+  border-color: color-mix(in oklch, var(--chain-accent, var(--foreground)) 45%, var(--border));
+}
+.arch-chain-choice:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.arch-chain-choice-active {
+  border-color: color-mix(in oklch, var(--chain-accent, var(--foreground)) 60%, var(--border));
+  background: color-mix(in oklch, var(--chain-accent, var(--card)) 13%, var(--card));
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--chain-accent, transparent) 22%, transparent) inset;
+}
