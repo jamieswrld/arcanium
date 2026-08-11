@@ -597,3 +597,87 @@ main {
     display: none;
   }
 }
+
+/* ---------------------------------------------------------------- chains */
+/* Chain picker in the header + chain badges on cards and token pages. */
+
+.arch-chain-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 36px;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.arch-chain-trigger:hover {
+  border-color: color-mix(in oklch, var(--border) 45%, var(--foreground));
+}
+
+.arch-chain-menu {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 60;
+  min-width: 232px;
+  padding: 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in oklch, var(--background) 82%, var(--card));
+  backdrop-filter: blur(14px);
+  box-shadow: 0 18px 44px rgb(0 0 0 / 0.45);
+}
+
+.arch-chain-option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.55rem 0.6rem;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: 0.86rem;
+  text-align: left;
+  cursor: pointer;
+}
+.arch-chain-option:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--card) 70%, var(--foreground) 8%);
+}
+.arch-chain-option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.arch-chain-option-active {
+  background: color-mix(in oklch, var(--card) 60%, var(--foreground) 10%);
+}
+
+.arch-chain-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.15rem 0.42rem;
+  border: 1px solid color-mix(in oklch, var(--chain-accent, var(--border)) 40%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--chain-accent, var(--card)) 12%, transparent);
+  color: var(--chain-accent, var(--foreground));
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .arch-chain-trigger-label { display: none; }
+  .arch-chain-trigger { padding: 0 0.5rem; }
+}

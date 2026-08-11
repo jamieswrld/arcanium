@@ -55,7 +55,7 @@ contract MigrationTest is Test {
             address(ausd), 0, makeAddr("feeTreasury")
         );
         distributor = new ArchFeeDistributor(
-            address(factory), address(vault), admin, 3_000, makeAddr("protocolTreasury")
+            address(factory), address(vault), admin, 3_000, makeAddr("protocolTreasury"), address(0)
         );
         exchange = new AusdExchange(address(ausd), address(usdc), admin);
         migrator = new PoolMigrator(
@@ -89,7 +89,8 @@ contract MigrationTest is Test {
             pairToken: address(ausd),
             creatorBuyAmount: 0,
             minTokensOut: 0,
-            deadline: block.timestamp + 300
+            deadline: block.timestamp + 300,
+            feeRecipient: address(0)
         });
         vm.prank(creator);
         (token, pool, ) = factory.launch(params);
@@ -101,7 +102,6 @@ contract MigrationTest is Test {
                 tokenOut: token,
                 fee: 10_000,
                 recipient: trader,
-                deadline: block.timestamp + 300,
                 amountIn: 5_000e6,
                 amountOutMinimum: 0,
                 sqrtPriceLimitX96: 0

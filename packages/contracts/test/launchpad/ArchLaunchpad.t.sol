@@ -66,7 +66,7 @@ contract ArchLaunchpadTest is Test {
             feeTreasury
         );
         distributor = new ArchFeeDistributor(
-            address(factory), address(vault), admin, 3_000, protocolTreasury
+            address(factory), address(vault), admin, 3_000, protocolTreasury, address(0)
         );
         graduation = new GraduationRegistry(address(factory), GRADUATION_UNITS);
 
@@ -92,7 +92,8 @@ contract ArchLaunchpadTest is Test {
             pairToken: address(quote),
             creatorBuyAmount: creatorBuy,
             minTokensOut: 0,
-            deadline: block.timestamp + 300
+            deadline: block.timestamp + 300,
+            feeRecipient: address(0)
         });
         vm.prank(creator);
         return factory.launch(params);
@@ -106,7 +107,6 @@ contract ArchLaunchpadTest is Test {
                 tokenOut: token,
                 fee: 10_000,
                 recipient: trader,
-                deadline: block.timestamp + 300,
                 amountIn: quoteIn,
                 amountOutMinimum: 0,
                 sqrtPriceLimitX96: 0
@@ -123,7 +123,6 @@ contract ArchLaunchpadTest is Test {
                 tokenOut: address(quote),
                 fee: 10_000,
                 recipient: trader,
-                deadline: block.timestamp + 300,
                 amountIn: tokenIn,
                 amountOutMinimum: 0,
                 sqrtPriceLimitX96: 0
@@ -220,7 +219,8 @@ contract ArchLaunchpadTest is Test {
             pairToken: address(quote),
             creatorBuyAmount: 0,
             minTokensOut: 0,
-            deadline: block.timestamp + 300
+            deadline: block.timestamp + 300,
+            feeRecipient: address(0)
         });
         vm.prank(creator);
         vm.expectRevert(ArchLaunchpadFactory.LaunchesArePaused.selector);
@@ -236,7 +236,8 @@ contract ArchLaunchpadTest is Test {
             pairToken: address(other),
             creatorBuyAmount: 0,
             minTokensOut: 0,
-            deadline: block.timestamp + 300
+            deadline: block.timestamp + 300,
+            feeRecipient: address(0)
         });
         vm.prank(creator);
         vm.expectRevert(ArchLaunchpadFactory.PairTokenNotAllowed.selector);

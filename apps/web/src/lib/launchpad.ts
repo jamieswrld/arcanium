@@ -189,17 +189,27 @@ export const erc20MetaAbi = [
 ] as const;
 
 /**
- * USD price per whole token, scaled 1e18, from sqrtPriceX96 with a 6-decimal
- * quote and 18-decimal token. Exact bigint math for both orderings.
+ * USD price per whole token, scaled 1e18, from sqrtPriceX96 with an
+ * 18-decimal token. Exact bigint math for both orderings.
+ *
+ * The quote asset's decimals differ by chain (6 on Arc/USDC and
+ * Robinhood/USDG, 18 on BNB/USDT), so the scale factor is
+ * 10^(36 - quoteDecimals): 1e30 for a 6-decimal quote, 1e18 for an
+ * 18-decimal one. Defaults to 6 so every existing Arc caller is unchanged.
  */
-export function priceUsdE18(sqrtPriceX96: bigint, tokenIsToken0: boolean): bigint {
+export function priceUsdE18(
+  sqrtPriceX96: bigint,
+  tokenIsToken0: boolean,
+  quoteDecimals = 6,
+): bigint {
   const numerator = sqrtPriceX96 * sqrtPriceX96;
+  const scale = 10n ** BigInt(36 - quoteDecimals);
   if (tokenIsToken0) {
-    // P(quoteRaw/tokenRaw) = sqrtP²/2¹⁹²; USD/token ×1e18 = P × 1e30.
-    return (numerator * 10n ** 30n) / Q192;
+    // P(quoteRaw/tokenRaw) = sqrtP²/2¹⁹²; USD/token ×1e18 = P × scale.
+    return (numerator * scale) / Q192;
   }
-  // token is token1: USD/token ×1e18 = 1e30 × 2¹⁹² / sqrtP².
-  return (10n ** 30n * Q192) / numerator;
+  // token is token1: USD/token ×1e18 = scale × 2¹⁹² / sqrtP².
+  return (scale * Q192) / numerator;
 }
 
 /** Market cap in 6-decimal USD units for the fixed 1e9-token supply. */

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Inter } from "next/font/google";
 import Link from "next/link";
 import Image from "next/image";
@@ -7,6 +8,7 @@ import { Providers } from "./providers";
 import { WalletButton } from "@/components/WalletButton";
 import { VersionGuard } from "@/components/VersionGuard";
 import { SearchCommand } from "@/components/SearchCommand";
+import { ChainSwitcher } from "@/components/ChainSwitcher";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 
@@ -54,6 +56,9 @@ export default function RootLayout({
             </nav>
             <div className="arch-header-right">
               <SearchCommand />
+              <Suspense fallback={null}>
+                <ChainSwitcher />
+              </Suspense>
               <a
                 href="https://x.com/arcaniumtrade"
                 target="_blank"
