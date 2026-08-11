@@ -21,23 +21,59 @@ export interface ChainResult {
   readonly unreachable: boolean;
 }
 
+/**
+ * How long a chain stays "known down" after a failed read. While a chain is in
+ * this state we skip the live read entirely and serve its snapshot, so one dead
+ * RPC cannot add its full timeout to every single page render. After the window
+ * expires exactly one request pays the probe cost; if the chain is back,
+ * everything resumes automatically.
+ *
+ * This is why it exists: with Arc's RPC gated, /tokens and /portfolio were
+ * taking 9.3s because every request waited out the timeout, while the same page
+ * filtered to a healthy chain rendered in 0.3s.
+ */
+const DOWN_MEMO_MS = 60_000;
+const downSince = new Map<ChainKey, number>();
+
+function knownDown(key: ChainKey): boolean {
+  const at = downSince.get(key);
+  if (at === undefined) return false;
+  if (Date.now() - at < DOWN_MEMO_MS) return true;
+  downSince.delete(key); // window expired — let one request re-probe
+  return false;
+}
+
+/** Default read budget. Deliberately short: a healthy chain answers in well
+ *  under a second, and a slow one must not hold up the page. */
+const READ_TIMEOUT_MS = 3_000;
+
+async function snapshotOnly(
+  key: ChainKey,
+): Promise<{ tokens: LaunchpadToken[]; stale: boolean; unreachable: boolean }> {
+  const snap = await loadSnapshot(key).catch(() => null);
+  if (snap !== null && snap.tokens.length > 0) {
+    return { tokens: snap.tokens, stale: true, unreachable: true };
+  }
+  return { tokens: [], stale: false, unreachable: true };
+}
+
 /** Arc keeps its original, battle-tested read path. */
 export async function getTokens(
-  timeoutMs = 9000,
+  timeoutMs = READ_TIMEOUT_MS,
 ): Promise<{ tokens: LaunchpadToken[]; stale: boolean; unreachable: boolean }> {
+  if (knownDown("arc")) return snapshotOnly("arc");
+
   const live = await Promise.race([
     fetchAllTokens(arcPublicClient()).catch(() => [] as LaunchpadToken[]),
     new Promise<LaunchpadToken[]>((r) => setTimeout(() => r([]), timeoutMs)),
   ]);
   if (live.length > 0) {
+    downSince.delete("arc");
     void saveSnapshot(live, "arc");
     return { tokens: live, stale: false, unreachable: false };
   }
-  const snap = await loadSnapshot("arc").catch(() => null);
-  if (snap !== null && snap.tokens.length > 0) {
-    return { tokens: snap.tokens, stale: true, unreachable: true };
-  }
-  return { tokens: [], stale: false, unreachable: true };
+  downSince.set("arc", Date.now());
+  return snapshotOnly("arc");
 }
 
 function tag(tokens: readonly LaunchpadToken[], chainKey: ChainKey): ChainToken[] {
@@ -45,13 +81,20 @@ function tag(tokens: readonly LaunchpadToken[], chainKey: ChainKey): ChainToken[
 }
 
 /** One chain's launches, with the same snapshot fallback Arc gets. */
-export async function getChainTokens(chain: LaunchChain, timeoutMs = 9000): Promise<ChainResult> {
+export async function getChainTokens(
+  chain: LaunchChain,
+  timeoutMs = READ_TIMEOUT_MS,
+): Promise<ChainResult> {
   if (chain.key === "arc") {
     const { tokens, stale, unreachable } = await getTokens(timeoutMs);
     return { chain, tokens: tag(tokens, "arc"), stale, unreachable };
   }
   if (chain.factories.length === 0) {
     return { chain, tokens: [], stale: false, unreachable: false };
+  }
+  if (knownDown(chain.key)) {
+    const snap = await snapshotOnly(chain.key);
+    return { chain, tokens: tag(snap.tokens, chain.key), stale: snap.stale, unreachable: true };
   }
 
   const live = await Promise.race([
@@ -60,19 +103,19 @@ export async function getChainTokens(chain: LaunchChain, timeoutMs = 9000): Prom
   ]);
 
   if (live !== null && live.tokens.length > 0) {
+    downSince.delete(chain.key);
     void saveSnapshot(live.tokens, chain.key);
     return { chain, tokens: tag(live.tokens, chain.key), stale: false, unreachable: false };
   }
   // Reached the chain and it genuinely has no launches yet — not an outage.
   if (live !== null && !live.unreachable) {
+    downSince.delete(chain.key);
     return { chain, tokens: [], stale: false, unreachable: false };
   }
 
-  const snap = await loadSnapshot(chain.key).catch(() => null);
-  if (snap !== null && snap.tokens.length > 0) {
-    return { chain, tokens: tag(snap.tokens, chain.key), stale: true, unreachable: true };
-  }
-  return { chain, tokens: [], stale: false, unreachable: true };
+  downSince.set(chain.key, Date.now());
+  const snap = await snapshotOnly(chain.key);
+  return { chain, tokens: tag(snap.tokens, chain.key), stale: snap.stale, unreachable: true };
 }
 
 /**
@@ -80,7 +123,7 @@ export async function getChainTokens(chain: LaunchChain, timeoutMs = 9000): Prom
  * down never blocks or empties the others — each carries its own status so the
  * UI can grey out exactly the chain that is unreachable.
  */
-export async function getAllChainTokens(timeoutMs = 9000): Promise<ChainResult[]> {
+export async function getAllChainTokens(timeoutMs = READ_TIMEOUT_MS): Promise<ChainResult[]> {
   const targets = CHAINS.filter((c) => c.factories.length > 0);
   return Promise.all(targets.map((c) => getChainTokens(c, timeoutMs)));
 }
@@ -88,7 +131,7 @@ export async function getAllChainTokens(timeoutMs = 9000): Promise<ChainResult[]
 /** Flattened, newest-chain-order list plus per-chain status. */
 export async function getTokensForFilter(
   filter: ChainKey | "all",
-  timeoutMs = 9000,
+  timeoutMs = READ_TIMEOUT_MS,
 ): Promise<{ tokens: ChainToken[]; results: ChainResult[] }> {
   if (filter === "all") {
     const results = await getAllChainTokens(timeoutMs);
