@@ -166,3 +166,104 @@ export async function fetchImagesForChainTokens(
   );
   return Object.assign({}, ...results) as Record<string, string>;
 }
+
+/** Everything a creator attached at launch. All of it lives on-chain in the
+ *  launch's metadataUri, so it survives regardless of the DB mirror. */
+export interface TokenMeta {
+  readonly image: string | null;
+  readonly description: string | null;
+  readonly website: string | null;
+  readonly twitter: string | null;
+  readonly telegram: string | null;
+  readonly discord: string | null;
+}
+
+const EMPTY_META: TokenMeta = {
+  image: null, description: null, website: null, twitter: null, telegram: null, discord: null,
+};
+
+/** Only ever surface links we would be willing to click: https, nothing else.
+ *  A metadataUri is creator-controlled input, so javascript:/data: must never
+ *  reach an href. */
+function safeUrl(v: unknown): string | null {
+  if (typeof v !== "string" || v.trim() === "") return null;
+  try {
+    const u = new URL(v.trim());
+    return u.protocol === "https:" ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function decodeMeta(uri: string | null | undefined): TokenMeta {
+  if (uri === null || uri === undefined || uri === "") return EMPTY_META;
+  try {
+    const b64 = uri.split(",")[1];
+    if (b64 === undefined) return EMPTY_META;
+    const p = JSON.parse(Buffer.from(b64, "base64").toString("utf8")) as Record<string, unknown>;
+    const img = typeof p["image"] === "string" && (p["image"].startsWith("data:image") || p["image"].startsWith("https://"))
+      ? (p["image"] as string)
+      : null;
+    const desc = typeof p["description"] === "string" && p["description"].trim() !== ""
+      ? (p["description"] as string).slice(0, 600)
+      : null;
+    return {
+      image: img,
+      description: desc,
+      website: safeUrl(p["website"]),
+      twitter: safeUrl(p["twitter"]),
+      telegram: safeUrl(p["telegram"]),
+      discord: safeUrl(p["discord"]),
+    };
+  } catch {
+    return EMPTY_META;
+  }
+}
+
+const META_TTL_MS = 300_000;
+const chainMeta = new Map<ChainKey, { at: number; map: Record<string, TokenMeta> }>();
+
+async function metaFromChain(chain: LaunchChain): Promise<Record<string, TokenMeta>> {
+  const hit = chainMeta.get(chain.key);
+  if (hit !== undefined && Date.now() - hit.at < META_TTL_MS) return hit.map;
+  const map: Record<string, TokenMeta> = {};
+  try {
+    const client = chainPublicClient(chain);
+    const head = await client.getBlockNumber();
+    const from = head > LOOKBACK_BLOCKS ? head - LOOKBACK_BLOCKS : 0n;
+    const logs = await Promise.all(
+      chain.factories.map((address) =>
+        client.getLogs({ address, event: LAUNCHED_EVENT, fromBlock: from, toBlock: head }).catch(() => []),
+      ),
+    );
+    for (const log of logs.flat()) {
+      const token = log.args.token;
+      if (token !== undefined) map[token.toLowerCase()] = decodeMeta(log.args.metadataUri);
+    }
+  } catch {
+    // fall through to empty
+  }
+  chainMeta.set(chain.key, { at: Date.now(), map });
+  return map;
+}
+
+/** Full launch metadata for one token: DB mirror first, then the chain. */
+export async function fetchTokenMeta(token: string, chain: LaunchChain): Promise<TokenMeta> {
+  const key = token.toLowerCase();
+  const sql = getDb();
+  if (sql !== null) {
+    try {
+      const rows = await sql<{ metadata_uri: string }[]>`
+        SELECT metadata_uri FROM token_metadata WHERE token_address = ${key} LIMIT 1
+      `;
+      const uri = rows[0]?.metadata_uri;
+      if (uri !== undefined) {
+        const m = decodeMeta(uri);
+        if (m.image !== null || m.website !== null || m.twitter !== null || m.telegram !== null) return m;
+      }
+    } catch {
+      // mirror unavailable — the chain is authoritative anyway
+    }
+  }
+  return (await metaFromChain(chain))[key] ?? EMPTY_META;
+}

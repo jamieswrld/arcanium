@@ -12,7 +12,8 @@ import { LivePrice } from "@/components/LivePrice";
 import { CopyButton } from "@/components/CopyButton";
 import { CreatorFees } from "@/components/CreatorFees";
 import { TokenMode } from "@/components/TokenMode";
-import { fetchTokenImagesOn } from "@/lib/tokenImages";
+import { fetchTokenMeta } from "@/lib/tokenImages";
+import { TokenSocials } from "@/components/TokenSocials";
 import { withTimeout } from "@/lib/withTimeout";
 
 export const revalidate = 10; // edge-cached shell; 2s client polling keeps the terminal live
@@ -77,10 +78,15 @@ export default async function TokenPage({ params, searchParams }: TokenPageProps
     detail.quoteBalance >= chain.graduationUnits
       ? 100
       : Number((detail.quoteBalance * 100n) / chain.graduationUnits);
-  const image =
-    (await withTimeout(fetchTokenImagesOn([detail.token], chain), {} as Record<string, string>, 6_000, "token logo"))[
-      detail.token.toLowerCase()
-    ] ?? null;
+  // One read gets the logo, description and every social the creator attached.
+  // Sourced from the DB mirror when present, otherwise straight off the chain.
+  const meta = await withTimeout(
+    fetchTokenMeta(detail.token, chain),
+    { image: null, description: null, website: null, twitter: null, telegram: null, discord: null },
+    6_000,
+    "token metadata",
+  );
+  const image = meta.image;
 
   return (
     <div className="arch-stack" style={{ maxWidth: 1100, margin: "0 auto" }}>
@@ -95,6 +101,7 @@ export default async function TokenPage({ params, searchParams }: TokenPageProps
               <span>{detail.token.slice(0, 10)}…{detail.token.slice(-8)}</span>
               <CopyButton text={detail.token} label="Copy address" />
             </div>
+            <TokenSocials meta={meta} />
           </div>
           <span style={{ marginLeft: "auto", display: "grid", justifyItems: "end", gap: "0.25rem" }}>
             <span className="arch-token-price-big">

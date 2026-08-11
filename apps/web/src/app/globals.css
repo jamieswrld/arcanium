@@ -785,3 +785,32 @@ main {
   background: color-mix(in oklch, var(--chain-accent, var(--card)) 13%, var(--card));
   box-shadow: 0 0 0 1px color-mix(in oklch, var(--chain-accent, transparent) 22%, transparent) inset;
 }
+
+/* Creator-attached links on a token page. Same pill language as everything
+   else; hidden entirely when a creator supplied none. */
+.arch-socials {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-top: 0.45rem;
+}
+.arch-social {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.24rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--background) 55%, var(--card));
+  color: var(--muted, var(--foreground));
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-decoration: none;
+  line-height: 1.4;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.arch-social:hover {
+  color: var(--foreground);
+  border-color: color-mix(in oklch, var(--foreground) 32%, var(--border));
+  background: color-mix(in oklch, var(--card) 70%, var(--foreground) 8%);
+}
