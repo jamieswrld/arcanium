@@ -2,7 +2,7 @@ import "server-only";
 import { arcPublicClient, fetchAllTokens, type LaunchpadToken } from "@/lib/launchpad";
 import { fetchTokensOn } from "@/lib/launchpadChain";
 import { CHAINS, getChain, type ChainKey, type LaunchChain } from "@/lib/chains";
-import { loadSnapshot, saveSnapshot } from "@/lib/listSnapshot";
+import { chainDownFor, loadSnapshot, markChainStatus, saveSnapshot } from "@/lib/listSnapshot";
 
 /**
  * Server-side token lists with outage resilience: a good chain read is
@@ -43,6 +43,23 @@ function knownDown(key: ChainKey): boolean {
   return false;
 }
 
+/** As knownDown, but also consults the shared record so a cold serverless
+ *  instance does not re-probe a chain another instance just found gated. */
+async function knownDownShared(key: ChainKey): Promise<boolean> {
+  if (knownDown(key)) return true;
+  const downFor = await chainDownFor(key).catch(() => null);
+  if (downFor === null || downFor >= DOWN_MEMO_MS) return false;
+  downSince.set(key, Date.now() - downFor); // adopt it locally too
+  return true;
+}
+
+/** Record the outcome for other instances; never blocks the response. */
+function record(key: ChainKey, down: boolean): void {
+  if (down) downSince.set(key, Date.now());
+  else downSince.delete(key);
+  void markChainStatus(key, down);
+}
+
 /** Default read budget. Deliberately short: a healthy chain answers in well
  *  under a second, and a slow one must not hold up the page. */
 const READ_TIMEOUT_MS = 3_000;
@@ -61,18 +78,18 @@ async function snapshotOnly(
 export async function getTokens(
   timeoutMs = READ_TIMEOUT_MS,
 ): Promise<{ tokens: LaunchpadToken[]; stale: boolean; unreachable: boolean }> {
-  if (knownDown("arc")) return snapshotOnly("arc");
+  if (await knownDownShared("arc")) return snapshotOnly("arc");
 
   const live = await Promise.race([
     fetchAllTokens(arcPublicClient()).catch(() => [] as LaunchpadToken[]),
     new Promise<LaunchpadToken[]>((r) => setTimeout(() => r([]), timeoutMs)),
   ]);
   if (live.length > 0) {
-    downSince.delete("arc");
+    record("arc", false);
     void saveSnapshot(live, "arc");
     return { tokens: live, stale: false, unreachable: false };
   }
-  downSince.set("arc", Date.now());
+  record("arc", true);
   return snapshotOnly("arc");
 }
 
@@ -92,7 +109,7 @@ export async function getChainTokens(
   if (chain.factories.length === 0) {
     return { chain, tokens: [], stale: false, unreachable: false };
   }
-  if (knownDown(chain.key)) {
+  if (await knownDownShared(chain.key)) {
     const snap = await snapshotOnly(chain.key);
     return { chain, tokens: tag(snap.tokens, chain.key), stale: snap.stale, unreachable: true };
   }
@@ -103,17 +120,17 @@ export async function getChainTokens(
   ]);
 
   if (live !== null && live.tokens.length > 0) {
-    downSince.delete(chain.key);
+    record(chain.key, false);
     void saveSnapshot(live.tokens, chain.key);
     return { chain, tokens: tag(live.tokens, chain.key), stale: false, unreachable: false };
   }
   // Reached the chain and it genuinely has no launches yet — not an outage.
   if (live !== null && !live.unreachable) {
-    downSince.delete(chain.key);
+    record(chain.key, false);
     return { chain, tokens: [], stale: false, unreachable: false };
   }
 
-  downSince.set(chain.key, Date.now());
+  record(chain.key, true);
   const snap = await snapshotOnly(chain.key);
   return { chain, tokens: tag(snap.tokens, chain.key), stale: snap.stale, unreachable: true };
 }

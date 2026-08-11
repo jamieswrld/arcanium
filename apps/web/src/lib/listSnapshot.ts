@@ -85,3 +85,50 @@ export async function loadSnapshot(
     return null;
   }
 }
+
+/**
+ * Persisted per-chain reachability.
+ *
+ * The in-process circuit breaker only helps a warm instance. On serverless every
+ * cold start would otherwise re-probe a chain we already know is gated and pay
+ * the full read budget before serving the snapshot it was always going to serve.
+ * Recording the outcome centrally lets a cold instance skip straight to the
+ * snapshot, and lets any instance notice recovery.
+ */
+interface StatusRow {
+  readonly down_at: string | null;
+}
+
+export async function markChainStatus(chain: ChainKey, down: boolean): Promise<void> {
+  const sql = getDb();
+  if (sql === null) return;
+  try {
+    await sql`
+      CREATE TABLE IF NOT EXISTS chain_status (
+        chain text PRIMARY KEY,
+        down_at timestamptz
+      )
+    `;
+    await sql`
+      INSERT INTO chain_status (chain, down_at)
+      VALUES (${chain}, ${down ? new Date().toISOString() : null})
+      ON CONFLICT (chain) DO UPDATE SET down_at = EXCLUDED.down_at
+    `;
+  } catch {
+    // best effort — the in-process memo still protects this instance
+  }
+}
+
+/** Milliseconds since this chain was last recorded down, or null if it is not. */
+export async function chainDownFor(chain: ChainKey): Promise<number | null> {
+  const sql = getDb();
+  if (sql === null) return null;
+  try {
+    const rows = await sql<StatusRow[]>`SELECT down_at FROM chain_status WHERE chain = ${chain} LIMIT 1`;
+    const at = rows[0]?.down_at;
+    if (at === undefined || at === null) return null;
+    return Date.now() - new Date(at).getTime();
+  } catch {
+    return null;
+  }
+}
