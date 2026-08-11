@@ -171,10 +171,10 @@ const ROBINHOOD: LaunchChain = {
     label: "USDG",
   },
   uniswap: {
-    factory: "0x1f7d7550b1b028F7571e69A784071f0205fD2eFA",
+    factory: "0x1f7d7550B1b028f7571E69A784071F0205FD2EfA",
     positionManager: "0x73991a25C818Bf1f1128dEAaB1492D45638DE0D3",
     swapRouter: "0xCaf681a66D020601342297493863E78C959E5cb2",
-    quoter: "0x33e885ED0EC9bF04eCFB19341582AaDCb4c8a9E7",
+    quoter: "0x33e885eD0Ec9bF04EcfB19341582aADCb4c8A9E7",
   },
   poolFee: 10_000,
   factories: factoryList(process.env["NEXT_PUBLIC_ROBINHOOD_FACTORY_ADDRESS"], [
