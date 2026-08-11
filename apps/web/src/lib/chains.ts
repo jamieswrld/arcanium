@@ -226,15 +226,21 @@ const BNB: LaunchChain = {
     quoter: "0x78D78E420Da98ad378D7799bE8f4AF69033EB077",
   },
   poolFee: 10_000,
+  // Two generations. The first shared an address with Robinhood's factory, so
+  // the Nth launch on each chain produced an identical token address -- a real
+  // hazard, not a curiosity. The second is deployed at its own address, so BNB
+  // token addresses can never collide with another chain's again. The old
+  // generation stays listed forever; its tokens are real and keep trading.
   factories: factoryList(process.env["NEXT_PUBLIC_BNB_FACTORY_ADDRESS"], [
-    "0x81D414D2cD66bf4422036846f569a6189996Fd59", // v5 — decimals-aware pricing
+    "0xbdF64eB3104bB1095c2F57Ba74e5B761e6097105", // v5b — unique address
+    "0x81D414D2cD66bf4422036846f569a6189996Fd59", // v5 — shared address with Robinhood
   ]),
   liquidityVault:
     addr(process.env["NEXT_PUBLIC_BNB_LIQUIDITY_VAULT_ADDRESS"]) ??
-    "0x4297254E5ae2df2b0d3920A08Df582D61b3e7766",
+    "0x66683A8a73C593caC3E62F4D06F87919F850c47b",
   modeDistributor:
     addr(process.env["NEXT_PUBLIC_BNB_MODE_DISTRIBUTOR_ADDRESS"]) ??
-    "0x472580431Fb124e376E8b07802e64d2cEc4001DE",
+    "0x43b03A930ABc6919dc4FEC9E963E4912ac1f9872",
   graduationUnits: graduationUnits(18),
   launchGasFloor: 2_000_000_000_000_000n, // 0.002 BNB — a launch costs ~0.0005
   live: true,
