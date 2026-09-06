@@ -8,7 +8,7 @@ import { formatUnits, parseUnits } from "viem";
 import { erc20Abi } from "@/lib/bridgeClient";
 import { factoryAbi, LAUNCH_MODES } from "@/lib/launchpad";
 import { getChain } from "@/lib/chains";
-import { ArcaneWandIcon, DiviumBillsIcon } from "@/components/ModeIcons";
+import { ArcaneWandIcon, DiviumBillsIcon, StandardWalletIcon } from "@/components/ModeIcons";
 import { ensureChain } from "@/lib/wagmi";
 import { useToast } from "@/components/ui/Toast";
 import { ConnectButton } from "@/components/ConnectButton";
@@ -313,7 +313,7 @@ export function CreateForm() {
                 aria-pressed={active}
               >
                 <span aria-hidden style={{ marginTop: 1, width: 26, display: "grid", placeItems: "center" }}>
-                  {m.id === 1 ? <DiviumBillsIcon size={24} /> : m.id === 2 ? <ArcaneWandIcon size={24} /> : <span style={{ fontSize: 18 }}>💼</span>}
+                  {m.id === 1 ? <DiviumBillsIcon size={24} /> : m.id === 2 ? <ArcaneWandIcon size={24} /> : <StandardWalletIcon size={24} />}
                 </span>
                 <span style={{ minWidth: 0 }}>
                   <span style={{ display: "block", fontWeight: 700, fontSize: "0.92rem" }}>
