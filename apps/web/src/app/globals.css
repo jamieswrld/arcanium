@@ -1,3 +1,32 @@
+/* Tailwind must be imported first: several components (the wallet modal,
+   dialogs, toasts, skeletons) are written in utility classes, and dropping
+   this import silently turned every one of them into unstyled markup. The
+   Arcanium design system below layers on top and wins where they overlap. */
+@import "tailwindcss";
+@source "../../../../packages/ui/src";
+
+/* Tailwind v4 builds colour utilities from @theme, not from arbitrary custom
+   properties. Without this block `bg-card`, `text-muted-foreground`,
+   `border-border` and friends generate nothing at all — which is why the wallet
+   modal and dialogs rendered as unstyled markup. Mapping them onto the Arcanium
+   tokens means the handful of components still written in utilities land on the
+   same palette as everything else. */
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--text-primary);
+  --color-card: var(--surface-1);
+  --color-card-foreground: var(--text-primary);
+  --color-muted: var(--surface-2);
+  --color-muted-foreground: var(--text-secondary);
+  --color-border: var(--border);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--on-accent);
+  --color-accent: var(--accent);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --color-warning: var(--warning);
+}
+
 /* ============================================================================
    ARCANIUM — design system
    ----------------------------------------------------------------------------
@@ -860,4 +889,180 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
   .mkt tbody td[data-label="Price"]::before { content: none; }
 
   .grad { min-width: 0; flex: 1; }
+}
+
+/* ------------------------------------------------------------------ wallet ---
+   The wallet control is the most-looked-at chrome on the site, so it gets the
+   same treatment as a trading control: hairline border, tabular address, and a
+   menu rather than a click that silently disconnects you.                    */
+
+.wallet-connect { height: var(--h-sm); padding: 0 12px; }
+
+.wallet-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: var(--h-sm);
+  padding: 0 9px 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+}
+.wallet-chip:hover { background: var(--surface-hover); border-color: var(--accent-line); }
+
+.wallet-avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-sm);
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.12);
+}
+
+.wallet-addr { font-size: 0.78rem; }
+
+.wallet-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: var(--z-popover);
+  min-width: 224px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-lg);
+  animation: wallet-pop var(--t-fast) var(--ease);
+}
+@keyframes wallet-pop {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.wallet-menu-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 9px 10px;
+  margin-bottom: 3px;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.wallet-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+.wallet-menu-item:hover { background: var(--surface-2); color: var(--text-primary); }
+.wallet-menu-danger:hover { background: var(--negative-quiet); color: var(--negative); }
+
+@media (max-width: 520px) {
+  .wallet-connect-label { display: none; }
+  .wallet-connect { padding: 0 10px; }
+  .wallet-addr { display: none; }
+}
+
+/* ------------------------------------------------------------------ sheet ---
+   One dialog shell for the wallet picker and future sheets. Centred on desktop,
+   bottom-anchored on mobile where the thumb is.                              */
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s4);
+  background: oklch(0 0 0 / 0.58);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  animation: sheet-fade var(--t-fast) var(--ease);
+}
+@keyframes sheet-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.sheet {
+  width: 100%;
+  max-width: 384px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-lg);
+  animation: sheet-rise var(--t-mid) var(--ease);
+  max-height: calc(100dvh - var(--s8));
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+@keyframes sheet-rise {
+  from { opacity: 0; transform: translateY(8px) scale(0.99); }
+  to { opacity: 1; transform: none; }
+}
+
+.sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding: var(--s4);
+  border-bottom: 1px solid var(--border);
+}
+.sheet-body { padding: var(--s4); overflow-y: auto; min-height: 0; }
+.sheet-foot { padding: var(--s3) var(--s4); border-top: 1px solid var(--border); }
+
+.wallet-option {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  width: 100%;
+  min-height: 48px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-sunk);
+  color: var(--text-primary);
+  font-size: 0.87rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+}
+.wallet-option:hover:not(:disabled) { background: var(--surface-2); border-color: var(--accent-line); }
+.wallet-option:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.wallet-option-fallback {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+@media (max-width: 520px) {
+  .sheet-backdrop { align-items: flex-end; padding: 0; }
+  .sheet {
+    max-width: none;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    border-bottom: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }
