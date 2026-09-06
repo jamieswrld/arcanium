@@ -256,7 +256,11 @@ table { border-collapse: separate; border-spacing: 0; }
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
-  overflow: hidden;
+  /* `clip`, never `hidden`: hidden makes this a scroll container, which
+     re-anchors sticky descendants to the panel and pinned the market table's
+     header on top of its own first row. clip crops identically without
+     creating a scroll container. */
+  overflow: clip;
 }
 .panel-head {
   display: flex;
@@ -540,7 +544,7 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
 
 .arch-stack { display: grid; gap: var(--s5); }
 .arch-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-lg); padding: var(--s4); }
-.arch-panel { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; }
+.arch-panel { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-lg); overflow: clip; }
 .arch-panel-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); padding: var(--s3) var(--s4); border-bottom: 1px solid var(--border); font-weight: 600; }
 .arch-panel-foot { padding: var(--s3) var(--s4); border-top: 1px solid var(--border); color: var(--text-secondary); font-size: 0.78rem; }
 .arch-note { color: var(--text-secondary); font-size: 0.8rem; margin: 0; }
@@ -578,7 +582,7 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
 .arch-pct-chip:hover, .arch-max-chip:hover { background: var(--surface-2); color: var(--text-primary); }
 .arch-progress { height: 3px; border-radius: var(--r-pill); background: var(--surface-2); overflow: hidden; }
 .arch-progress > span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
-.arch-stat-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-1); overflow: hidden; }
+.arch-stat-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface-1); overflow: clip; }
 .arch-stat-bar > * { padding: var(--s3) var(--s4); border-right: 1px solid var(--border); }
 .arch-stat-bar > *:last-child { border-right: 0; }
 .arch-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s2); }
@@ -689,59 +693,6 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
 .mkt-wrap { width: 100%; min-width: 0; }
 .mkt-rank { color: var(--text-muted); width: 18px; text-align: right; flex-shrink: 0; font-size: 0.75rem; }
 
-@media (max-width: 860px) {
-  .mkt, .mkt thead, .mkt tbody, .mkt tr, .mkt td { display: block; width: 100%; }
-  .mkt thead { display: none; }
-  .mkt-rank { display: none; }
-
-  .mkt tbody tr {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: var(--s2) var(--s3);
-    padding: var(--s3) var(--s4);
-    border-bottom: 1px solid var(--border);
-  }
-
-  /* Identity spans the top row; price sits opposite it. */
-  .mkt tbody td[data-label="Market"] { grid-column: 1; padding: 0; }
-  .mkt tbody td[data-label="Price"] {
-    grid-column: 2;
-    text-align: right;
-    padding: 0;
-    font-weight: 650;
-    align-self: center;
-  }
-
-  /* Everything else becomes a labelled metric in a wrapping row. */
-  .mkt tbody td[data-label="24h"],
-  .mkt tbody td[data-label="Market cap"],
-  .mkt tbody td[data-label="24h volume"],
-  .mkt tbody td[data-label="Liquidity"],
-  .mkt tbody td[data-label="Graduation"] {
-    grid-column: 1 / -1;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--s3);
-    padding: 0;
-    text-align: right;
-    border-bottom: 0;
-    min-width: 0;
-  }
-  .mkt tbody td[data-label]::before {
-    content: attr(data-label);
-    font-size: 0.655rem;
-    font-weight: 650;
-    letter-spacing: 0.09em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    flex-shrink: 0;
-  }
-  .mkt tbody td[data-label="Market"]::before,
-  .mkt tbody td[data-label="Price"]::before { content: none; }
-
-  .grad { min-width: 0; flex: 1; }
-}
 
 /* ------------------------------------------------------------ explore grid ---
    Markets take the width they need; the pulse is a companion column, not a
@@ -755,7 +706,7 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
   align-items: start;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1240px) {
   .explore-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
@@ -855,4 +806,58 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
 @media (max-width: 1040px) {
   .create-grid { grid-template-columns: minmax(0, 1fr); }
   .create-side { position: static; }
+}
+
+@media (max-width: 960px) {
+  .mkt, .mkt thead, .mkt tbody, .mkt tr, .mkt td { display: block; width: 100%; }
+  .mkt thead { display: none; }
+  .mkt-rank { display: none; }
+
+  .mkt tbody tr {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: var(--s2) var(--s3);
+    padding: var(--s3) var(--s4);
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Identity spans the top row; price sits opposite it. */
+  .mkt tbody td[data-label="Market"] { grid-column: 1; padding: 0; }
+  .mkt tbody td[data-label="Price"] {
+    grid-column: 2;
+    text-align: right;
+    padding: 0;
+    font-weight: 650;
+    align-self: center;
+  }
+
+  /* Everything else becomes a labelled metric in a wrapping row. */
+  .mkt tbody td[data-label="24h"],
+  .mkt tbody td[data-label="Market cap"],
+  .mkt tbody td[data-label="24h volume"],
+  .mkt tbody td[data-label="Liquidity"],
+  .mkt tbody td[data-label="Graduation"] {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s3);
+    padding: 0;
+    text-align: right;
+    border-bottom: 0;
+    min-width: 0;
+  }
+  .mkt tbody td[data-label]::before {
+    content: attr(data-label);
+    font-size: 0.655rem;
+    font-weight: 650;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .mkt tbody td[data-label="Market"]::before,
+  .mkt tbody td[data-label="Price"]::before { content: none; }
+
+  .grad { min-width: 0; flex: 1; }
 }
