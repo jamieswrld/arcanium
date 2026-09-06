@@ -1,10 +1,10 @@
-import { Badge, Card, StatRow } from "@arch/ui";
-import type { Hex } from "viem";
-import { formatUnits } from "viem";
-import { arcPublicClient, fetchToken, formatPriceE18, isHidden } from "@/lib/launchpad";
-import { fetchTokenOn } from "@/lib/launchpadChain";
-import { CHAINS, explorerAddress, getChain, resolveChain, type LaunchChain } from "@/lib/chains";
-import { ChainBadge } from "@/components/ChainMark";
+import Link from "next/link";
+import { formatUnits, type Hex } from "viem";
+import { arcPublicClient, fetchToken, formatPriceE18, formatUsdCompact, isHidden } from "@/lib/launchpad";
+import { fetchMarketStats, EMPTY_MARKET } from "@/lib/marketStats";
+import { explorerAddress, getChain } from "@/lib/chains";
+import { fetchTokenMeta } from "@/lib/tokenImages";
+import { withTimeout } from "@/lib/withTimeout";
 import { TradePanel } from "@/components/TradePanel";
 import { MarketPanels } from "@/components/MarketPanels";
 import { TokenAvatar } from "@/components/TokenAvatar";
@@ -12,175 +12,253 @@ import { LivePrice } from "@/components/LivePrice";
 import { CopyButton } from "@/components/CopyButton";
 import { CreatorFees } from "@/components/CreatorFees";
 import { TokenMode } from "@/components/TokenMode";
-import { fetchTokenMeta } from "@/lib/tokenImages";
 import { TokenSocials } from "@/components/TokenSocials";
-import { withTimeout } from "@/lib/withTimeout";
 
-export const revalidate = 10; // edge-cached shell; 2s client polling keeps the terminal live
+export const revalidate = 10;
 
 interface TokenPageProps {
   readonly params: Promise<{ address: string }>;
-  readonly searchParams: Promise<{ chain?: string }>;
-}
-
-/** Find a launch by address. Tries the requested chain first, then every other
- *  configured chain, so a bare /tokens/0x… link resolves wherever it lives. */
-async function findToken(
-  address: `0x${string}`,
-  preferred: LaunchChain,
-): Promise<{ detail: Awaited<ReturnType<typeof fetchToken>>; chain: LaunchChain } | null> {
-  const read = async (c: LaunchChain) =>
-    c.key === "arc"
-      ? await fetchToken(arcPublicClient(), address).catch(() => null)
-      : await fetchTokenOn(c, address).catch(() => null);
-
-  const first = await read(preferred);
-  if (first !== null) return { detail: first, chain: preferred };
-
-  const others = CHAINS.filter((c) => c.key !== preferred.key && c.factories.length > 0);
-  const found = await Promise.all(others.map(async (c) => ({ detail: await read(c), chain: c })));
-  const hit = found.find((f) => f.detail !== null);
-  return hit === undefined ? null : { detail: hit.detail, chain: hit.chain };
 }
 
 /**
- * Token profile — all figures are live chain reads: price/mcap from pool
- * sqrtPriceX96 (exact bigint), graduation progress from the pool's quote
- * balance, plus the wallet-connected trading panel.
+ * Token detail — the most important screen in the product.
+ *
+ * Architecture: identity and market data lead, the chart and its tabs take the
+ * main column, and the trading terminal is a persistent companion that stays in
+ * view while you read. On mobile the terminal moves directly under the header,
+ * because on a phone the reason you opened this page is to trade.
+ *
+ * Metrics are typography and separators rather than a row of giant cards — five
+ * numbers a trader reads together should sit together.
  */
-export default async function TokenPage({ params, searchParams }: TokenPageProps) {
+export default async function TokenPage({ params }: TokenPageProps) {
   const { address } = await params;
-  const { chain: chainParam } = await searchParams;
+  const chain = getChain("arc");
+
   if (!/^0x[0-9a-fA-F]{40}$/.test(address) || isHidden(address)) {
-    return (
-      <Card title="Not found">
-        <p className="arch-note">That token isn&apos;t listed on Arcanium.</p>
-      </Card>
-    );
+    return <NotFound />;
   }
 
-  const found = await findToken(address as Hex, resolveChain(chainParam));
-  const detail = found?.detail ?? null;
-  const chain = found?.chain ?? getChain("arc");
-  const quoteSymbol = chain.quote.symbol;
-  const formatQuoteUnits = (v: bigint): string => formatUnits(v, chain.quote.decimals);
-  if (detail === null) {
-    return (
-      <Card title="Not a launchpad token">
-        <p className="arch-note">
-          That address isn&apos;t an Arcanium launch on Arc. <a href="/tokens" style={{ textDecoration: "underline" }}>Browse tokens</a>.
-        </p>
-      </Card>
-    );
-  }
+  const detail = await withTimeout(fetchToken(arcPublicClient(), address as Hex), null, 10_000, "token detail");
+  if (detail === null) return <NotFound />;
 
-  const progressPct =
-    detail.quoteBalance >= chain.graduationUnits
-      ? 100
-      : Number((detail.quoteBalance * 100n) / chain.graduationUnits);
-  // One read gets the logo, description and every social the creator attached.
-  // Sourced from the DB mirror when present, otherwise straight off the chain.
-  const meta = await withTimeout(
-    fetchTokenMeta(detail.token, chain),
-    { image: null, description: null, website: null, twitter: null, telegram: null, discord: null },
-    6_000,
-    "token metadata",
-  );
-  const image = meta.image;
+  const [meta, marketMap] = await Promise.all([
+    withTimeout(
+      fetchTokenMeta(detail.token, chain),
+      { image: null, description: null, website: null, twitter: null, telegram: null, discord: null },
+      6_000,
+      "token metadata",
+    ),
+    withTimeout(fetchMarketStats([detail], "24h"), new Map(), 9_000, "token market"),
+  ]);
+  const market = marketMap.get(detail.token.toLowerCase()) ?? EMPTY_MARKET;
+
+  const quote = (v: bigint): string => formatUnits(v, chain.quote.decimals);
+  const tokenIsToken0 = detail.token.toLowerCase() < detail.pairToken.toLowerCase();
+  const target = chain.graduationUnits;
+  const pct = detail.quoteBalance >= target ? 100 : Number((detail.quoteBalance * 100n) / target);
+  const liqUnits =
+    chain.quote.decimals >= 6
+      ? detail.quoteBalance / 10n ** BigInt(chain.quote.decimals - 6)
+      : detail.quoteBalance * 10n ** BigInt(6 - chain.quote.decimals);
 
   return (
-    <div className="arch-stack" style={{ maxWidth: 1100, margin: "0 auto" }}>
-      <Card>
-        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
-          <a href="/tokens" aria-label="Back to tokens" style={{ fontSize: "1.25rem", padding: "0 0.25rem" }}>‹</a>
-          <TokenAvatar image={image} symbol={detail.symbol} size={52} radius={14} />
-          <div>
-            <strong style={{ fontSize: "1.125rem" }}>{detail.name}</strong>{" "}
-            <span className="arch-note">{detail.symbol}</span>
-            <div className="arch-note" style={{ fontFamily: "monospace", fontSize: "0.75rem", display: "flex", alignItems: "center", flexWrap: "wrap", gap: "0.15rem" }}>
-              <span>{detail.token.slice(0, 10)}…{detail.token.slice(-8)}</span>
-              <CopyButton text={detail.token} label="Copy address" />
-            </div>
-            <TokenSocials meta={meta} />
-          </div>
-          <span style={{ marginLeft: "auto", display: "grid", justifyItems: "end", gap: "0.25rem" }}>
-            <span className="arch-token-price-big">
-              <LivePrice chainKey={chain.key} pool={detail.pool} tokenIsToken0={detail.token.toLowerCase() < detail.pairToken.toLowerCase()} initial={formatPriceE18(detail.priceE18)} />
-            </span>
-            {detail.graduated ? (
-              <Badge label="Graduated" tone="positive" />
-            ) : (
-              <Badge label={`${progressPct}% to graduation`} />
-            )}
-          </span>
-        </div>
+    <div className="stack">
+      {/* ---------------------------------------------------------- identity */}
+      <section className="panel">
+        <div className="tk-head">
+          <Link href="/" className="btn btn-ghost" style={{ padding: "0 8px" }} aria-label="Back to markets">
+            ‹
+          </Link>
 
-        {!detail.graduated ? (
-          <div style={{ marginTop: "1rem" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.4rem" }}>
-              <span className="arch-note">Graduation progress</span>
-              <span className="arch-note" style={{ fontVariantNumeric: "tabular-nums" }}>
-                {formatQuoteUnits(detail.quoteBalance)} / 9,000 {quoteSymbol}
+          <TokenAvatar image={meta.image} symbol={detail.symbol} size={46} radius={9} />
+
+          <div style={{ minWidth: 0, flex: "1 1 260px" }}>
+            <div className="row" style={{ flexWrap: "wrap", gap: "var(--s2)" }}>
+              <h1 style={{ fontSize: "1.22rem" }}>{detail.name}</h1>
+              <span className="chip">${detail.symbol}</span>
+              <span className="chip">Arc</span>
+              <span className="chip">/ {chain.quote.symbol}</span>
+              {detail.graduated ? <span className="chip chip-pos">Graduated</span> : null}
+            </div>
+
+            <div className="row mono" style={{ flexWrap: "wrap", gap: "var(--s2)", marginTop: 5, fontSize: "0.72rem" }}>
+              <span style={{ color: "var(--text-muted)" }}>
+                {detail.token.slice(0, 10)}…{detail.token.slice(-8)}
+              </span>
+              <CopyButton text={detail.token} label="Copy address" />
+              <a href={explorerAddress(chain, detail.token)} target="_blank" rel="noreferrer" style={{ color: "var(--text-muted)" }}>
+                Explorer ↗
+              </a>
+              <span style={{ color: "var(--text-muted)" }}>
+                dev {detail.creator.slice(0, 6)}…{detail.creator.slice(-4)}
               </span>
             </div>
-            <div className="arch-progress" aria-hidden>
-              <span style={{ width: `${Math.min(progressPct, 100)}%` }} />
+
+            <TokenSocials meta={meta} />
+          </div>
+
+          <div style={{ textAlign: "right", minWidth: 0 }}>
+            <div className="arch-token-price-big">
+              <LivePrice
+                chainKey="arc"
+                pool={detail.pool}
+                tokenIsToken0={tokenIsToken0}
+                initial={formatPriceE18(detail.priceE18)}
+              />
             </div>
+            <Change pct={market.changePct} />
+          </div>
+        </div>
+
+        {/* ------------------------------------------------------- metrics */}
+        <div className="tk-metrics">
+          <Metric label="Market cap" value={formatUsdCompact(detail.marketCapUnits)} />
+          <Metric label="24h volume" value={market.trades === 0 ? "—" : formatUsdCompact(market.volumeUnits)} />
+          <Metric label="Liquidity" value={formatUsdCompact(liqUnits)} />
+          <Metric label="24h trades" value={market.trades === 0 ? "—" : market.trades.toLocaleString("en-US")} />
+          <Metric label="Supply" value="1,000,000,000" />
+        </div>
+
+        {/* ---------------------------------------------------- graduation */}
+        {!detail.graduated ? (
+          <div style={{ padding: "0 var(--s4) var(--s4)" }}>
+            <div className="spread" style={{ marginBottom: 5 }}>
+              <span className="eyebrow">{pct}% to graduation</span>
+              <span className="num" style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>
+                {quote(detail.quoteBalance)} / 9,000 {chain.quote.symbol}
+              </span>
+            </div>
+            <span className="grad-track">
+              <span className="grad-fill" style={{ width: `${Math.min(pct, 100)}%` }} />
+            </span>
           </div>
         ) : null}
-      </Card>
+      </section>
 
-      <div className="arch-terminal">
-        <Card>
-          <MarketPanels
-            chainKey={chain.key}
-            pool={detail.pool}
-            token={detail.token}
-            pairToken={detail.pairToken}
-            symbol={detail.symbol}
-            creator={detail.creator}
-          />
-        </Card>
+      {/* ------------------------------------------- market + trade terminal */}
+      <div className="tk-grid">
+        <div style={{ minWidth: 0, display: "grid", gap: "var(--s4)" }}>
+          <section className="panel">
+            <div className="panel-body">
+              <MarketPanels
+                chainKey="arc"
+                pool={detail.pool}
+                token={detail.token}
+                pairToken={detail.pairToken}
+                symbol={detail.symbol}
+                creator={detail.creator}
+              />
+            </div>
+          </section>
 
-        <div className="arch-stack">
-          <Card title="Trade">
-            <TradePanel token={detail.token} pairToken={detail.pairToken} symbol={detail.symbol} chainKey={chain.key} />
-          </Card>
+          {meta.description !== null ? (
+            <section className="panel">
+              <div className="panel-head">
+                <span className="eyebrow">About</span>
+              </div>
+              <div className="panel-body">
+                <p className="arch-note" style={{ lineHeight: 1.65 }}>
+                  {meta.description}
+                </p>
+              </div>
+            </section>
+          ) : null}
 
-          <TokenMode token={detail.token} chainKey={chain.key} />
+          <section className="panel">
+            <div className="panel-head">
+              <span className="eyebrow">Permanent liquidity</span>
+            </div>
+            <div className="panel-body">
+              <p className="arch-note" style={{ lineHeight: 1.65, margin: 0 }}>
+                The entire 1,000,000,000 supply was placed into this Uniswap v3 position at launch
+                and the position is held by the Arcanium vault forever. Nobody — including Arcanium
+                — can withdraw it. Trading fees accrue to the position and are collected
+                separately; the principal never moves.
+              </p>
+              <p className="arch-note" style={{ marginTop: "var(--s2)", marginBottom: 0 }}>
+                <a href={explorerAddress(chain, detail.pool)} target="_blank" rel="noreferrer" style={{ color: "var(--text-secondary)", textDecoration: "underline" }}>
+                  Pool contract ↗
+                </a>{" "}
+                · Position #{detail.positionId.toString()}
+              </p>
+            </div>
+          </section>
+        </div>
+
+        {/* The terminal stays with you while the page scrolls. */}
+        <aside className="tk-side">
+          <section className="panel">
+            <div className="panel-head">
+              <span className="eyebrow">Trade</span>
+              <span className="chip">Market</span>
+            </div>
+            <div className="panel-body">
+              <TradePanel
+                token={detail.token}
+                pairToken={detail.pairToken}
+                symbol={detail.symbol}
+                chainKey="arc"
+              />
+            </div>
+          </section>
+
+          <TokenMode token={detail.token} chainKey="arc" />
 
           <CreatorFees
-            chainKey={chain.key}
+            chainKey="arc"
             token={detail.token}
             creator={detail.creator}
             pairToken={detail.pairToken}
             positionId={detail.positionId}
           />
-
-          <Card title="Market">
-            <StatRow label="Market cap" value={`$${formatQuoteUnits(detail.marketCapUnits)}`} />
-            <StatRow label="Pool liquidity" value={`${formatQuoteUnits(detail.quoteBalance)} ${quoteSymbol}`} />
-            <StatRow label="Graduation" value={`9,000 ${quoteSymbol}`} />
-            <StatRow label="Supply" value="1,000,000,000 (fixed)" />
-            <StatRow label="Creator" value={`${detail.creator.slice(0, 8)}…`} />
-            <p className="arch-note" style={{ marginBottom: 0 }}>
-              <a href={`${explorerAddress(chain,  detail.token)}`} target="_blank" rel="noreferrer" style={{ textDecoration: "underline" }}>Token on explorer</a>{" "}
-              · <a href={`${explorerAddress(chain,  detail.pool)}`} target="_blank" rel="noreferrer" style={{ textDecoration: "underline" }}>Pool</a>{" "}
-              · Position #{detail.positionId.toString()}
-            </p>
-          </Card>
-        </div>
+        </aside>
       </div>
+    </div>
+  );
+}
 
-      <Card title="Permanent liquidity">
-        <p className="arch-note" style={{ margin: 0 }}>
-          The full launch supply sits in Uniswap v3 position #{detail.positionId.toString()},
-          owned by the Arcanium liquidity vault. It can never be withdrawn or
-          transferred — by anyone, including Arcanium. The creator earns a share of
-          trading fees for the life of the pool. Graduation at 9,000 {quoteSymbol} is a
-          permanent label only.
+function Metric({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <div>
+      <div className="arch-stat-label">{label}</div>
+      <div className="num" style={{ fontSize: "0.98rem", fontWeight: 650, letterSpacing: "-0.015em" }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function Change({ pct }: { readonly pct: number | null }) {
+  if (pct === null) {
+    return (
+      <div className="num" style={{ color: "var(--text-muted)", fontSize: "0.8rem" }} title="No trades in the last 24 hours">
+        — 24h
+      </div>
+    );
+  }
+  const up = pct >= 0;
+  return (
+    <div className="num" style={{ color: up ? "var(--positive)" : "var(--negative)", fontSize: "0.8rem", fontWeight: 600 }}>
+      {up ? "+" : ""}
+      {pct.toFixed(2)}% 24h
+    </div>
+  );
+}
+
+function NotFound() {
+  return (
+    <div className="panel">
+      <div className="empty">
+        <h3>Not an Arcanium market</h3>
+        <p className="arch-note" style={{ maxWidth: 360 }}>
+          That address was not launched through Arcanium, so there is no locked-liquidity market
+          for it here.
         </p>
-      </Card>
+        <Link href="/" className="btn btn-primary" style={{ marginTop: "var(--s2)" }}>
+          Browse markets
+        </Link>
+      </div>
     </div>
   );
 }
