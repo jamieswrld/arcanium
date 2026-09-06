@@ -88,7 +88,7 @@ export async function fetchTokenImage(token: string): Promise<string | null> {
  * On-chain fallback.
  *
  * The DB mirror is only a cache: the logo is embedded in the launch's
- * metadataUri and lives on-chain forever. Two Robinhood launches showed blank
+ * metadataUri and lives on-chain forever. Launches showed blank
  * avatars because the fire-and-forget mirror write never landed, even though
  * both images were sitting in their Launched events all along. Reading the
  * chain makes logos survive a failed write, a wiped table, or a new chain the
@@ -139,7 +139,7 @@ export async function fetchTokenImagesOn(
   // The chain is consulted FIRST and wins. The token_metadata mirror is keyed by
   // address only, and addresses repeat across chains (same factory address, same
   // nonce), so trusting it first would serve one chain's logo for another's
-  // token -- exactly what happened with TEST on Robinhood and MONKE on BNB.
+  // token, whenever two chains ever produced the same token address.
   const onChain = await imagesFromChain(chain);
   const out: Record<string, string> = {};
   const missing: string[] = [];

@@ -18,29 +18,28 @@ interface IModeDistributor {
 /// @notice Identical launch mechanics to v4 (fixed 1B supply, real Uniswap v3
 ///         pool from block one, permanently locked single-sided liquidity,
 ///         optional atomic creator buy, tax tier + fee mode fixed forever), with
-///         one change that makes the same bytecode correct on every chain: the
-///         starting price is derived from the quote token's decimals instead of
-///         assuming a 6-decimal stablecoin.
+///         one change: the starting price is derived from the quote token's
+///         decimals instead of assuming a 6-decimal stablecoin.
 ///
 ///         v4's constants only produce the intended ~$3,000 launch cap against a
-///         6-decimal quote (Arc USDC, Robinhood USDG). Against an 18-decimal
-///         quote (BNB USDT) they would misprice the pool by 1e12. v5 selects the
-///         matching constant set per launch and rejects anything else outright,
-///         so a bad quote token can never silently launch at the wrong price.
+///         6-decimal quote such as Arc's native USDC. Against an 18-decimal
+///         quote they would misprice the pool by 1e12. v5 selects the matching
+///         constant set per launch and rejects anything else outright, so a bad
+///         quote token can never silently launch at the wrong price.
 contract ArchLaunchpadFactoryV5 is Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    uint24 public constant POOL_FEE = 10_000; // 1% — tickSpacing 200 on Arc, Robinhood and BNB
+    uint24 public constant POOL_FEE = 10_000; // 1% — tickSpacing 200 on Arc
     int24 public constant MAX_USABLE_TICK = 887_200;
     int24 public constant MIN_USABLE_TICK = -887_200;
 
-    // --- 6-decimal quote (Arc USDC, Robinhood USDG) — unchanged from v4 ---
+    // --- 6-decimal quote (Arc's native USDC) — unchanged from v4 ---
     uint160 public constant SQRT_PRICE_TOKEN0_6 = 137227202865029797602;
     uint160 public constant SQRT_PRICE_TOKEN1_6 = 45742400955009932534161870629490520388;
     int24 public constant LAUNCH_TICK_TOKEN0_6 = -403_400;
     int24 public constant LAUNCH_TICK_TOKEN1_6 = 403_400;
 
-    // --- 18-decimal quote (BNB USDT) ---
+    // --- 18-decimal quote ---
     // The raw token1/token0 ratio is 1e12 larger, so sqrtPrice scales by 1e6 and
     // the tick shifts by ln(1e12)/ln(1.0001) = 276,324 -> snapped to 276,400 so
     // the bound stays a multiple of tickSpacing AND stays outside the spot tick

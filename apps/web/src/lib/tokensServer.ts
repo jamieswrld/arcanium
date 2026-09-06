@@ -3,6 +3,7 @@ import { arcPublicClient, fetchAllTokens, type LaunchpadToken } from "@/lib/laun
 import { fetchTokensOn } from "@/lib/launchpadChain";
 import { CHAINS, getChain, type ChainKey, type LaunchChain } from "@/lib/chains";
 import { chainDownFor, loadSnapshot, markChainStatus, saveSnapshot } from "@/lib/listSnapshot";
+import { chainPublicClient } from "@/lib/chainRpc";
 
 /**
  * Server-side token lists with outage resilience: a good chain read is
@@ -60,9 +61,20 @@ function record(key: ChainKey, down: boolean): void {
   void markChainStatus(key, down);
 }
 
-/** Default read budget. Deliberately short: a healthy chain answers in well
- *  under a second, and a slow one must not hold up the page. */
-const READ_TIMEOUT_MS = 3_000;
+/**
+ * Read budget for a full launch scan.
+ *
+ * This was 3s, chosen when Arc was gated and the only goal was to fail fast.
+ * Once Arc came back that number quietly broke the product: enumerating the
+ * four factory generations alone measured ~3.0s, so the scan lost its own race
+ * on every request and the pad rendered empty against a perfectly healthy
+ * chain. A dead chain is now cheap because of the circuit breaker below, not
+ * because of a tight timeout, so this can afford to be generous.
+ */
+const READ_TIMEOUT_MS = 12_000;
+
+/** Quick liveness probe, used to tell "slow" apart from "gone". */
+const PROBE_TIMEOUT_MS = 2_500;
 
 async function snapshotOnly(
   key: ChainKey,
@@ -89,8 +101,25 @@ export async function getTokens(
     void saveSnapshot(live, "arc");
     return { tokens: live, stale: false, unreachable: false };
   }
-  record("arc", true);
+  // Nothing came back — but that is not the same as the chain being gone. Probe
+  // before condemning it, otherwise one slow scan trips the breaker and pins
+  // the pad to an empty snapshot for a full minute.
+  const reachable = await isReachable(getChain("arc"));
+  record("arc", !reachable);
+  if (reachable) return { tokens: [], stale: false, unreachable: false };
   return snapshotOnly("arc");
+}
+
+/** Can we reach this chain at all? Cheap single call, short budget. */
+async function isReachable(chain: LaunchChain): Promise<boolean> {
+  try {
+    return await Promise.race([
+      chainPublicClient(chain).getBlockNumber().then(() => true).catch(() => false),
+      new Promise<boolean>((r) => setTimeout(() => r(false), PROBE_TIMEOUT_MS)),
+    ]);
+  } catch {
+    return false;
+  }
 }
 
 function tag(tokens: readonly LaunchpadToken[], chainKey: ChainKey): ChainToken[] {
@@ -130,7 +159,9 @@ export async function getChainTokens(
     return { chain, tokens: [], stale: false, unreachable: false };
   }
 
-  record(chain.key, true);
+  const reachable = await isReachable(chain);
+  record(chain.key, !reachable);
+  if (reachable) return { chain, tokens: [], stale: false, unreachable: false };
   const snap = await snapshotOnly(chain.key);
   return { chain, tokens: tag(snap.tokens, chain.key), stale: snap.stale, unreachable: true };
 }

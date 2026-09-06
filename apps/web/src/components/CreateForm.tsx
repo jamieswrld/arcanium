@@ -45,7 +45,7 @@ async function compressImage(file: File): Promise<string> {
 
 /**
  * Live launch form. A token is created on the selected chain, paired with that
- * chain's quote asset (Arc USDC, Robinhood USDG, BNB USDT), with its Uniswap v3 pool and locked
+ * chain's quote asset (native USDC), with its Uniswap v3 pool and locked
  * liquidity in one atomic transaction. Launching is free (network gas only);
  * any optional initial buy is paid in the pair token — which on Arc is the
  */

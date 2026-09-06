@@ -35,10 +35,6 @@ function privateUrls(key: ChainKey): string[] {
         ...parse(process.env["ARC_RPC_URLS"]),
         ...parse(process.env["ARC_RPC_SERVER_URL"]),
       ];
-    case "robinhood":
-      return parse(process.env["ROBINHOOD_RPC_URLS"]);
-    case "bnb":
-      return parse(process.env["BNB_RPC_URLS"]);
   }
 }
 

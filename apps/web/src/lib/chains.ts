@@ -1,18 +1,14 @@
 import type { Hex } from "viem";
 
 /**
- * The chains Arcanium launches on.
+ * Arc — the chain Arcanium launches on.
  *
- * Every chain runs the identical stack — factory, liquidity vault, mode
- * distributor — so a launch behaves the same everywhere: fixed 1B supply, a real
- * Uniswap v3 pool from block one at a ~$3,000 cap, the whole supply locked in a
- * single-sided position, 90/10 protocol/creator fee split, and the Divium /
- * Arcane modes. Only the addresses and the quote asset differ.
+ * A launch is: fixed 1B supply, a real Uniswap v3 pool from block one at a
+ * ~$3,000 cap, the whole supply locked in a single-sided position, a 90/10
+ * protocol/creator fee split, and the Divium / Arcane fee modes.
  *
- * The one thing that is NOT interchangeable is the quote token's decimals: the
- * launch price constants differ between a 6-decimal quote (Arc USDC, Robinhood
- * USDG) and an 18-decimal one (BNB USDT). Factory v5 picks the right set from
- * the quote token itself, so this table only has to name the token.
+ * The registry shape is kept (rather than inlining constants everywhere)
+ * because it keeps addresses, RPCs and the quote asset in exactly one place.
  *
  * NOTE ON ENV VARS: Next.js only inlines `process.env.X` when X is a *static
  * literal*. `process.env[someVariable]` is silently undefined in the browser —
@@ -20,7 +16,7 @@ import type { Hex } from "viem";
  * its overrides out longhand. Do not refactor these into a loop.
  */
 
-export type ChainKey = "arc" | "robinhood" | "bnb";
+export type ChainKey = "arc";
 
 export interface QuoteAsset {
   readonly address: Hex;
@@ -47,7 +43,7 @@ export interface LaunchChain {
   readonly explorer: { readonly name: string; readonly url: string };
   readonly quote: QuoteAsset;
   readonly uniswap: UniswapAddresses;
-  /** Pool fee tier used for every launch. tickSpacing 200 on all three chains. */
+  /** Pool fee tier used for every launch. tickSpacing 200 on Arc. */
   readonly poolFee: number;
   /**
    * Every factory generation, newest first. Tokens are NEVER dropped when the
@@ -114,6 +110,11 @@ const ARC: LaunchChain = {
   rpcUrls: [
     ...envUrls(process.env["NEXT_PUBLIC_ARC_RPC_URLS"]),
     ...envUrls(process.env["NEXT_PUBLIC_ARC_RPC_URL"]),
+    // Public Arc RPC. Verified live: chain 5042, and all four factory
+    // generations readable, after months of the network being gated.
+    "https://rpc.arc-scan.org",
+    // Kept as fallbacks. Both required auth during the outage; if they open
+    // up again the ranked transport will start using them on its own.
     "https://rpc.blockdaemon.mainnet.arc.io",
     "https://5042.rpc.thirdweb.com/8b0c89cd3b125e7f8f744f5e56f6436a",
     "https://5042.rpc.thirdweb.com",
@@ -149,107 +150,10 @@ const ARC: LaunchChain = {
   accent: "#8b7dff",
 };
 
-// -------------------------------------------------------- Robinhood (4663)
-
-const ROBINHOOD: LaunchChain = {
-  key: "robinhood",
-  id: 4663,
-  name: "Robinhood Chain",
-  shortName: "Robinhood",
-  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls: [
-    ...envUrls(process.env["NEXT_PUBLIC_ROBINHOOD_RPC_URLS"]),
-    "https://rpc.mainnet.chain.robinhood.com",
-    "https://robinhood.drpc.org",
-  ],
-  explorer: { name: "Blockscout", url: "https://robinhoodchain.blockscout.com" },
-  quote: {
-    // USDG (Global Dollar) — 6 decimals, verified on-chain.
-    address: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
-    symbol: "USDG",
-    decimals: 6,
-    label: "USDG",
-  },
-  uniswap: {
-    factory: "0x1f7d7550B1b028f7571E69A784071F0205FD2EfA",
-    positionManager: "0x73991a25C818Bf1f1128dEAaB1492D45638DE0D3",
-    swapRouter: "0xCaf681a66D020601342297493863E78C959E5cb2",
-    quoter: "0x33e885eD0Ec9bF04EcfB19341582aADCb4c8A9E7",
-  },
-  poolFee: 10_000,
-  factories: factoryList(process.env["NEXT_PUBLIC_ROBINHOOD_FACTORY_ADDRESS"], [
-    "0x81D414D2cD66bf4422036846f569a6189996Fd59", // v5 — decimals-aware pricing
-  ]),
-  liquidityVault:
-    addr(process.env["NEXT_PUBLIC_ROBINHOOD_LIQUIDITY_VAULT_ADDRESS"]) ??
-    "0x4297254E5ae2df2b0d3920A08Df582D61b3e7766",
-  modeDistributor:
-    addr(process.env["NEXT_PUBLIC_ROBINHOOD_MODE_DISTRIBUTOR_ADDRESS"]) ??
-    "0x472580431Fb124e376E8b07802e64d2cEc4001DE",
-  graduationUnits: graduationUnits(6),
-  launchGasFloor: 2_000_000_000_000_000n, // 0.002 ETH — a launch costs ~0.0005
-  live: true,
-  accent: "#CCFF00", // Robinhood brand lime, per simple-icons
-};
-
-// -------------------------------------------------------------- BNB (56)
-
-const BNB: LaunchChain = {
-  key: "bnb",
-  id: 56,
-  name: "BNB Chain",
-  shortName: "BNB",
-  nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
-  rpcUrls: [
-    ...envUrls(process.env["NEXT_PUBLIC_BNB_RPC_URLS"]),
-    "https://bsc-dataseed.bnbchain.org",
-    "https://bsc-rpc.publicnode.com",
-    "https://bsc-dataseed1.defibit.io",
-    "https://bsc-dataseed1.ninicoin.io",
-    "https://bsc.drpc.org",
-    "https://bsc-dataseed2.bnbchain.org",
-    "https://1rpc.io/bnb",
-  ],
-  explorer: { name: "BscScan", url: "https://bscscan.com" },
-  quote: {
-    // BSC-USD (Binance-Peg USDT) — 18 decimals, verified on-chain. This is why
-    // factory v5 exists: v4's price constants assume a 6-decimal quote.
-    address: "0x55d398326f99059fF775485246999027B3197955",
-    symbol: "USDT",
-    decimals: 18,
-    label: "USDT",
-  },
-  uniswap: {
-    factory: "0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7",
-    positionManager: "0x7b8A01B39D58278b5DE7e48c8449c9f4F5170613",
-    swapRouter: "0xB971eF87ede563556b2ED4b1C0b0019111Dd85d2",
-    quoter: "0x78D78E420Da98ad378D7799bE8f4AF69033EB077",
-  },
-  poolFee: 10_000,
-  // Two generations. The first shared an address with Robinhood's factory, so
-  // the Nth launch on each chain produced an identical token address -- a real
-  // hazard, not a curiosity. The second is deployed at its own address, so BNB
-  // token addresses can never collide with another chain's again. The old
-  // generation stays listed forever; its tokens are real and keep trading.
-  factories: factoryList(process.env["NEXT_PUBLIC_BNB_FACTORY_ADDRESS"], [
-    "0xbdF64eB3104bB1095c2F57Ba74e5B761e6097105", // v5b — unique address
-    "0x81D414D2cD66bf4422036846f569a6189996Fd59", // v5 — shared address with Robinhood
-  ]),
-  liquidityVault:
-    addr(process.env["NEXT_PUBLIC_BNB_LIQUIDITY_VAULT_ADDRESS"]) ??
-    "0x66683A8a73C593caC3E62F4D06F87919F850c47b",
-  modeDistributor:
-    addr(process.env["NEXT_PUBLIC_BNB_MODE_DISTRIBUTOR_ADDRESS"]) ??
-    "0x43b03A930ABc6919dc4FEC9E963E4912ac1f9872",
-  graduationUnits: graduationUnits(18),
-  launchGasFloor: 2_000_000_000_000_000n, // 0.002 BNB — a launch costs ~0.0005
-  live: true,
-  accent: "#F0B90B", // BNB Chain brand yellow
-};
-
 // ------------------------------------------------------------------ registry
 
-export const CHAINS: readonly LaunchChain[] = [ARC, ROBINHOOD, BNB];
+/** Arcanium launches on Arc. One chain, one quote asset, one story. */
+export const CHAINS: readonly LaunchChain[] = [ARC];
 
 export const DEFAULT_CHAIN_KEY: ChainKey = "arc";
 

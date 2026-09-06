@@ -1,34 +1,29 @@
 import { getChainTokens } from "@/lib/tokensServer";
-import { resolveChain, CHAINS } from "@/lib/chains";
-import { ChainFilter, type ChainFilterStatus } from "@/components/ChainFilter";
-import { fetchImagesForChainTokens } from "@/lib/tokenImages";
+import { getChain } from "@/lib/chains";
+import { fetchTokenImages } from "@/lib/tokenImages";
 import { withTimeout } from "@/lib/withTimeout";
 import { PortfolioDashboard, type SerializedToken } from "@/components/PortfolioDashboard";
 
-export const metadata = { title: "Portfolio - Arcanium" };
-export const revalidate = 15; // token universe cached; wallet data is client-live
-
-interface PortfolioPageProps {
-  readonly searchParams: Promise<{ chain?: string }>;
-}
+export const metadata = { title: "Portfolio — Arcanium" };
+export const dynamic = "force-dynamic";
 
 /**
- * Portfolio - the wallet dashboard, one chain at a time. The server supplies
- * that chain's launch universe (cached list + logos); everything
- * wallet-specific (balances, created tokens, pending + claimed rewards) streams
- * in client-side against the same chain.
+ * Portfolio — the wallet dashboard.
+ *
+ * The server supplies the launch universe (list + logos); everything
+ * wallet-specific — balances, tokens you created, pending and claimed creator
+ * rewards — streams in client-side against Arc.
  */
-export default async function PortfolioPage({ searchParams }: PortfolioPageProps) {
-  const { chain: chainParam } = await searchParams;
-  const chain = resolveChain(chainParam);
-  const result = await getChainTokens(chain);
+export default async function PortfolioPage() {
+  const arc = getChain("arc");
+  const result = await getChainTokens(arc);
   const tokens = result.tokens;
 
   const images = await withTimeout(
-    fetchImagesForChainTokens(tokens),
+    fetchTokenImages(tokens.map((t) => t.token)),
     {} as Record<string, string>,
-    6_000,
-    "token logos",
+    4_000,
+    "portfolio logos",
   );
 
   const serialized: SerializedToken[] = tokens.map((t) => ({
@@ -44,16 +39,5 @@ export default async function PortfolioPage({ searchParams }: PortfolioPageProps
     image: images[t.token.toLowerCase()] ?? null,
   }));
 
-  const statuses: ChainFilterStatus[] = CHAINS.filter((c) => c.factories.length > 0).map((c) =>
-    c.key === chain.key
-      ? { key: c.key, unreachable: result.unreachable, count: tokens.length }
-      : { key: c.key, unreachable: false, count: 0 },
-  );
-
-  return (
-    <div className="arch-stack">
-      <ChainFilter active={chain.key} statuses={statuses} basePath="/portfolio" />
-      <PortfolioDashboard tokens={serialized} chainKey={chain.key} />
-    </div>
-  );
+  return <PortfolioDashboard tokens={serialized} chainKey="arc" />;
 }

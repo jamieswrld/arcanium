@@ -15,11 +15,10 @@ import {
 /**
  * Chain-parameterised launchpad reads.
  *
- * `launchpad.ts` remains the Arc-specific path, unchanged and battle-tested;
- * this module generalises the same logic over the chain registry so Robinhood
- * and BNB behave identically. The only real difference between chains is the
- * quote asset's decimals, which flows into the price math and the graduation
- * threshold.
+ * `launchpad.ts` is the direct Arc path, unchanged and battle-tested; this
+ * module expresses the same logic against the chain registry, so the quote
+ * asset's decimals flow into the price math and the graduation threshold
+ * rather than being assumed.
  *
  * Every factory generation on a chain is scanned. Tokens are NEVER dropped
  * because a factory was upgraded — each generation stays listed forever.

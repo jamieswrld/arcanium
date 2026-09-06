@@ -1,143 +1,175 @@
 import Link from "next/link";
-import { formatUsdCompact } from "@/lib/launchpad";
+import { formatUsdCompact, type LaunchpadToken } from "@/lib/launchpad";
 import { fetchProtocolStatsMulti } from "@/lib/protocolStats";
 import { getAllChainTokens } from "@/lib/tokensServer";
-import { ChainFilter } from "@/components/ChainFilter";
 import { NetworkStatusNotice } from "@/components/NetworkStatusNotice";
-import { fetchImagesForChainTokens } from "@/lib/tokenImages";
+import { fetchTokenImages } from "@/lib/tokenImages";
+import { TokenTable } from "@/components/TokenTable";
 import { withTimeout } from "@/lib/withTimeout";
-import { TokenCard } from "@/components/TokenCard";
 
 /**
- * Launchpad landing — hero, live protocol stats, and the launch grid.
- * Everything below the fold is a live chain read.
+ * Explore — the launchpad itself.
+ *
+ * The product is the launches, so they start above the fold. The hero states
+ * what this is in one line and gets out of the way; the stat strip gives the
+ * pad's vital signs; everything below is live inventory the user can sort.
  */
-export const revalidate = 15; // edge-cached HTML; client polling keeps data live
+export const dynamic = "force-dynamic";
 
-export default async function LaunchpadHome() {
-  // Every chain in parallel — one being down never empties the others.
+const SORTS = [
+  { key: "newest", label: "Newest" },
+  { key: "market_cap", label: "Market cap" },
+  { key: "liquidity", label: "Liquidity" },
+  { key: "graduating", label: "Near graduation" },
+] as const;
+
+type SortKey = (typeof SORTS)[number]["key"];
+
+interface HomeProps {
+  readonly searchParams: Promise<{ sort?: string }>;
+}
+
+export default async function ExplorePage({ searchParams }: HomeProps) {
+  const { sort: sortParam } = await searchParams;
+  const sort: SortKey = SORTS.some((s) => s.key === sortParam) ? (sortParam as SortKey) : "newest";
+
   const results = await getAllChainTokens();
-  const tokens = results.flatMap((r) => [...r.tokens]);
+  const all = results.flatMap((r) => [...r.tokens]);
   const down = results.filter((r) => r.unreachable);
-  // Never say "no tokens launched" while a chain is unreachable - an outage
-  // is not an empty pad.
-  const unreachable = tokens.length === 0 && down.length > 0;
+  // Never claim an empty pad while a network is unreachable — an outage is not
+  // an absence of tokens.
+  const unreachable = all.length === 0 && down.length > 0;
 
-  const recent = tokens.slice(0, 6);
-  // Both are bounded: this page is prerendered, so an unbounded read here is an
-  // unbounded build. Stats degrade to zeros rather than failing the deploy.
+  const tokens = sortTokens(all, sort);
+
   const [images, stats] = await Promise.all([
-    withTimeout(fetchImagesForChainTokens(recent), {} as Record<string, string>, 6_000, "home images"),
     withTimeout(
-      // Every chain, each with its own client and its own quote decimals.
+      fetchTokenImages(tokens.slice(0, 40).map((t) => t.token)),
+      {} as Record<string, string>,
+      4_000,
+      "explore logos",
+    ),
+    withTimeout(
       fetchProtocolStatsMulti(results.map((r) => ({ chain: r.chain, tokens: r.tokens }))),
-      { trades: 0, volAllUnits: 0n, vol24hUnits: 0n },
+      { trades: 0, volAllUnits: 0n, vol24hUnits: 0n, source: "chain" as const },
       6_000,
-      "home protocol stats",
+      "protocol stats",
     ),
   ]);
-  const graduated = tokens.filter((t) => t.graduated).length;
+
+  const graduated = all.filter((t) => t.graduated).length;
 
   return (
-    <div>
-      <div className="arch-hero">
+    <div className="arch-stack">
+      <section className="arch-hero">
         <div className="arch-hero-logo" aria-hidden>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/arcanium-mark.png" alt="" width={86} height={68} />
+          <img src="/arcanium-mark.png" alt="" width={64} height={50} />
         </div>
         <h1>
-          Launch a token anywhere.
+          Launch a token on Arc.
           <br />
-          <span className="arch-gradient-text">Live from block one.</span>
+          <span className="arch-gradient-text">Locked liquidity from block one.</span>
         </h1>
-        <p className="arch-note" style={{ fontSize: "1.02rem", maxWidth: 520, margin: "1.1rem auto 0" }}>
-          Launch on Arc, Robinhood or BNB. Every token pairs with a real stablecoin
-          on Uniswap liquidity that&apos;s permanently locked.
+        <p className="arch-note" style={{ fontSize: "0.95rem", maxWidth: 520, marginTop: 10 }}>
+          Every launch pairs with native USDC on real Uniswap v3 liquidity that is
+          permanently locked. No bonding curve, no pre-market, no launch fee.
         </p>
-        <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", marginTop: "1.6rem", flexWrap: "wrap" }}>
-          <Link href="/create" className="arch-primary-button" style={{ width: "auto", padding: "0.85rem 1.8rem", textDecoration: "none" }}>
+        <div style={{ display: "flex", gap: 10, marginTop: 20, flexWrap: "wrap", justifyContent: "center" }}>
+          <Link href="/create" className="arch-primary-button">
             Launch a token
           </Link>
-          <Link href="/tokens" className="arch-pill" style={{ padding: "0.85rem 1.5rem", border: "1px solid var(--border)", textDecoration: "none", borderRadius: 12 }}>
-            Browse tokens
+          <Link href="/docs" className="arch-button-secondary">
+            How it works
           </Link>
         </div>
+      </section>
+
+      <div className="arch-stat-bar">
+        <div>
+          <div className="arch-stat-label">Tokens launched</div>
+          <div className="arch-stat-value">{all.length}</div>
+        </div>
+        <div>
+          <div className="arch-stat-label">24h volume</div>
+          <div className="arch-stat-value">{formatUsdCompact(stats.vol24hUnits)}</div>
+        </div>
+        <div>
+          {/* Only the indexer sees true all-time history; the chain walk is
+              capped at what getLogs will return, so the label says so. */}
+          <div className="arch-stat-label">
+            {stats.source === "indexer" ? "All-time volume" : "Recent volume"}
+          </div>
+          <div className="arch-stat-value">{formatUsdCompact(stats.volAllUnits)}</div>
+        </div>
+        <div>
+          <div className="arch-stat-label">Trades</div>
+          <div className="arch-stat-value">{stats.trades.toLocaleString("en-US")}</div>
+        </div>
+        <div>
+          <div className="arch-stat-label">Graduated</div>
+          <div className="arch-stat-value">{graduated}</div>
+        </div>
       </div>
 
-      <div className="arch-stack">
-        <div className="arch-stat-bar">
-          <div>
-            <div className="arch-stat-label">Tokens launched</div>
-            <div className="arch-stat-value">{tokens.length}</div>
-          </div>
-          <div>
-            <div className="arch-stat-label">24h volume</div>
-            <div className="arch-stat-value">{formatUsdCompact(stats.vol24hUnits)}</div>
-          </div>
-          <div>
-            <div className="arch-stat-label">All-time volume</div>
-            <div className="arch-stat-value">{formatUsdCompact(stats.volAllUnits)}</div>
-          </div>
-          <div>
-            <div className="arch-stat-label">Trades</div>
-            <div className="arch-stat-value">{stats.trades.toLocaleString("en-US")}</div>
-          </div>
-          <div>
-            <div className="arch-stat-label">Graduated</div>
-            <div className="arch-stat-value">{graduated}</div>
+      <section>
+        <div className="arch-token-list-head">
+          <h2>Launches</h2>
+          <div className="arch-segment" role="group" aria-label="Sort launches">
+            {SORTS.map((s) => (
+              <Link
+                key={s.key}
+                href={s.key === "newest" ? "/" : `/?sort=${s.key}`}
+                aria-current={s.key === sort ? "true" : undefined}
+              >
+                {s.label}
+              </Link>
+            ))}
           </div>
         </div>
 
-        <section>
-          <div className="arch-section-head">
-            <h2>Recent launches</h2>
-            <Link href="/tokens" className="arch-note" style={{ textDecoration: "underline" }}>View all</Link>
+        {unreachable ? (
+          <NetworkStatusNotice chains={down.map((r) => r.chain)} />
+        ) : tokens.length === 0 ? (
+          <div className="arch-card" style={{ textAlign: "center", padding: "56px 20px" }}>
+            <h3 style={{ marginBottom: 6 }}>No launches yet</h3>
+            <p className="arch-note" style={{ maxWidth: 380, margin: "0 auto 18px" }}>
+              Nothing has launched on Arcanium yet. The first token here sets the tone
+              for the pad.
+            </p>
+            <Link href="/create" className="arch-primary-button">
+              Launch the first token
+            </Link>
           </div>
-          <div style={{ marginBottom: "0.9rem" }}>
-            <ChainFilter
-              active="all"
-              statuses={results.map((r) => ({ key: r.chain.key, unreachable: r.unreachable, count: r.tokens.length }))}
-            />
+        ) : (
+          <div className="arch-panel">
+            <TokenTable tokens={tokens} images={images} chainKey="arc" />
           </div>
-          {unreachable ? (
-            <NetworkStatusNotice chains={down.map((r) => r.chain)} />
-          ) : recent.length === 0 ? (
-            <section className="arch-card" style={{ textAlign: "center", padding: "3rem 1rem" }}>
-              <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>◆</div>
-              <p className="arch-note" style={{ margin: 0 }}>No tokens launched yet. Be the first.</p>
-              <Link href="/create" className="arch-pill arch-pill-active" style={{ display: "inline-block", marginTop: "1rem", padding: "0.5rem 1.1rem", textDecoration: "none" }}>
-                Launch a token
-              </Link>
-            </section>
-          ) : (
-            <div className="arch-token-grid">
-              {recent.map((t) => (
-                <TokenCard
-                  key={`${t.chainKey}:${t.token}`}
-                  token={t}
-                  image={images[t.token.toLowerCase()]}
-                  chainKey={t.chainKey}
-                />
-              ))}
-            </div>
-          )}
-        </section>
+        )}
+      </section>
 
-        <section className="arch-steps" style={{ marginTop: "0.5rem" }}>
-          <div className="arch-step arch-step-active">
-            <strong style={{ color: "var(--foreground)" }}>1 · Create</strong>
-            <p style={{ margin: "0.35rem 0 0" }}>Name, ticker, logo — one transaction, free apart from gas.</p>
-          </div>
-          <div className="arch-step arch-step-active">
-            <strong style={{ color: "var(--foreground)" }}>2 · Locked liquidity</strong>
-            <p style={{ margin: "0.35rem 0 0" }}>The full billion-token supply goes into a permanent Uniswap position.</p>
-          </div>
-          <div className="arch-step arch-step-active">
-            <strong style={{ color: "var(--foreground)" }}>3 · Trade &amp; earn</strong>
-            <p style={{ margin: "0.35rem 0 0" }}>Buy and sell in USDC, USDG or USDT from block one. Creators earn fees forever.</p>
-          </div>
-        </section>
-      </div>
+      <p className="arch-note" style={{ textAlign: "center", fontSize: "0.78rem" }}>
+        A token graduates permanently at 9,000 USDC in its pool — a milestone label only.
+        It never unlocks liquidity or changes the market.
+      </p>
     </div>
   );
+}
+
+/** Sorting is deliberate about ties: newest is the on-chain order reversed, and
+ *  the value sorts fall back to that so the list never reshuffles arbitrarily. */
+function sortTokens(tokens: readonly LaunchpadToken[], sort: SortKey): LaunchpadToken[] {
+  const list = [...tokens];
+  switch (sort) {
+    case "market_cap":
+      return list.sort((a, b) => (b.marketCapUnits > a.marketCapUnits ? 1 : b.marketCapUnits < a.marketCapUnits ? -1 : 0));
+    case "liquidity":
+      return list.sort((a, b) => (b.quoteBalance > a.quoteBalance ? 1 : b.quoteBalance < a.quoteBalance ? -1 : 0));
+    case "graduating":
+      return list
+        .filter((t) => !t.graduated)
+        .sort((a, b) => (b.quoteBalance > a.quoteBalance ? 1 : b.quoteBalance < a.quoteBalance ? -1 : 0));
+    default:
+      return list;
+  }
 }

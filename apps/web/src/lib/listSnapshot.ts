@@ -19,7 +19,7 @@ interface Row {
 }
 
 /** Stable row id per chain. Arc is 1 for backwards compatibility. */
-const ROW_ID: Record<ChainKey, number> = { arc: 1, robinhood: 2, bnb: 3 };
+const ROW_ID: Record<ChainKey, number> = { arc: 1 };
 
 /** bigint-safe serialisation (LaunchpadToken carries several). */
 function serialize(tokens: readonly LaunchpadToken[]): string {

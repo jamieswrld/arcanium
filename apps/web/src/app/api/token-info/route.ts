@@ -8,9 +8,8 @@ import { fetchTokenImages } from "@/lib/tokenImages";
  * every chain, newest first. CORS-open, edge-cached. Pair with
  * /api/token-info/{address} for full detail including logo and socials.
  *
- * `?chain=arc|robinhood|bnb` narrows to one chain. Top-level `chainId` and
- * `factory` describe Arc so existing consumers keep working; per-token `chain`
- * and `chainId` are authoritative for multi-chain readers.
+ * Top-level `chainId` and `factory` describe Arc, and each token carries the
+ * same so existing consumers keep working unchanged.
  */
 
 const CORS = {

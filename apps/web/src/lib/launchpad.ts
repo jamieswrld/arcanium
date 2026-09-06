@@ -1,5 +1,5 @@
 import { createPublicClient, type Hex, type PublicClient } from "viem";
-import { arcTransport } from "@/lib/arcRpc";
+import { arcChain, arcTransport } from "@/lib/arcRpc";
 
 /**
  * Launchpad chain access + exact bigint price math. No floats ever touch a
@@ -50,16 +50,25 @@ export const LIQUIDITY_VAULT_ADDRESS = process.env["NEXT_PUBLIC_ARCH_LIQUIDITY_V
 export const GRADUATION_UNITS = 9_000_000_000n; // 9,000 quote units (6d)
 const Q192 = 2n ** 192n;
 
-/** Tokens hidden from the launchpad UI (e.g. internal test launches). They
- *  still exist on-chain — this only removes them from our lists and pages. */
-/** Tokens are NEVER hidden by default — every launch on every factory
- *  generation stays listed. Only an explicit env denylist can hide one, and
- *  only if the operator sets it deliberately. */
+/** Launches hidden from the Arcanium UI.
+ *
+ *  Empty by design: every launch, on every factory generation, stays listed.
+ *
+ *  Hiding is presentation only — a token here still exists on-chain, still
+ *  trades, still holds its locked liquidity and still pays its fees. Nothing is
+ *  ever deleted. Add an address below (or to NEXT_PUBLIC_ARCH_HIDDEN_TOKENS) to
+ *  drop it from listings, and remove it to bring it straight back.
+ *
+ *  The list lives in source as well as env because .env.local is gitignored and
+ *  never reaches production, so an env-only denylist silently does nothing once
+ *  deployed.
+ */
+const HIDDEN_DEFAULTS: readonly string[] = [];
+
 const HIDDEN_TOKENS = new Set(
-  (process.env["NEXT_PUBLIC_ARCH_HIDDEN_TOKENS"] ?? "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter((s) => /^0x[0-9a-f]{40}$/.test(s)),
+  [...HIDDEN_DEFAULTS, ...(process.env["NEXT_PUBLIC_ARCH_HIDDEN_TOKENS"] ?? "").split(",")]
+    .map((v) => v.trim().toLowerCase())
+    .filter((v) => /^0x[0-9a-f]{40}$/.test(v)),
 );
 export function isHidden(token: string): boolean {
   return HIDDEN_TOKENS.has(token.toLowerCase());
@@ -70,7 +79,14 @@ export function isHidden(token: string): boolean {
 export let arcUnreachable = false;
 
 export function arcPublicClient(): PublicClient {
-  return createPublicClient({ transport: arcTransport() });
+  // Batched through Multicall3: listing the pad is ~4 reads per token across
+  // four factory generations, and the public RPC drops a large fraction of a
+  // burst that size. Batching turns those into a handful of requests.
+  return createPublicClient({
+    chain: arcChain,
+    transport: arcTransport(),
+    batch: { multicall: { wait: 12, batchSize: 512 } },
+  });
 }
 
 export const factoryAbi = [
@@ -192,10 +208,9 @@ export const erc20MetaAbi = [
  * USD price per whole token, scaled 1e18, from sqrtPriceX96 with an
  * 18-decimal token. Exact bigint math for both orderings.
  *
- * The quote asset's decimals differ by chain (6 on Arc/USDC and
- * Robinhood/USDG, 18 on BNB/USDT), so the scale factor is
- * 10^(36 - quoteDecimals): 1e30 for a 6-decimal quote, 1e18 for an
- * 18-decimal one. Defaults to 6 so every existing Arc caller is unchanged.
+ * The scale factor is 10^(36 - quoteDecimals): 1e30 for Arc's 6-decimal USDC.
+ * Parameterised rather than hardcoded so a quote asset with different decimals
+ * can never be silently mispriced by a factor of 1e12.
  */
 export function priceUsdE18(
   sqrtPriceX96: bigint,
@@ -301,7 +316,12 @@ let listCache: { at: number; tokens: LaunchpadToken[] } | null = null;
 let listInFlight: Promise<LaunchpadToken[]> | null = null;
 
 export async function fetchAllTokens(client: PublicClient): Promise<LaunchpadToken[]> {
-  if (FACTORY_ADDRESS === undefined) return [];
+  // Gate on whether we know of any factory at all — never on the optional env
+  // override. This guard used to read `FACTORY_ADDRESS === undefined`, so with
+  // that variable unset the scan returned an empty list instantly and the pad
+  // rendered empty while four perfectly good factory generations sat in
+  // FACTORY_GENERATIONS below. It only went unnoticed because Arc was gated.
+  if (FACTORY_GENERATIONS.length === 0 && FACTORY_ADDRESS === undefined) return [];
   if (listCache !== null && Date.now() - listCache.at < LIST_TTL_MS) return listCache.tokens;
   if (listInFlight !== null) return listInFlight; // coalesce concurrent requests
   listInFlight = (async () => {
@@ -350,7 +370,7 @@ const detailCache = new Map<string, { at: number; value: LaunchpadToken | null }
 
 /** Look up a token on both factory generations in parallel (current wins). */
 export async function fetchToken(client: PublicClient, token: Hex): Promise<LaunchpadToken | null> {
-  if (FACTORY_ADDRESS === undefined) return null;
+  if (FACTORY_GENERATIONS.length === 0 && FACTORY_ADDRESS === undefined) return null;
   const key = token.toLowerCase();
   const hit = detailCache.get(key);
   if (hit !== undefined && Date.now() - hit.at < DETAIL_TTL_MS) return hit.value;

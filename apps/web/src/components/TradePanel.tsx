@@ -89,7 +89,7 @@ function parseToken18(value: string): bigint {
  */
 export function TradePanel({ token, pairToken, symbol, chainKey = "arc" }: TradePanelProps) {
   // Trades execute on the chain the token launched on, against that chain's
-  // own Uniswap router and quote asset (Arc USDC, Robinhood USDG, BNB USDT).
+  // own Uniswap router and quote asset (native USDC on Arc).
   const chain = getChain(chainKey);
   const ROUTER_ADDRESS = chain.uniswap.swapRouter;
   const PAIR_TOKEN_SYMBOL = chain.quote.symbol;

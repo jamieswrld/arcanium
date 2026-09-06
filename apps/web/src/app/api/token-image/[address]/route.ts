@@ -10,9 +10,7 @@ import { CHAINS, resolveChain } from "@/lib/chains";
  * CoinGecko and every other terminal want an https image URL they can fetch and
  * cache. This serves exactly that, decoding the data URI into real image bytes.
  *
- * GET /api/token-image/0xToken[?chain=robinhood]
- * Falls back to searching every chain when none is named, so a bare address
- * always resolves.
+ * GET /api/token-image/0xToken
  */
 export const dynamic = "force-dynamic";
 

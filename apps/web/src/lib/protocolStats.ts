@@ -19,15 +19,34 @@ export interface ProtocolStats {
   readonly trades: number;
   readonly volAllUnits: bigint; // 6-decimal USD
   readonly vol24hUnits: bigint;
+  /**
+   * Where the totals came from, so the UI can label them truthfully.
+   *
+   * "indexer" is real all-time history. "chain" is a bounded getLogs walk —
+   * Arc's RPC caps a range at 10k blocks and 0.5s blocks mean ~27h of history
+   * is all we can reach, so calling that figure "all-time" would be a lie.
+   */
+  readonly source: "indexer" | "chain";
 }
 
 const TTL_MS = 60_000;
 let cache: { at: number; value: ProtocolStats } | null = null;
 let inFlight: Promise<ProtocolStats> | null = null;
 
-const CHUNK = 45_000n;
-const MAX_CHUNKS = 10; // ~450k blocks — beyond the RPC pruning horizon
-const BLOCKS_24H = 172_800n; // ~0.5s Arc blocks
+/**
+ * Arc's public RPC refuses a getLogs range much above 10k blocks — measured:
+ * 10,000 succeeds, 15,000 fails. This was 45,000, so every single request
+ * errored and the whole stat bar read $0.00 while real trades sat on-chain.
+ * Keep headroom under the ceiling.
+ */
+const CHUNK = 9_500n;
+/** ~190k blocks at 0.506s/block ≈ 27h, so the 24h window is fully covered. */
+const MAX_CHUNKS = 20;
+/** Chunks are independent ranges, so they are fetched concurrently — but only a
+ *  few at a time, because the same RPC drops large parallel bursts. */
+const CHUNK_CONCURRENCY = 5;
+/** Measured 0.506s/block on Arc. */
+const BLOCKS_24H = 170_700n;
 
 async function fromDb(): Promise<ProtocolStats | null> {
   const sql = getDb();
@@ -43,14 +62,14 @@ async function fromDb(): Promise<ProtocolStats | null> {
     if (all === undefined) return null;
     const trades = Number(all.trades);
     if (trades === 0) return null; // indexer empty — chain walk knows better
-    return { trades, volAllUnits: BigInt(all.vol), vol24hUnits: BigInt(day?.vol ?? "0") };
+    return { trades, volAllUnits: BigInt(all.vol), vol24hUnits: BigInt(day?.vol ?? "0"), source: "indexer" };
   } catch {
     return null;
   }
 }
 
 async function fromChain(client: PublicClient, tokens: readonly LaunchpadToken[]): Promise<ProtocolStats> {
-  if (tokens.length === 0) return { trades: 0, volAllUnits: 0n, vol24hUnits: 0n };
+  if (tokens.length === 0) return { trades: 0, volAllUnits: 0n, vol24hUnits: 0n, source: "chain" as const };
   const pools = tokens.map((t) => t.pool);
   const isToken0 = new Map<string, boolean>(
     tokens.map((t) => [t.pool.toLowerCase(), t.token.toLowerCase() < t.pairToken.toLowerCase()]),
@@ -82,7 +101,7 @@ async function fromChain(client: PublicClient, tokens: readonly LaunchpadToken[]
     if (start === 0n) break;
     end = start - 1n;
   }
-  return { trades, volAllUnits: volAll, vol24hUnits: vol24h };
+  return { trades, volAllUnits: volAll, vol24hUnits: vol24h, source: "chain" };
 }
 
 export async function fetchProtocolStats(
@@ -97,7 +116,7 @@ export async function fetchProtocolStats(
     const value =
       db !== null && (chain === null || db.trades >= chain.trades)
         ? db
-        : chain ?? { trades: 0, volAllUnits: 0n, vol24hUnits: 0n };
+        : chain ?? { trades: 0, volAllUnits: 0n, vol24hUnits: 0n, source: "chain" as const };
     cache = { at: Date.now(), value };
     return value;
   })();
@@ -111,22 +130,13 @@ export async function fetchProtocolStats(
 /**
  * Multi-chain stats.
  *
- * The single-client version above only ever read Arc, so a real trade on
- * Robinhood or BNB showed as $0.00 volume — which is exactly what happened to a
- * $10 buy routed through GMGN. It also summed raw quote units while the
- * formatter assumes 6 decimals, so an 18-decimal quote like BNB's USDT would
- * have been overstated by 1e12.
- *
- * Both are fixed here: each chain is walked with its own client and its volume
- * normalised to 6-decimal USD before being summed.
+ * Volume is normalised to the 6-decimal USD the formatter expects rather than
+ * summed as raw quote units, so the figure stays correct regardless of the
+ * quote asset's decimals.
  */
 
-/** Approximate blocks in 24h, per chain — block times differ a lot. */
-const BLOCKS_24H_BY_CHAIN: Record<ChainKey, bigint> = {
-  arc: BLOCKS_24H,
-  robinhood: 345_600n, // Arbitrum Orbit L2, ~0.25s blocks
-  bnb: 115_200n, // ~0.75s blocks
-};
+/** Approximate blocks in 24h on Arc. */
+const BLOCKS_24H_BY_CHAIN: Record<ChainKey, bigint> = { arc: BLOCKS_24H };
 
 /** Scale a chain's raw quote volume to the 6-decimal USD the UI formats. */
 function toUsdMicro(raw: bigint, quoteDecimals: number): bigint {
@@ -139,7 +149,7 @@ async function fromOneChain(
   chain: LaunchChain,
   tokens: readonly LaunchpadToken[],
 ): Promise<ProtocolStats> {
-  if (tokens.length === 0) return { trades: 0, volAllUnits: 0n, vol24hUnits: 0n };
+  if (tokens.length === 0) return { trades: 0, volAllUnits: 0n, vol24hUnits: 0n, source: "chain" as const };
   const client = chainPublicClient(chain);
   const isToken0 = new Map<string, boolean>(
     tokens.map((t) => [t.pool.toLowerCase(), t.token.toLowerCase() < t.pairToken.toLowerCase()]),
@@ -149,32 +159,48 @@ async function fromOneChain(
   const window24h = BLOCKS_24H_BY_CHAIN[chain.key];
   const cutoff24h = tip > window24h ? tip - window24h : 0n;
 
-  let trades = 0;
-  let volAll = 0n;
-  let vol24h = 0n;
+  // Build every range up front, then fetch them a few at a time. Walking
+  // sequentially took one round trip per chunk; at 20 chunks that is far longer
+  // than a page render can wait.
+  const ranges: { from: bigint; to: bigint }[] = [];
   let end = tip;
-  for (let i = 0; i < MAX_CHUNKS; i++) {
+  for (let i = 0; i < MAX_CHUNKS && end > 0n; i++) {
     const start = end >= CHUNK ? end - CHUNK + 1n : 0n;
-    let logs;
-    try {
-      logs = await client.getLogs({ address: pools, event: swapEvent, fromBlock: start, toBlock: end });
-    } catch {
-      break; // pruning horizon
-    }
-    for (const l of logs) {
-      const t0 = isToken0.get(l.address.toLowerCase());
-      if (t0 === undefined) continue;
-      const quoteDelta = t0 ? (l.args.amount1 ?? 0n) : (l.args.amount0 ?? 0n);
-      const vol = quoteDelta < 0n ? -quoteDelta : quoteDelta;
-      trades += 1;
-      volAll += vol;
-      if ((l.blockNumber ?? 0n) >= cutoff24h) vol24h += vol;
-    }
+    ranges.push({ from: start, to: end });
     if (start === 0n) break;
     end = start - 1n;
   }
+
+  let trades = 0;
+  let volAll = 0n;
+  let vol24h = 0n;
+
+  for (let i = 0; i < ranges.length; i += CHUNK_CONCURRENCY) {
+    const batch = ranges.slice(i, i + CHUNK_CONCURRENCY);
+    const results = await Promise.all(
+      batch.map((r) =>
+        client
+          .getLogs({ address: pools, event: swapEvent, fromBlock: r.from, toBlock: r.to })
+          // A failed range is skipped, not fatal: older ranges may be past the
+          // node's pruning horizon while newer ones are perfectly readable.
+          .catch(() => []),
+      ),
+    );
+    for (const logs of results) {
+      for (const l of logs) {
+        const t0 = isToken0.get(l.address.toLowerCase());
+        if (t0 === undefined) continue;
+        const quoteDelta = t0 ? (l.args.amount1 ?? 0n) : (l.args.amount0 ?? 0n);
+        const vol = quoteDelta < 0n ? -quoteDelta : quoteDelta;
+        trades += 1;
+        volAll += vol;
+        if ((l.blockNumber ?? 0n) >= cutoff24h) vol24h += vol;
+      }
+    }
+  }
+
   const d = chain.quote.decimals;
-  return { trades, volAllUnits: toUsdMicro(volAll, d), vol24hUnits: toUsdMicro(vol24h, d) };
+  return { trades, volAllUnits: toUsdMicro(volAll, d), vol24hUnits: toUsdMicro(vol24h, d), source: "chain" };
 }
 
 let multiCache: { at: number; value: ProtocolStats } | null = null;
@@ -189,13 +215,14 @@ export async function fetchProtocolStatsMulti(
   multiInFlight = (async () => {
     const per = await Promise.all(
       groups.map((g) =>
-        fromOneChain(g.chain, g.tokens).catch(() => ({ trades: 0, volAllUnits: 0n, vol24hUnits: 0n })),
+        fromOneChain(g.chain, g.tokens).catch(() => ({ trades: 0, volAllUnits: 0n, vol24hUnits: 0n, source: "chain" as const })),
       ),
     );
     let value: ProtocolStats = {
       trades: per.reduce((n, p) => n + p.trades, 0),
       volAllUnits: per.reduce((n, p) => n + p.volAllUnits, 0n),
       vol24hUnits: per.reduce((n, p) => n + p.vol24hUnits, 0n),
+      source: "chain",
     };
     // The indexer keeps true all-time history past the RPC's retention horizon,
     // so prefer it when it has seen more.

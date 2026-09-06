@@ -1,4 +1,5 @@
-import { fallback, http, type Transport } from "viem";
+import { defineChain, fallback, http, type Chain, type Transport } from "viem";
+import { getChain } from "@/lib/chains";
 
 /**
  * Arc RPC endpoints, in preference order. A single provider going down (or
@@ -9,14 +10,15 @@ import { fallback, http, type Transport } from "viem";
  * NEXT_PUBLIC_ARC_RPC_URLS. Anything configured is tried before the defaults.
  */
 
-const DEFAULTS: readonly string[] = [
-  // Blockdaemon is the preferred primary. It began requiring an API key, so
-  // set ARC_BLOCKDAEMON_KEY (or put the full authed URL in ARC_RPC_URLS) and
-  // it is used ahead of everything else automatically.
-  "https://rpc.blockdaemon.mainnet.arc.io",
-  "https://5042.rpc.thirdweb.com/8b0c89cd3b125e7f8f744f5e56f6436a",
-  "https://5042.rpc.thirdweb.com",
-];
+/**
+ * Arc's endpoints come from the chain registry — one source of truth.
+ *
+ * These used to be a second hardcoded list, and it bit exactly as you would
+ * expect: a working RPC was added to chains.ts, every chain-registry read
+ * recovered, and this path kept dialling the dead endpoints, so the launchpad
+ * still rendered empty. Do not reintroduce a local copy.
+ */
+const DEFAULTS: readonly string[] = getChain("arc").rpcUrls;
 
 /** Blockdaemon with the operator's key, when configured. */
 function blockdaemonAuthed(): string[] {
@@ -70,3 +72,24 @@ export function arcTransport(opts?: { readonly browser?: boolean }): Transport {
     { rank: { interval: 60_000, sampleCount: 3 } },
   );
 }
+
+/**
+ * Arc, as viem understands it.
+ *
+ * The important part is `contracts.multicall3`: Multicall3 is deployed on Arc
+ * at the canonical address, so viem can fold a whole page of reads into one
+ * request. That matters here because the public RPC rate-limits bursts — firing
+ * ~100 individual reads to list the pad returned only a fraction of them, and
+ * the missing ones were silently swallowed as "no token". One multicall per
+ * batch fixes both the losses and the latency.
+ */
+export const arcChain: Chain = defineChain({
+  id: 5042,
+  name: "Arc",
+  nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
+  rpcUrls: { default: { http: [...DEFAULTS] } },
+  blockExplorers: { default: { name: "Blockscout", url: "https://arc-mainnet.cloud.blockscout.com" } },
+  contracts: {
+    multicall3: { address: "0xcA11bde05977b3631167028862bE2a173976CA11" },
+  },
+});

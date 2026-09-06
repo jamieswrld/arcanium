@@ -1,816 +1,852 @@
-@import "tailwindcss";
+/* ============================================================================
+   Arcanium design system
+   ----------------------------------------------------------------------------
+   One system, not a component pile. Everything below is built from the tokens
+   in :root — colour by role, a single radius scale, one spacing rhythm, one
+   motion curve. If a value is not a token, it should have a reason.
 
-@source "../../../../packages/ui/src";
+   Art direction: a dark instrument panel. Near-black canvas with a violet cast,
+   hairline structure instead of stacked cards, tabular numerals so money lines
+   up, and a single accent that only ever marks the primary action or the brand.
+   ========================================================================== */
 
-/*
- * Arcanium design system — dark-only, deep space blue/purple.
- * One coherent scale: canvas → surface → raised surface → border → text.
- * Accent is a violet→indigo gradient with a soft outer glow. Numbers are
- * always tabular. Motion is subtle and GPU-friendly.
- */
 :root {
   color-scheme: dark;
 
-  /* Canvas + surfaces (blue-violet blacks, progressively lighter) */
-  --background: oklch(0.145 0.022 282);
-  --foreground: oklch(0.955 0.008 285);
-  --card: oklch(0.185 0.026 282);
-  --card-foreground: oklch(0.955 0.008 285);
-  --muted: oklch(0.225 0.03 283);
-  --muted-foreground: oklch(0.67 0.02 285);
-  --border: oklch(0.30 0.035 285);
+  /* --- canvas & elevation -------------------------------------------------
+     Four steps, each a real surface level. Anything raised must earn it. */
+  --bg:             oklch(0.128 0.018 284);
+  --bg-subtle:      oklch(0.155 0.021 284);
+  --surface:        oklch(0.181 0.024 284);
+  --surface-raised: oklch(0.212 0.027 285);
+  --surface-hover:  oklch(0.232 0.030 286);
 
-  /* Accent system — electric violet into indigo blue */
-  --primary: oklch(0.63 0.21 292);
-  --primary-hover: oklch(0.69 0.21 292);
-  --primary-foreground: oklch(0.985 0.005 290);
-  --accent: oklch(0.72 0.17 305);
-  --ring: oklch(0.63 0.21 292);
+  /* --- text ---------------------------------------------------------------
+     Three weights of voice: primary, secondary, quiet metadata. */
+  --text:        oklch(0.968 0.006 285);
+  --text-muted:  oklch(0.715 0.018 286);
+  --text-faint:  oklch(0.565 0.020 286);
 
-  --positive: oklch(0.72 0.17 155);
-  --negative: oklch(0.65 0.21 25);
-  --warning: oklch(0.75 0.14 75);
-  --radius: 1rem;
+  /* --- structure ----------------------------------------------------------
+     Hairlines do most of the layout work here, so they come in two weights. */
+  --line:        oklch(1 0 0 / 0.075);
+  --line-strong: oklch(1 0 0 / 0.14);
 
-  /* Depth */
-  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.4);
-  --shadow-md: 0 2px 4px oklch(0 0 0 / 0.4), 0 12px 32px oklch(0 0 0 / 0.35);
-  --shadow-lg: 0 4px 8px oklch(0 0 0 / 0.5), 0 24px 64px oklch(0 0 0 / 0.5);
-  --brand-gradient: linear-gradient(135deg, oklch(0.58 0.24 300), oklch(0.58 0.21 275));
-  --brand-gradient-bright: linear-gradient(135deg, oklch(0.66 0.24 300), oklch(0.64 0.21 272));
-  --button-glow: 0 0 24px oklch(0.58 0.24 295 / 0.35);
+  /* --- accent -------------------------------------------------------------
+     One accent, for the primary action, the brand, and active state. Never
+     decoration. */
+  --accent:       oklch(0.655 0.205 292);
+  --accent-hover: oklch(0.705 0.200 292);
+  --accent-quiet: oklch(0.655 0.205 292 / 0.14);
+  --accent-line:  oklch(0.655 0.205 292 / 0.38);
+  --on-accent:    oklch(0.99 0.004 290);
 
-  /* Legacy aliases still referenced by inline styles. */
-  --arch-primary: var(--primary);
-  --arch-primary-hover: var(--primary-hover);
-  --arch-surface: var(--card);
-  --arch-surface-muted: var(--muted);
-  --arch-border: var(--border);
-  --arch-text: var(--foreground);
-  --arch-text-muted: var(--muted-foreground);
+  /* --- semantic ------------------------------------------------------------ */
+  --positive:       oklch(0.745 0.165 158);
+  --negative:       oklch(0.665 0.205 24);
+  --warning:        oklch(0.775 0.140 78);
+  --positive-quiet: oklch(0.745 0.165 158 / 0.13);
+  --negative-quiet: oklch(0.665 0.205 24 / 0.13);
+
+  /* --- shape --------------------------------------------------------------
+     One scale. Pills are reserved for filters and badges. */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-pill: 999px;
+
+  /* --- rhythm -------------------------------------------------------------- */
+  --gutter: 28px;
+  --rail: 232px;
+  --content-max: 1280px;
+
+  /* --- depth --------------------------------------------------------------- */
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.5);
+  --shadow-md: 0 4px 16px oklch(0 0 0 / 0.45);
+  --shadow-lg: 0 16px 48px oklch(0 0 0 / 0.55);
+
+  /* --- motion -------------------------------------------------------------
+     One curve, two durations. Motion explains state, never entertains. */
+  --ease: cubic-bezier(0.2, 0.6, 0.25, 1);
+  --fast: 120ms;
+  --slow: 220ms;
+
+  /* Compatibility aliases: existing markup references these names, so mapping
+     them means the restyle lands everywhere without rewriting every component. */
+  --background: var(--bg);
+  --foreground: var(--text);
+  --card: var(--surface);
+  --card-foreground: var(--text);
+  --muted: var(--surface-raised);
+  --muted-foreground: var(--text-muted);
+  --border: var(--line);
+  --primary: var(--accent);
+  --primary-hover: var(--accent-hover);
+  --primary-foreground: var(--on-accent);
+  --ring: var(--accent);
+  --radius: var(--r-lg);
+  --arch-primary: var(--accent);
+  --arch-primary-hover: var(--accent-hover);
+  --arch-surface: var(--surface);
+  --arch-surface-muted: var(--surface-raised);
+  --arch-border: var(--line);
+  --arch-text: var(--text);
+  --arch-text-muted: var(--text-muted);
   --arch-positive: var(--positive);
   --arch-negative: var(--negative);
   --arch-warning: var(--warning);
+  --brand-gradient: linear-gradient(135deg, oklch(0.62 0.23 300), oklch(0.60 0.20 272));
+  --button-glow: 0 0 0 1px oklch(0.655 0.205 292 / 0.25);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-primary: var(--primary);
-  --color-primary-hover: var(--primary-hover);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-border: var(--border);
-  --color-ring: var(--ring);
-  --color-positive: var(--positive);
-  --color-negative: var(--negative);
-  --color-warning: var(--warning);
-  --color-accent: var(--accent);
-  --radius-card: var(--radius);
-  --font-sans: var(--font-inter), "Inter", system-ui, -apple-system, sans-serif;
-}
+/* ---------------------------------------------------------------- reset --- */
 
-html {
-  background: var(--background);
-}
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans);
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  min-height: 100vh;
-  /* Ambient nebula: violet glow up top, indigo wash low-right, vignette. */
-  background-image:
-    radial-gradient(52% 42% at 50% -6%, oklch(0.5 0.19 296 / 0.22), transparent 68%),
-    radial-gradient(38% 34% at 88% 12%, oklch(0.5 0.17 265 / 0.12), transparent 70%),
-    radial-gradient(46% 40% at 4% 96%, oklch(0.45 0.16 285 / 0.1), transparent 70%);
-  background-repeat: no-repeat;
-  background-attachment: fixed;
-}
-
-main {
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 2.25rem 1.25rem 5rem;
-}
-
-::selection {
-  background: color-mix(in oklch, var(--primary) 40%, transparent);
-}
-
-:where(a, button, input, select, textarea):focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-
-/* Slim scrollbars that match the theme */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in oklch, var(--border) 80%, transparent) transparent;
-}
-
-/* ---- Component layer ---- */
-@layer components {
-  .arch-header {
-    @apply flex items-center gap-6 px-5 py-3 flex-wrap sticky top-0 z-30;
-    background: color-mix(in oklch, var(--background) 72%, transparent);
-    border-bottom: 1px solid color-mix(in oklch, var(--border) 55%, transparent);
-    -webkit-backdrop-filter: saturate(1.5) blur(16px);
-    backdrop-filter: saturate(1.5) blur(16px);
-  }
-  .arch-logo {
-    @apply font-bold text-[1.12rem] tracking-tight text-foreground;
-  }
-  .arch-nav {
-    @apply flex gap-0.5 flex-wrap text-[0.9rem];
-  }
-  .arch-nav a {
-    @apply text-muted-foreground px-3 py-1.5 rounded-lg font-medium transition-colors hover:text-foreground;
-  }
-  .arch-nav a:hover {
-    background: color-mix(in oklch, var(--muted) 70%, transparent);
-  }
-  .arch-header-right {
-    @apply ml-auto flex gap-2.5 items-center;
-  }
-  .arch-network-pill {
-    @apply text-xs font-semibold text-warning border border-warning/50 bg-warning/5 rounded-full px-3 py-1;
-  }
-  .arch-wallet-button {
-    @apply text-primary-foreground rounded-xl px-4 py-2 text-sm font-semibold transition-all active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed;
-    background: var(--brand-gradient);
-    box-shadow: var(--shadow-sm);
-  }
-  .arch-wallet-button:hover {
-    background: var(--brand-gradient-bright);
-    box-shadow: var(--button-glow);
-  }
-  .arch-stack {
-    @apply grid gap-4;
-  }
-  .arch-card {
-    @apply rounded-[var(--radius-card)] p-6;
-    background:
-      linear-gradient(180deg, color-mix(in oklch, var(--card) 92%, white 2%), var(--card)) padding-box;
-    border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
-    box-shadow: var(--shadow-md), inset 0 1px 0 oklch(1 0 0 / 0.04);
-  }
-  .arch-form-row {
-    @apply grid gap-1.5 mb-3.5;
-  }
-  .arch-form-row label {
-    @apply text-xs text-muted-foreground font-semibold uppercase tracking-wide;
-  }
-  .arch-form-row input,
-  .arch-form-row select,
-  .arch-form-row textarea {
-    @apply border border-border rounded-xl px-3.5 py-2.5 text-[0.95rem] transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:border-transparent disabled:opacity-60 text-foreground;
-    background: color-mix(in oklch, var(--background) 55%, var(--card));
-  }
-  .arch-primary-button {
-    @apply w-full text-primary-foreground rounded-xl px-4 py-3.5 text-[0.95rem] font-semibold transition-all active:enabled:scale-[0.99] disabled:opacity-55 disabled:cursor-not-allowed cursor-pointer;
-    background: var(--brand-gradient);
-    box-shadow: var(--shadow-sm);
-  }
-  .arch-primary-button:hover:enabled {
-    background: var(--brand-gradient-bright);
-    box-shadow: var(--button-glow);
-  }
-  .arch-note {
-    @apply text-[0.82rem] text-muted-foreground leading-relaxed;
-  }
-  .arch-panel {
-    @apply border border-border rounded-2xl px-4 py-4 transition-colors focus-within:border-primary/70;
-    background: color-mix(in oklch, var(--background) 50%, var(--card));
-  }
-  .arch-panel-head {
-    @apply flex justify-between items-center text-xs text-muted-foreground mb-1.5;
-  }
-  .arch-chain-chip,
-  .arch-asset-chip {
-    @apply border border-border rounded-full px-3 py-1 text-sm font-semibold text-foreground;
-    background: var(--muted);
-  }
-  .arch-amount-row {
-    @apply flex items-center justify-between gap-3;
-  }
-  .arch-amount-input,
-  .arch-amount-output {
-    @apply text-[2rem] font-semibold border-0 bg-transparent w-full min-w-0 text-foreground focus:outline-none disabled:text-muted-foreground;
-    font-variant-numeric: tabular-nums;
-  }
-  .arch-panel-foot {
-    @apply flex justify-between text-xs text-muted-foreground mt-1.5;
-  }
-  .arch-max-chip {
-    @apply border border-border rounded-full px-2 py-0.5 text-[0.7rem] font-semibold cursor-pointer transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-60 text-muted-foreground;
-    background: var(--muted);
-  }
-  .arch-pct-chips {
-    @apply flex gap-1.5 mt-2;
-  }
-  .arch-pct-chip {
-    @apply flex-1 border border-border rounded-full py-1.5 text-xs font-semibold cursor-pointer text-muted-foreground transition-colors hover:enabled:border-primary hover:enabled:text-primary disabled:opacity-60;
-    background: var(--muted);
-  }
-  .arch-switch-row {
-    @apply flex justify-center -my-2 relative z-10;
-  }
-  .arch-switch-button {
-    @apply w-10 h-10 rounded-full text-primary-foreground text-base cursor-pointer transition-transform hover:enabled:scale-105 disabled:cursor-not-allowed shadow-md;
-    background: var(--brand-gradient);
-    border: 3px solid var(--card);
-  }
-  .arch-section-head {
-    @apply flex justify-between items-baseline gap-4 flex-wrap mb-2;
-  }
-  .arch-section-head h1,
-  .arch-section-head h2 {
-    @apply m-0 text-lg font-semibold tracking-tight;
-  }
-  .arch-steps {
-    @apply grid grid-cols-3 gap-3 max-[640px]:grid-cols-1;
-  }
-  .arch-step {
-    @apply text-sm text-muted-foreground rounded-2xl p-4 border border-border/70;
-    background: color-mix(in oklch, var(--card) 80%, transparent);
-  }
-  .arch-step-active {
-    border-top: 2px solid var(--primary);
-  }
-  .arch-pills {
-    @apply flex gap-1 flex-wrap border border-border rounded-full p-1;
-    background: color-mix(in oklch, var(--background) 55%, var(--card));
-  }
-  .arch-pill {
-    @apply rounded-full px-3.5 py-1.5 text-[0.8rem] text-muted-foreground transition-colors hover:text-foreground;
-  }
-  .arch-pill-active {
-    @apply text-primary-foreground font-semibold hover:text-primary-foreground;
-    background: var(--brand-gradient);
-    box-shadow: var(--shadow-sm);
-  }
-  .arch-token-list-head {
-    @apply grid grid-cols-[1fr_120px_120px] gap-3 text-[0.75rem] font-medium uppercase tracking-wide text-muted-foreground border-b border-border pb-2.5 max-[640px]:grid-cols-[1fr_90px_90px];
-  }
-  .arch-two-col {
-    @apply grid grid-cols-2 gap-4 max-[640px]:grid-cols-1;
-  }
-  /* Trading terminal: big chart left, trade rail right; stacks on mobile. */
-  .arch-terminal {
-    @apply grid gap-4;
-    grid-template-columns: minmax(0, 1fr) 360px;
-    align-items: start;
-  }
-  @media (max-width: 960px) {
-    .arch-terminal { grid-template-columns: 1fr; }
-  }
-  .arch-token-price-big {
-    @apply text-[1.85rem] font-bold text-right leading-tight tracking-tight;
-    font-variant-numeric: tabular-nums;
-  }
-
-  /* ---- Page-level ---- */
-  .arch-hero {
-    @apply text-center pt-8 pb-10;
-  }
-  /* Hero mark: the A centered above the headline, haloed in the brand glow. */
-  .arch-hero-logo {
-    @apply flex justify-center mb-6 relative;
-  }
-  .arch-hero-logo::before {
-    content: "";
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 240px;
-    height: 240px;
-    transform: translate(-50%, -50%);
-    background: radial-gradient(circle, oklch(0.58 0.24 296 / 0.32), oklch(0.55 0.2 275 / 0.1) 45%, transparent 70%);
-    pointer-events: none;
-  }
-  .arch-hero-logo img {
-    position: relative;
-    filter:
-      drop-shadow(0 0 14px oklch(0.66 0.24 296 / 0.65))
-      drop-shadow(0 0 42px oklch(0.6 0.22 285 / 0.4));
-  }
-  @media (prefers-reduced-motion: no-preference) {
-    .arch-hero-logo img {
-      animation: heroFloat 5.5s ease-in-out infinite;
-    }
-  }
-  @keyframes heroFloat {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-6px); }
-  }
-  .arch-hero h1 {
-    @apply text-[3rem] max-[640px]:text-[2.1rem] font-bold tracking-tight leading-[1.04] m-0;
-  }
-  .arch-gradient-text {
-    background: linear-gradient(92deg, oklch(0.78 0.19 300), oklch(0.72 0.19 275), oklch(0.75 0.17 310));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-  .arch-eyebrow {
-    @apply inline-flex items-center gap-1.5 text-[0.75rem] font-semibold text-primary bg-primary/10 border border-primary/20 rounded-full px-3 py-1 mb-4;
-  }
-  .arch-stat-tile {
-    @apply rounded-2xl p-4 border border-border/80;
-    background: color-mix(in oklch, var(--card) 85%, transparent);
-    box-shadow: var(--shadow-sm);
-  }
-  /* Single horizontal protocol-stats bar with hairline dividers. */
-  .arch-stat-bar {
-    @apply grid rounded-2xl border border-border/80;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    background: color-mix(in oklch, var(--card) 88%, transparent);
-    box-shadow: var(--shadow-sm), inset 0 1px 0 oklch(1 0 0 / 0.04);
-    overflow: hidden;
-  }
-  .arch-stat-bar > div {
-    @apply px-5 py-4;
-  }
-  .arch-stat-bar > div + div {
-    border-left: 1px solid color-mix(in oklch, var(--border) 55%, transparent);
-  }
-  @media (max-width: 860px) {
-    .arch-stat-bar {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-    .arch-stat-bar > div:nth-child(4) {
-      border-left: none;
-      border-top: 1px solid color-mix(in oklch, var(--border) 55%, transparent);
-    }
-    .arch-stat-bar > div:nth-child(5) {
-      border-top: 1px solid color-mix(in oklch, var(--border) 55%, transparent);
-    }
-    .arch-stat-bar > div {
-      padding: 0.7rem 0.9rem;
-    }
-  }
-  .arch-stat-label {
-    @apply text-[0.72rem] uppercase tracking-wide text-muted-foreground font-medium;
-  }
-  .arch-stat-value {
-    @apply text-[1.35rem] font-bold tracking-tight mt-0.5;
-    font-variant-numeric: tabular-nums;
-  }
-
-  /* Token cards — the launch grid (dyor/pons structure, our data) */
-  .arch-token-grid {
-    @apply grid gap-4;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  }
-  .arch-token-card {
-    @apply rounded-2xl p-4 flex flex-col gap-3 transition-all;
-    background:
-      linear-gradient(180deg, color-mix(in oklch, var(--card) 90%, white 2%), var(--card));
-    border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
-    box-shadow: var(--shadow-sm);
-  }
-  .arch-token-card:hover {
-    border-color: color-mix(in oklch, var(--primary) 55%, var(--border));
-    box-shadow: var(--shadow-md), 0 0 28px oklch(0.55 0.22 295 / 0.14);
-    transform: translateY(-2px);
-  }
-  .arch-token-row {
-    @apply grid items-center gap-3 rounded-xl px-3 -mx-3 py-2.5 transition-colors;
-    grid-template-columns: 1fr 120px 130px;
-  }
-  .arch-token-row:hover {
-    background: color-mix(in oklch, var(--muted) 65%, transparent);
-  }
-  @media (max-width: 640px) {
-    .arch-token-row { grid-template-columns: 1fr 90px 90px; }
-  }
-  .arch-progress {
-    @apply h-1.5 rounded-full overflow-hidden;
-    background: color-mix(in oklch, var(--muted) 80%, transparent);
-  }
-  .arch-progress > span {
-    @apply block h-full rounded-full;
-    background: var(--brand-gradient-bright);
-  }
-  .arch-divider {
-    @apply border-t border-border my-0;
-  }
-  .arch-footer {
-    @apply mt-16 pt-8 pb-4 text-center;
-    border-top: 1px solid color-mix(in oklch, var(--border) 45%, transparent);
-  }
-}
-
-/* ---- Documentation ---- */
-@layer components {
-  .docs-shell {
-    @apply grid gap-8 max-[860px]:block;
-    grid-template-columns: 220px 1fr;
-    align-items: start;
-  }
-  .docs-sidebar {
-    @apply sticky top-20 max-[860px]:static max-[860px]:mb-6;
-    align-self: start;
-  }
-  .docs-nav-section {
-    @apply mb-5;
-  }
-  .docs-nav-heading {
-    @apply text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5;
-  }
-  .docs-nav-link {
-    @apply block text-sm text-muted-foreground rounded-md px-2.5 py-1.5 -mx-2.5 transition-colors hover:text-foreground;
-  }
-  .docs-nav-link:hover {
-    background: color-mix(in oklch, var(--muted) 70%, transparent);
-  }
-  .docs-content {
-    @apply max-w-[720px] min-w-0;
-  }
-  .docs-content h1 {
-    @apply text-[2rem] font-bold tracking-tight mt-0 mb-3;
-  }
-  .docs-content h2 {
-    @apply text-xl font-semibold mt-9 mb-3;
-  }
-  .docs-content p {
-    @apply text-[0.95rem] leading-7 text-foreground/90 my-3;
-  }
-  .docs-content .docs-lead {
-    @apply text-lg leading-8 text-muted-foreground mb-6;
-  }
-  .docs-content ul,
-  .docs-content ol {
-    @apply my-3 pl-5 flex flex-col gap-2 text-[0.95rem] leading-7 text-foreground/90;
-  }
-  .docs-content ul { @apply list-disc; }
-  .docs-content ol { @apply list-decimal; }
-  .docs-content a {
-    @apply text-accent underline underline-offset-2 hover:text-primary-hover;
-  }
-  .docs-mono {
-    @apply font-mono text-[0.8rem] border border-border rounded px-1.5 py-0.5 break-all;
-    background: var(--muted);
-  }
-  .docs-table {
-    @apply w-full my-4 text-sm border-collapse;
-  }
-  .docs-table th {
-    @apply text-left font-semibold text-muted-foreground border-b border-border pb-2 px-2;
-  }
-  .docs-table td {
-    @apply border-b border-border py-2.5 px-2 align-top;
-  }
-  .docs-callout {
-    @apply my-5 rounded-xl border border-primary/30 px-4 py-3 text-sm leading-6;
-    background: color-mix(in oklch, var(--primary) 8%, transparent);
-  }
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* Subtle staggered content entrance; disabled for reduced motion. */
-@media (prefers-reduced-motion: no-preference) {
-  .arch-stack > *,
-  .arch-hero {
-    animation: slideUp 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
-  .arch-stack > *:nth-child(2) { animation-delay: 0.05s; }
-  .arch-stack > *:nth-child(3) { animation-delay: 0.1s; }
-  .arch-stack > *:nth-child(4) { animation-delay: 0.15s; }
-  .arch-stack > *:nth-child(n + 5) { animation-delay: 0.2s; }
-}
-
-/* Skeleton shimmer for loading states */
-.arch-skeleton {
-  background: linear-gradient(90deg, var(--muted) 25%, color-mix(in oklch, var(--muted), var(--border)) 50%, var(--muted) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.4s ease infinite;
-  border-radius: 0.75rem;
-}
-@keyframes shimmer {
-  from { background-position: 200% 0; }
-  to { background-position: -200% 0; }
-}
-
-/* ---- Responsive helpers ---- */
-@layer components {
-  /* Two-field row (e.g. name + ticker) that stacks on small screens. */
-  .arch-form-grid {
-    @apply grid gap-3;
-    grid-template-columns: 2fr 1fr;
-  }
-  /* Stat tiles that wrap gracefully instead of crushing. */
-  .arch-stat-grid {
-    @apply grid gap-3;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  /* Horizontal scroll shell for data tables on narrow screens. */
-  .arch-scroll-x {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-  .arch-scroll-x > * {
-    min-width: 430px;
-  }
-}
-
-/* ---- Mobile ---- */
-@media (max-width: 640px) {
-  main {
-    padding: 1.5rem 0.9rem 4rem;
-  }
-  .arch-header {
-    gap: 0.6rem;
-    padding: 0.6rem 0.9rem;
-  }
-  .arch-nav {
-    order: 3;
-    width: 100%;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    margin: 0 -0.25rem;
-    padding: 0 0.25rem;
-  }
-  .arch-nav::-webkit-scrollbar { display: none; }
-  .arch-nav a {
-    white-space: nowrap;
-    padding: 0.35rem 0.65rem;
-  }
-  .arch-card {
-    padding: 1.1rem;
-  }
-  .arch-hero {
-    padding-top: 1.25rem;
-    padding-bottom: 1.75rem;
-  }
-  .arch-form-grid {
-    grid-template-columns: 1fr;
-  }
-  .arch-stat-grid {
-    gap: 0.5rem;
-  }
-  .arch-stat-tile {
-    padding: 0.7rem 0.75rem;
-  }
-  .arch-stat-value {
-    font-size: 1.05rem;
-  }
-  .arch-stat-label {
-    font-size: 0.62rem;
-    letter-spacing: 0.02em;
-  }
-  .arch-amount-input,
-  .arch-amount-output {
-    font-size: 1.55rem;
-  }
-  .arch-token-price-big {
-    font-size: 1.4rem;
-  }
-  .arch-hero h1 {
-    font-size: 1.9rem;
-  }
-  .arch-terminal {
-    gap: 0.85rem;
-  }
-  .docs-table {
-    display: block;
-    overflow-x: auto;
-    white-space: nowrap;
-  }
-  .search-hint-text {
-    display: none;
-  }
-}
-
-/* ---------------------------------------------------------------- chains */
-/* Chain picker in the header + chain badges on cards and token pages. */
-
-.arch-chain-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  height: 36px;
-  padding: 0 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--card);
-  color: var(--foreground);
-  font: inherit;
-  font-size: 0.82rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
-}
-.arch-chain-trigger:hover {
-  border-color: color-mix(in oklch, var(--border) 45%, var(--foreground));
-}
-
-.arch-chain-menu {
-  position: absolute;
-  top: calc(100% + 0.4rem);
-  right: 0;
-  z-index: 60;
-  min-width: 232px;
-  padding: 0.3rem;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: color-mix(in oklch, var(--background) 82%, var(--card));
-  backdrop-filter: blur(14px);
-  box-shadow: 0 18px 44px rgb(0 0 0 / 0.45);
-}
-
-.arch-chain-option {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  width: 100%;
-  padding: 0.55rem 0.6rem;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--foreground);
-  font: inherit;
-  font-size: 0.86rem;
-  text-align: left;
-  cursor: pointer;
-}
-.arch-chain-option:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--card) 70%, var(--foreground) 8%);
-}
-.arch-chain-option:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.arch-chain-option-active {
-  background: color-mix(in oklch, var(--card) 60%, var(--foreground) 10%);
-}
-
-.arch-chain-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.28rem;
-  padding: 0.15rem 0.42rem;
-  border: 1px solid color-mix(in oklch, var(--chain-accent, var(--border)) 40%, transparent);
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--chain-accent, var(--card)) 12%, transparent);
-  color: var(--chain-accent, var(--foreground));
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-@media (max-width: 640px) {
-  .arch-chain-trigger-label { display: none; }
-  .arch-chain-trigger { padding: 0 0.5rem; }
-}
-
-/* Chain filter tabs on the launch list. Same pill language as the sort pills,
-   with a greyed state for a chain we currently cannot reach. */
-.arch-chain-filter {
-  display: flex;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.arch-chain-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.44rem 0.8rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--background) 55%, var(--card));
-  color: var(--muted, var(--foreground));
-  font-size: 0.82rem;
-  font-weight: 600;
-  text-decoration: none;
-  white-space: nowrap;
-  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
-}
-.arch-chain-tab:hover {
-  color: var(--foreground);
-  border-color: color-mix(in oklch, var(--chain-accent, var(--foreground)) 45%, var(--border));
-}
-
-.arch-chain-tab-active {
-  color: var(--foreground);
-  border-color: color-mix(in oklch, var(--chain-accent, var(--foreground)) 55%, var(--border));
-  background: color-mix(in oklch, var(--chain-accent, var(--card)) 14%, var(--card));
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--chain-accent, transparent) 18%, transparent) inset;
-}
-
-/* Unreachable: dimmed, but still clickable — the tokens are real and still
-   listed from snapshot, so we never hide the chain. */
-.arch-chain-tab-down {
-  opacity: 0.5;
-  filter: grayscale(1);
-}
-.arch-chain-tab-down:hover { opacity: 0.75; }
-
-.arch-chain-tab-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: #f0a63a;
-  box-shadow: 0 0 0 3px color-mix(in oklch, #f0a63a 22%, transparent);
-}
-
-.arch-chain-tab-marks {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.15rem;
-}
-
-.arch-chain-tab-count {
-  padding: 0.02rem 0.34rem;
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--foreground) 10%, transparent);
-  font-size: 0.7rem;
-  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
-@media (max-width: 520px) {
-  .arch-chain-tab { padding: 0.4rem 0.62rem; font-size: 0.78rem; }
+/* A single, very quiet field of light behind the canvas. It gives the page
+   depth without a hero gradient doing the shouting. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(900px 520px at 12% -8%, oklch(0.655 0.205 292 / 0.10), transparent 62%),
+    radial-gradient(760px 460px at 92% 4%, oklch(0.62 0.16 268 / 0.075), transparent 60%);
 }
 
-/* Chain choice cards on the create form — same pill language, larger tap area. */
-.arch-chain-choices {
+h1, h2, h3, h4 {
+  font-family: var(--font-display), var(--font-inter), system-ui, sans-serif;
+  letter-spacing: -0.02em;
+  font-weight: 650;
+  margin: 0;
+  color: var(--text);
+}
+h1 { font-size: 1.75rem; line-height: 1.15; }
+h2 { font-size: 1.125rem; line-height: 1.25; }
+h3 { font-size: 0.95rem; }
+
+a { color: inherit; text-decoration: none; }
+button { font: inherit; }
+
+::selection { background: var(--accent-quiet); color: var(--text); }
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+/* Scrollbars, so they belong to the product rather than the platform. */
+* { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: var(--r-pill);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: oklch(1 0 0 / 0.22); background-clip: content-box; }
+
+/* ------------------------------------------------------------- app shell --- */
+/* A rail on the left holds product architecture; the topbar holds context and
+   identity. On small screens the rail becomes a bottom bar so the primary
+   workflow survives rather than collapsing into a hamburger. */
+
+.arch-shell {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 0.5rem;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  min-height: 100dvh;
+  position: relative;
+  z-index: 1;
 }
 
-.arch-chain-choice {
+.arch-rail {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 20px 14px;
+  border-right: 1px solid var(--line);
+  background: color-mix(in oklch, var(--bg) 82%, var(--surface));
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+.arch-rail-brand {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  padding: 0.6rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: color-mix(in oklch, var(--background) 55%, var(--card));
-  color: var(--foreground);
-  font: inherit;
-  font-size: 0.85rem;
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
-}
-.arch-chain-choice:hover:not(:disabled) {
-  border-color: color-mix(in oklch, var(--chain-accent, var(--foreground)) 45%, var(--border));
-}
-.arch-chain-choice:disabled { opacity: 0.6; cursor: not-allowed; }
-
-.arch-chain-choice-active {
-  border-color: color-mix(in oklch, var(--chain-accent, var(--foreground)) 60%, var(--border));
-  background: color-mix(in oklch, var(--chain-accent, var(--card)) 13%, var(--card));
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--chain-accent, transparent) 22%, transparent) inset;
+  gap: 10px;
+  padding: 4px 8px 18px;
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 1.02rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
 }
 
-/* Creator-attached links on a token page. Same pill language as everything
-   else; hidden entirely when a creator supplied none. */
-.arch-socials {
+.arch-rail-group {
+  padding: 14px 10px 6px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.arch-rail-link {
   display: flex;
-  gap: 0.35rem;
-  flex-wrap: wrap;
-  margin-top: 0.45rem;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
 }
-.arch-social {
+.arch-rail-link:hover { background: var(--surface); color: var(--text); }
+.arch-rail-link[aria-current="page"] {
+  background: var(--accent-quiet);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.arch-rail-link svg { flex-shrink: 0; opacity: 0.9; }
+
+.arch-rail-foot {
+  margin-top: auto;
+  padding: 12px 10px 0;
+  border-top: 1px solid var(--line);
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  line-height: 1.45;
+}
+
+.arch-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 60px;
+  padding: 0 var(--gutter);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in oklch, var(--bg) 78%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  backdrop-filter: blur(16px) saturate(1.2);
+}
+
+.arch-main {
+  padding: 24px var(--gutter) 72px;
+  max-width: var(--content-max);
+  width: 100%;
+}
+
+/* ------------------------------------------------------------ primitives --- */
+
+.arch-stack { display: grid; gap: 20px; }
+
+/* A panel is a real elevated surface. Use it when content is a distinct
+   object — a form, a trade ticket — not to fence off every paragraph. */
+.arch-card,
+.arch-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 18px;
+}
+
+.arch-panel { padding: 0; overflow: hidden; }
+.arch-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+}
+.arch-panel-foot {
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.arch-note { color: var(--text-muted); font-size: 0.83rem; margin: 0; }
+
+.arch-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.arch-gradient-text {
+  background: linear-gradient(96deg, oklch(0.86 0.10 296), oklch(0.72 0.19 292) 55%, oklch(0.70 0.15 268));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.arch-scroll-x { overflow-x: auto; overscroll-behavior-x: contain; }
+
+/* --------------------------------------------------------------- buttons --- */
+/* Three levels and no more: primary, secondary, quiet. */
+
+.arch-primary-button {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.24rem 0.55rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--background) 55%, var(--card));
-  color: var(--muted, var(--foreground));
-  font-size: 0.74rem;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.9rem;
   font-weight: 600;
-  text-decoration: none;
-  line-height: 1.4;
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  cursor: pointer;
+  transition: background var(--fast) var(--ease), transform var(--fast) var(--ease);
 }
-.arch-social:hover {
-  color: var(--foreground);
-  border-color: color-mix(in oklch, var(--foreground) 32%, var(--border));
-  background: color-mix(in oklch, var(--card) 70%, var(--foreground) 8%);
+.arch-primary-button:hover:not(:disabled) { background: var(--accent-hover); }
+.arch-primary-button:active:not(:disabled) { transform: translateY(1px); }
+.arch-primary-button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.arch-button-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+.arch-button-secondary:hover { background: var(--surface-hover); border-color: var(--accent-line); }
+
+.arch-wallet-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+.arch-wallet-button:hover { background: var(--surface-hover); border-color: var(--accent-line); }
+
+/* ----------------------------------------------------------------- pills --- */
+
+.arch-pills, .arch-chain-filter {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.arch-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.arch-pill:hover { background: var(--surface); color: var(--text); }
+.arch-pill-active {
+  background: var(--surface-raised);
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+/* A segmented control for mutually exclusive views (timeframes, sorts). */
+.arch-segment {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg-subtle);
+}
+.arch-segment > * {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.arch-segment > *:hover { color: var(--text); }
+.arch-segment > [aria-current="true"], .arch-segment > .is-active {
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+.arch-network-pill, .arch-chain-chip, .arch-asset-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ----------------------------------------------------------------- table --- */
+/* The launch list is inventory. A designed table reads faster than a wall of
+   cards and keeps numbers in aligned columns where they can be compared. */
+
+.arch-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.875rem;
+}
+.arch-table thead th {
+  position: sticky;
+  top: 60px;
+  z-index: 2;
+  padding: 10px 14px;
+  text-align: right;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  background: color-mix(in oklch, var(--bg) 88%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.arch-table thead th:first-child { text-align: left; }
+.arch-table tbody td {
+  padding: 12px 14px;
+  text-align: right;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.arch-table tbody td:first-child { text-align: left; white-space: normal; }
+.arch-table tbody tr { transition: background var(--fast) var(--ease); }
+.arch-table tbody tr:hover { background: var(--surface); }
+.arch-table tbody tr:last-child td { border-bottom: 0; }
+
+.arch-num { font-variant-numeric: tabular-nums; font-weight: 600; }
+.arch-num-lg { font-variant-numeric: tabular-nums; font-weight: 650; font-size: 1rem; }
+.arch-delta-up { color: var(--positive); font-variant-numeric: tabular-nums; font-weight: 600; }
+.arch-delta-down { color: var(--negative); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+.arch-ident { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.arch-ident-name { font-weight: 650; letter-spacing: -0.01em; }
+.arch-ident-sub {
+  color: var(--text-faint);
+  font-size: 0.76rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 26ch;
+}
+
+.arch-mono {
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+/* ----------------------------------------------------------------- cards --- */
+
+.arch-token-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  gap: 12px;
+}
+
+.arch-token-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease), transform var(--fast) var(--ease);
+}
+.arch-token-card:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-raised);
+  transform: translateY(-1px);
+}
+
+.arch-token-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 2px 10px;
+}
+
+.arch-token-price-big {
+  font-size: 1.35rem;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------ stat strip --- */
+/* Protocol numbers read as one instrument strip, not five floating tiles. */
+
+.arch-stat-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+.arch-stat-bar > * {
+  padding: 14px 18px;
+  border-right: 1px solid var(--line);
+}
+.arch-stat-bar > *:last-child { border-right: 0; }
+
+.arch-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+.arch-stat-tile {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.arch-stat-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 4px;
+}
+.arch-stat-value {
+  font-size: 1.22rem;
+  font-weight: 660;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------ hero --- */
+/* Restrained: a statement, a subline, two actions. It must not push the actual
+   product below the fold. */
+
+.arch-hero {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 30px 16px 34px;
+}
+.arch-hero h1 {
+  font-size: clamp(1.9rem, 4.2vw, 2.9rem);
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+}
+.arch-hero-logo {
+  display: grid;
+  place-items: center;
+  margin-bottom: 12px;
+  filter: drop-shadow(0 6px 26px oklch(0.655 0.205 292 / 0.42));
+}
+
+.arch-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+/* ----------------------------------------------------------------- steps --- */
+
+.arch-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+}
+.arch-step {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.arch-step-active { background: var(--surface); }
+
+/* ----------------------------------------------------------------- forms --- */
+
+.arch-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.arch-form-row { display: grid; gap: 6px; margin-bottom: 14px; }
+.arch-form-row > label {
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: var(--text-muted);
+  letter-spacing: 0.01em;
+}
+.arch-form-row input,
+.arch-form-row textarea,
+.arch-form-row select {
+  height: 42px;
+  padding: 0 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--bg-subtle);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+.arch-form-row textarea { height: auto; padding: 11px 13px; resize: vertical; min-height: 84px; }
+.arch-form-row input:hover, .arch-form-row textarea:hover { border-color: oklch(1 0 0 / 0.2); }
+.arch-form-row input:focus, .arch-form-row textarea:focus {
+  border-color: var(--accent);
+  background: var(--surface);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-quiet);
+}
+.arch-form-row input::placeholder, .arch-form-row textarea::placeholder { color: var(--text-faint); }
+
+/* ---------------------------------------------------------- trade ticket --- */
+
+.arch-amount-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--bg-subtle);
+  transition: border-color var(--fast) var(--ease);
+}
+.arch-amount-row:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-quiet); }
+.arch-amount-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 1.32rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+.arch-amount-input::placeholder { color: var(--text-faint); }
+.arch-amount-output {
+  font-size: 1.32rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.arch-switch-row { display: grid; place-items: center; margin: -4px 0; }
+.arch-switch-button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease), transform var(--slow) var(--ease);
+}
+.arch-switch-button:hover { color: var(--text); border-color: var(--accent-line); transform: rotate(180deg); }
+
+.arch-pct-chips { display: flex; gap: 6px; }
+.arch-pct-chip, .arch-max-chip {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.arch-pct-chip:hover, .arch-max-chip:hover { background: var(--surface-raised); color: var(--text); }
+
+/* -------------------------------------------------------------- progress --- */
+
+.arch-progress {
+  height: 5px;
+  border-radius: var(--r-pill);
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+.arch-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), oklch(0.74 0.16 300));
+  transition: width var(--slow) var(--ease);
+}
+
+/* ------------------------------------------------------------------ misc --- */
+
+.arch-terminal {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.78rem;
+  background: var(--bg-subtle);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+  color: var(--text-muted);
+  overflow-x: auto;
+}
+
+.arch-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface);
+  border-radius: var(--r-sm);
+}
+.arch-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, oklch(1 0 0 / 0.055), transparent);
+  animation: arch-shimmer 1.4s infinite;
+}
+@keyframes arch-shimmer { to { transform: translateX(100%); } }
+
+.arch-footer {
+  padding: 26px var(--gutter) 34px;
+  border-top: 1px solid var(--line);
+  color: var(--text-faint);
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+/* Legacy header classes: the shell replaced them, but components still mount
+   inside .arch-header-right, so it stays a flex row. */
+.arch-header { display: none; }
+.arch-header-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.arch-nav { display: none; }
+
+/* --------------------------------------------------------------- reduced --- */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .arch-switch-button:hover { transform: none; }
+}
+
+/* ------------------------------------------------------------ responsive --- */
+/* The rail becomes a bottom bar. The primary workflow — browse, create, trade —
+   survives intact; only chrome collapses. */
+
+@media (max-width: 900px) {
+  :root { --gutter: 16px; }
+
+  .arch-shell { grid-template-columns: minmax(0, 1fr); }
+
+  .arch-rail {
+    position: fixed;
+    inset: auto 0 0 0;
+    height: auto;
+    flex-direction: row;
+    justify-content: space-around;
+    gap: 0;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    border-right: 0;
+    border-top: 1px solid var(--line);
+    background: color-mix(in oklch, var(--bg) 92%, var(--surface));
+    z-index: 50;
+  }
+  .arch-rail-brand, .arch-rail-group, .arch-rail-foot { display: none; }
+  .arch-rail-link {
+    flex-direction: column;
+    gap: 3px;
+    padding: 6px 8px;
+    font-size: 0.66rem;
+    font-weight: 600;
+    flex: 1;
+    justify-content: center;
+    text-align: center;
+  }
+  .arch-rail-link[aria-current="page"] { box-shadow: none; background: var(--accent-quiet); }
+
+  .arch-main { padding-bottom: 88px; }
+  .arch-table thead th { top: 56px; padding: 9px 10px; }
+  .arch-table tbody td { padding: 10px; }
+  .arch-topbar { height: 56px; }
+  .arch-footer { padding-bottom: 96px; }
+}
+
+@media (max-width: 560px) {
+  .arch-hero { padding: 20px 8px 26px; }
+  .arch-stat-bar > * { padding: 12px 14px; }
+  .arch-token-grid { grid-template-columns: 1fr; }
 }
