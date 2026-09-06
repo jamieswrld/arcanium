@@ -103,12 +103,17 @@ const CHAIN_IMAGES_TTL_MS = 300_000;
 /**
  * How far back to look for Launched events.
  *
- * Arc's public RPC refuses a getLogs range much above 10k blocks, so this is
- * walked in chunks. It used to be requested as a single 400k-block call, which
- * failed every single time and was swallowed by a .catch — meaning on-chain
- * logos and socials never resolved at all and only the DB mirror worked.
+ * Deliberately short. Arc's RPC caps a getLogs range near 10k blocks, so this is
+ * chunked — and at 400k blocks that meant 172 requests bursting 24-wide, about
+ * eight seconds, against an RPC that drops large bursts. That is far too much
+ * work to put in front of a page.
+ *
+ * It does not need to be long, because anything found here is written straight
+ * into the metadata mirror and never looked up again. The mirror is the real
+ * source; this is only a net for launches the mirror has not caught yet, and it
+ * shrinks to nothing as the mirror fills.
  */
-const LOOKBACK_BLOCKS = 400_000n;
+const LOOKBACK_BLOCKS = 38_000n;
 const LOG_CHUNK = 9_500n;
 const LOG_CONCURRENCY = 6;
 /** Launch metadata is immutable, so a hit is good for a long time. */
@@ -157,6 +162,10 @@ async function fetchLaunchedLogs(chain: LaunchChain): Promise<LaunchedLog[]> {
       // Leave what we have; callers degrade to the DB mirror or no logo.
     }
     launchLogCache.set(chain.key, { at: Date.now(), logs: out });
+    // Write through to the mirror. Launch metadata is immutable, so once a
+    // token is recorded the chain never has to be walked for it again — the
+    // fallback narrows itself over time instead of running forever.
+    void mirrorLaunches(out);
     return out;
   })();
 
@@ -168,6 +177,33 @@ async function fetchLaunchedLogs(chain: LaunchChain): Promise<LaunchedLog[]> {
   }
 }
 const chainImages = new Map<ChainKey, { at: number; map: Record<string, string> }>();
+
+/** Best-effort write-through of discovered launch metadata. */
+async function mirrorLaunches(logs: readonly LaunchedLog[]): Promise<void> {
+  const sql = getDb();
+  if (sql === null || logs.length === 0) return;
+  try {
+    await sql`
+      CREATE TABLE IF NOT EXISTS token_metadata (
+        token_address text PRIMARY KEY,
+        metadata_uri text NOT NULL,
+        saved_at timestamptz NOT NULL DEFAULT now()
+      )
+    `;
+    for (const log of logs) {
+      const token = log.args.token;
+      const uri = log.args.metadataUri;
+      if (token === undefined || uri === undefined || uri === "") continue;
+      await sql`
+        INSERT INTO token_metadata (token_address, metadata_uri)
+        VALUES (${token.toLowerCase()}, ${uri})
+        ON CONFLICT (token_address) DO NOTHING
+      `;
+    }
+  } catch {
+    // Mirror unavailable; the chain fallback still served this request.
+  }
+}
 
 async function imagesFromChain(chain: LaunchChain): Promise<Record<string, string>> {
   const hit = chainImages.get(chain.key);
