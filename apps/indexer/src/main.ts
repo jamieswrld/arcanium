@@ -43,6 +43,11 @@ const launchedEvent = parseAbiItem(
 const swapEvent = parseAbiItem(
   "event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)",
 );
+const transferEvent = parseAbiItem(
+  "event Transfer(address indexed from, address indexed to, uint256 value)",
+);
+
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 const CANDLE_INTERVALS = [60, 300, 900, 3600, 14400, 86400];
 
@@ -211,6 +216,19 @@ async function rewindIfReorged(cfg: IndexerConfig, stream: string): Promise<void
     await sql`DELETE FROM candles WHERE bucket_start >= ${day}`;
     await refreshCandles(sql, day);
   }
+  // Holder balances are accumulated, so there is no "re-scan the range" fix:
+  // the orphaned deltas are already folded into a running total that cannot be
+  // unpicked. Start that table over instead. Reorgs are rare and the re-walk is
+  // ~750 requests, which is a fair price for a balance that is actually right.
+  if (stream === "holders:all") {
+    await sql`DELETE FROM holders WHERE token_address IN (SELECT token_address FROM tokens WHERE chain_id = ${chainId})`;
+    await sql`
+      UPDATE indexer_cursors SET block_number = ${cfg.startBlock.toString()}
+      WHERE chain_id = ${chainId} AND stream = ${stream}
+    `;
+    return;
+  }
+
   await sql`
     UPDATE indexer_cursors SET block_number = ${to.toString()}
     WHERE chain_id = ${chainId} AND stream = ${stream}
@@ -494,6 +512,105 @@ async function indexSwaps(cfg: IndexerConfig, blocks: BlockCache): Promise<void>
   }
 }
 
+/* ------------------------------------------------------------------ holders */
+
+/**
+ * Who holds each token, from Transfer events.
+ *
+ * The website used to work this out in the browser: a chunked walk back over
+ * Transfer logs, summing deltas. It never returned anything. The chunk size was
+ * 45,000 blocks and Arc rejects any getLogs range much over 10,000, so the very
+ * first request threw, the loop broke, and the only rows left were the pool and
+ * creator balances the code sets explicitly afterwards. Every token page has
+ * shown a two-row holders list for its entire life.
+ *
+ * Even had the chunk size been legal, 24 chunks reaches 1.08M blocks and these
+ * tokens have 6.6M blocks of history — so anyone who bought at launch and simply
+ * held would have summed to zero and been filtered out. The holders list would
+ * have shown recent movers, which is not what it says.
+ *
+ * Balances are accumulated, not recomputed, so a reorg cannot be absorbed by
+ * re-scanning: rewindIfReorged wipes this table and restarts the walk instead.
+ */
+async function indexHolders(cfg: IndexerConfig, blocks: BlockCache): Promise<void> {
+  const { arc, sql, chainId } = cfg;
+  const tokens = await sql<{ token_address: Buffer }[]>`
+    SELECT token_address FROM tokens WHERE chain_id = ${chainId}
+  `;
+  if (tokens.length === 0) return;
+  const addresses = tokens.map((t) => `0x${t.token_address.toString("hex")}` as Hex);
+  const known = new Map(addresses.map((a, i) => [a.toLowerCase(), tokens[i]!.token_address]));
+
+  const stream = "holders:all";
+  const head = (await arc.getBlockNumber()) - CONFIRMATIONS;
+  const launchesAt = (await getCursor(sql, chainId, "launches:all")) ?? cfg.startBlock;
+  const tip = launchesAt < head ? launchesAt : head;
+  const from = (await getCursor(sql, chainId, stream)) ?? cfg.startBlock;
+  if (from > tip) return;
+
+  let chunksDone = 0;
+  for (let start = from; start <= tip; start += CHUNK) {
+    const end = start + CHUNK - 1n < tip ? start + CHUNK - 1n : tip;
+    const logs = await arc
+      .getLogs({ address: addresses, event: transferEvent, fromBlock: start, toBlock: end })
+      .catch((err: unknown) => {
+        log.warn({ err, start: start.toString(), end: end.toString() }, "transfer chunk failed");
+        return null;
+      });
+    if (logs === null) break;
+
+    if (logs.length > 0) {
+      // Net the chunk in memory first: a busy range touches the same wallet many
+      // times, and one row per Transfer would be a wasteful write.
+      const deltas = new Map<string, { token: Buffer; holder: Buffer; delta: bigint }>();
+      const bump = (tokenBuf: Buffer, who: string, delta: bigint): void => {
+        if (who.toLowerCase() === ZERO_ADDRESS) return; // mint and burn have no holder
+        const key = `${tokenBuf.toString("hex")}:${who.toLowerCase()}`;
+        const row = deltas.get(key);
+        if (row === undefined) deltas.set(key, { token: tokenBuf, holder: addr(who), delta });
+        else row.delta += delta;
+      };
+
+      for (const l of logs) {
+        const tokenBuf = known.get(l.address.toLowerCase());
+        if (tokenBuf === undefined) continue;
+        const value = l.args.value ?? 0n;
+        if (value === 0n) continue;
+        bump(tokenBuf, l.args.from ?? ZERO_ADDRESS, -value);
+        bump(tokenBuf, l.args.to ?? ZERO_ADDRESS, value);
+      }
+
+      const rows = [...deltas.values()]
+        .filter((r) => r.delta !== 0n)
+        .map((r) => ({
+          token_address: r.token,
+          holder: r.holder,
+          balance: r.delta.toString(),
+          updated_block: end.toString(),
+        }));
+
+      if (rows.length > 0) {
+        await sql`
+          INSERT INTO holders ${sql(rows as unknown as Record<string, unknown>[])}
+          ON CONFLICT (token_address, holder) DO UPDATE SET
+            balance = holders.balance + EXCLUDED.balance,
+            updated_block = EXCLUDED.updated_block
+        `;
+        log.info({ transfers: logs.length, wallets: rows.length, end: end.toString() }, "holders updated");
+      }
+    }
+
+    const endBlock = await blocks.get(end);
+    await setCursor(sql, chainId, stream, end, endBlock.hash);
+    if (++chunksDone % HEALTH_EVERY_CHUNKS === 0) await publishHealth(cfg, head);
+    if (end < tip) await sleep(CHUNK_DELAY_MS);
+  }
+
+  // A wallet that sends its whole balance away nets to zero; it is not a holder
+  // and should not sit in the table forever.
+  await sql`DELETE FROM holders WHERE balance <= 0`;
+}
+
 /* ------------------------------------------------- liquidity + graduation */
 
 /**
@@ -634,6 +751,16 @@ async function rollup(cfg: IndexerConfig): Promise<void> {
 
   await cfg.sql`
     UPDATE token_stats ts SET
+      holder_count = COALESCE(h.n, 0)
+    FROM tokens t
+    LEFT JOIN (
+      SELECT token_address, COUNT(*) AS n FROM holders WHERE balance > 0 GROUP BY token_address
+    ) h ON h.token_address = t.token_address
+    WHERE ts.token_address = t.token_address
+  `;
+
+  await cfg.sql`
+    UPDATE token_stats ts SET
       buy_count = COALESCE(a.buys, 0),
       sell_count = COALESCE(a.sells, 0),
       volume_24h_usd_e6 = COALESCE(w.vol, 0),
@@ -762,8 +889,10 @@ async function main(): Promise<void> {
     try {
       await rewindIfReorged(cfg, "swaps:all");
       await rewindIfReorged(cfg, "launches:all");
+      await rewindIfReorged(cfg, "holders:all");
       await indexLaunches(cfg, blocks);
       await indexSwaps(cfg, blocks);
+      await indexHolders(cfg, blocks);
       await refreshPools(cfg);
       await rollup(cfg);
       await mirrorMetadata(cfg);

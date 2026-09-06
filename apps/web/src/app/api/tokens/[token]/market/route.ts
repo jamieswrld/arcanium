@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { getChain } from "@/lib/chains";
 
 /**
  * Persistent market data for a token: full candle history (per interval) and
@@ -27,17 +28,22 @@ export async function GET(
   const requested = Number.parseInt(params.get("trades") ?? "100", 10);
   const tradeLimit = Number.isFinite(requested) ? Math.min(Math.max(requested, 1), 2000) : 100;
   const tokenBuf = Buffer.from(token.slice(2), "hex");
+  // This database still holds rows from an old Arc *testnet* run. Without the
+  // chain filter a testnet token's trades would render on the mainnet site.
+  const chainId = getChain("arc").id;
   try {
     const [candles, trades] = await Promise.all([
       sql<Record<string, string>[]>`
         SELECT bucket_start, open_usd_e18, high_usd_e18, low_usd_e18, close_usd_e18, volume_usd_e6, trade_count
-        FROM candles WHERE token_address = ${tokenBuf} AND interval_seconds = ${interval}
+        FROM candles c
+        WHERE c.token_address = ${tokenBuf} AND c.interval_seconds = ${interval}
+          AND EXISTS (SELECT 1 FROM tokens t WHERE t.token_address = c.token_address AND t.chain_id = ${chainId})
         ORDER BY bucket_start ASC LIMIT 1000
       `,
       sql<Record<string, unknown>[]>`
         SELECT tx_hash, block_number, block_time, is_buy, amount_token, volume_usd_e6,
                price_usd_e18, recipient
-        FROM swaps WHERE token_address = ${tokenBuf}
+        FROM swaps WHERE token_address = ${tokenBuf} AND chain_id = ${chainId}
         ORDER BY block_time DESC LIMIT ${tradeLimit}
       `,
     ]);

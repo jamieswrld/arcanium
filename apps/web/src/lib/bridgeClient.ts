@@ -11,8 +11,10 @@ import { base, baseSepolia } from "viem/chains";
  * Addresses come from NEXT_PUBLIC env (set in Vercel), never hardcoded.
  */
 
+const ARC_CHAIN_ID = Number(process.env["NEXT_PUBLIC_ARC_CHAIN_ID"] ?? "5042");
+
 export const arcTestnet = defineChain({
-  id: Number(process.env["NEXT_PUBLIC_ARC_CHAIN_ID"] ?? "5042"),
+  id: ARC_CHAIN_ID,
   name: process.env["NEXT_PUBLIC_ARC_CHAIN_NAME"] ?? "Arc",
   nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
   rpcUrls: {
@@ -23,6 +25,15 @@ export const arcTestnet = defineChain({
   blockExplorers: {
     default: { name: "Arc Explorer", url: process.env["NEXT_PUBLIC_ARC_EXPLORER_URL"] ?? "https://arc-mainnet.cloud.blockscout.com" },
   },
+  // Multicall3 is deployed on Arc mainnet at the canonical address (verified
+  // on-chain: 7,618 bytes of code). Declaring it is what lets viem fold a burst
+  // of reads into one request — without it every balanceOf is its own eth_call,
+  // and Arc drops a measurable share of any large parallel burst, which the
+  // callers turn into a silent 0n. Only declared for 5042: the canonical
+  // deployment is not guaranteed on any other id this env var could name.
+  ...(ARC_CHAIN_ID === 5042
+    ? { contracts: { multicall3: { address: "0xcA11bde05977b3631167028862bE2a173976CA11" as Hex } } }
+    : {}),
   testnet: process.env["NEXT_PUBLIC_ARC_CHAIN_ID"] !== "5042",
 });
 

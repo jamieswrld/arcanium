@@ -2,6 +2,7 @@ import "server-only";
 import type { Hex } from "viem";
 import { getDb } from "@/lib/db";
 import { isHidden, type LaunchpadToken } from "@/lib/launchpad";
+import { getChain } from "@/lib/chains";
 
 /**
  * Reading the launchpad out of Postgres instead of off the chain.
@@ -21,6 +22,18 @@ import { isHidden, type LaunchpadToken } from "@/lib/launchpad";
  * on-chain path, so the site behaves exactly as it does today if the indexer
  * stops — slower, but never wrong and never empty.
  */
+
+/**
+ * Every query here is scoped to Arc mainnet.
+ *
+ * This database has been indexed against Arc testnet in the past, and those
+ * rows are still in it — one token and one swap on chain 5042002. The tables
+ * carry a chain_id for exactly this reason; leaving it out of the WHERE clause
+ * put a token with no code on mainnet into the live listing. Nothing is deleted
+ * to fix that: the rows are real history for the chain they belong to, they
+ * simply are not this chain.
+ */
+const CHAIN_ID = getChain("arc").id;
 
 /** Beyond this the indexer is treated as dead and the chain path takes over. */
 const MAX_STALENESS_MS = 120_000;
@@ -48,7 +61,7 @@ export async function indexerHealth(): Promise<IndexerHealth | null> {
   try {
     const rows = await sql<HealthRow[]>`
       SELECT tip_block, launches_block, swaps_block, updated_at
-      FROM indexer_health ORDER BY updated_at DESC LIMIT 1
+      FROM indexer_health WHERE chain_id = ${CHAIN_ID}
     `;
     const row = rows[0];
     if (row === undefined) return null;
@@ -120,6 +133,7 @@ export async function indexedTokens(): Promise<LaunchpadToken[] | null> {
         s.price_usd_e18, s.market_cap_usd_e6, s.quote_balance
       FROM tokens t
       LEFT JOIN token_stats s ON s.token_address = t.token_address
+      WHERE t.chain_id = ${CHAIN_ID}
       ORDER BY t.launch_time DESC
     `;
     // Hiding lives in fetchAllTokens on the chain path, so it has to be applied
@@ -166,7 +180,7 @@ export async function indexedToken(address: string): Promise<LaunchpadToken | nu
         s.price_usd_e18, s.market_cap_usd_e6, s.quote_balance
       FROM tokens t
       LEFT JOIN token_stats s ON s.token_address = t.token_address
-      WHERE t.token_address = ${Buffer.from(address.slice(2), "hex")}
+      WHERE t.token_address = ${Buffer.from(address.slice(2), "hex")} AND t.chain_id = ${CHAIN_ID}
     `;
     const r = rows[0];
     if (r === undefined) return null;
@@ -217,8 +231,9 @@ export async function indexedMarketStats(): Promise<Record<string, IndexedMarket
   if (sql === null) return null;
   try {
     const rows = await sql<StatRow[]>`
-      SELECT token_address, volume_24h_usd_e6, change_24h_bps, buy_count, sell_count
-      FROM token_stats
+      SELECT ts.token_address, ts.volume_24h_usd_e6, ts.change_24h_bps, ts.buy_count, ts.sell_count
+      FROM token_stats ts
+      JOIN tokens t ON t.token_address = ts.token_address AND t.chain_id = ${CHAIN_ID}
     `;
     const out: Record<string, IndexedMarketStat> = {};
     for (const r of rows) {
@@ -266,7 +281,7 @@ export async function indexedMarketWindow(
         (ARRAY_AGG(price_usd_e18 ORDER BY block_number, log_index))[1]::text           AS first_price,
         (ARRAY_AGG(price_usd_e18 ORDER BY block_number DESC, log_index DESC))[1]::text AS last_price
       FROM swaps
-      WHERE block_time > now() - make_interval(hours => ${hours})
+      WHERE chain_id = ${CHAIN_ID} AND block_time > now() - make_interval(hours => ${hours})
       GROUP BY token_address
     `;
     const out = new Map<string, { volumeUnits: bigint; trades: number; changePct: number | null }>();
@@ -332,6 +347,7 @@ export async function indexedPulse(limit = 24): Promise<IndexedActivity[] | null
           s.tx_hash
         FROM swaps s
         JOIN tokens t ON t.token_address = s.token_address
+        WHERE s.chain_id = ${CHAIN_ID}
         ORDER BY s.block_time DESC, s.log_index DESC
         LIMIT ${limit}
       )
@@ -339,6 +355,7 @@ export async function indexedPulse(limit = 24): Promise<IndexedActivity[] | null
       (
         SELECT 'launch', token_address, symbol, '0', launch_block::text, launch_time, launch_tx_hash
         FROM tokens
+        WHERE chain_id = ${CHAIN_ID}
         ORDER BY launch_time DESC
         LIMIT ${limit}
       )
@@ -380,10 +397,10 @@ export async function indexedProtocolStats(): Promise<IndexedProtocolStats | nul
   try {
     const rows = await sql<{ vol: string | null; trades: string; launches: string; grad: string }[]>`
       SELECT
-        (SELECT COALESCE(SUM(volume_usd_e6), 0)::text FROM swaps)            AS vol,
-        (SELECT COUNT(*)::text FROM swaps)                                    AS trades,
-        (SELECT COUNT(*)::text FROM tokens)                                   AS launches,
-        (SELECT COUNT(*)::text FROM tokens WHERE graduated)                   AS grad
+        (SELECT COALESCE(SUM(volume_usd_e6), 0)::text FROM swaps WHERE chain_id = ${CHAIN_ID})  AS vol,
+        (SELECT COUNT(*)::text FROM swaps WHERE chain_id = ${CHAIN_ID})                         AS trades,
+        (SELECT COUNT(*)::text FROM tokens WHERE chain_id = ${CHAIN_ID})                        AS launches,
+        (SELECT COUNT(*)::text FROM tokens WHERE chain_id = ${CHAIN_ID} AND graduated)          AS grad
     `;
     const r = rows[0];
     if (r === undefined) return null;

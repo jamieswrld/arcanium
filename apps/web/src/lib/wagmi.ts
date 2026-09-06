@@ -17,6 +17,22 @@ export const wagmiConfig = createConfig({
   chains: [arcTestnet, base],
   connectors: [injected({ shimDisconnect: true })],
   multiInjectedProviderDiscovery: true,
+  /**
+   * Fold bursts of reads into one Multicall3 request.
+   *
+   * Without this every hook doing a read makes its own eth_call. The portfolio
+   * alone fires one balanceOf per launched token, and Arc drops a measurable
+   * share of a parallel burst that size — measured at 40 in flight, 22 came
+   * back. Each dropped call is caught and turned into 0n by its caller, so the
+   * failure mode was a balance quietly reading zero rather than an error.
+   *
+   * The server-side client has had this since it was written; the browser never
+   * did.
+   */
+  batch: {
+    [arcTestnet.id]: { multicall: { wait: 16, batchSize: 512 } },
+    [base.id]: { multicall: true },
+  },
   transports: {
     [arcTestnet.id]: arcTransport({ browser: true }),
     [base.id]: fallback([

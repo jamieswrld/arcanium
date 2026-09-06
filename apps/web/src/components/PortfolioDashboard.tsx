@@ -66,6 +66,33 @@ function Eyebrow({ children }: { readonly children: React.ReactNode }) {
  * center with per-token pending/claimed rewards and one-click claims.
  * All money math is bigint; floats appear only at render.
  */
+/**
+ * "You created this" mark.
+ *
+ * Was a literal crown emoji, which renders as full-colour vendor artwork and
+ * sits badly against a monochrome line-icon set. Drawn the same way as the
+ * social icons — one stroke weight, currentColor — so it takes the accent from
+ * whatever it sits in.
+ */
+function CreatorMark() {
+  return (
+    <svg
+      width={12}
+      height={12}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinejoin="round"
+      aria-hidden
+      style={{ color: "var(--accent)", verticalAlign: "-1px" }}
+    >
+      <title>Created by you</title>
+      <path d="M3 7l4.5 4L12 4l4.5 7L21 7l-1.8 10H4.8L3 7z" />
+    </svg>
+  );
+}
+
 export function PortfolioDashboard({
   tokens,
   chainKey = "arc",
@@ -306,7 +333,7 @@ export function PortfolioDashboard({
                     <span style={{ display: "flex", alignItems: "center", gap: "0.6rem", minWidth: 0 }}>
                       <TokenAvatar image={t.image} symbol={t.symbol} size={34} radius={10} />
                       <span style={{ minWidth: 0 }}>
-                        <strong>{t.symbol}</strong> {mine ? <span title="Created by you">👑</span> : null}{" "}
+                        <strong>{t.symbol}</strong> {mine ? <CreatorMark /> : null}{" "}
                         <span className="arch-note" style={{ whiteSpace: "nowrap" }}>{t.name}</span>
                       </span>
                     </span>
@@ -352,7 +379,9 @@ export function PortfolioDashboard({
                     <TokenAvatar image={c.image} symbol={c.symbol} size={46} radius={12} />
                     <div>
                       <strong style={{ fontSize: "1.05rem" }}>{c.name}</strong>
-                      <div className="arch-note">${c.symbol} · Position #{c.positionId} · Created by you 👑</div>
+                      <div className="arch-note">
+                        ${c.symbol} · Position #{c.positionId} · Created by you <CreatorMark />
+                      </div>
                     </div>
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "0.6rem" }}>

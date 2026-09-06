@@ -43,11 +43,20 @@ interface MarketPanelsProps {
   readonly chainKey?: ChainKey;
 }
 
-/** Blockdaemon caps eth_getLogs at 100k blocks and 20k results per call, so
- *  history is walked back in chunks. Pool-filtered chunks are tiny, so the
- *  only real stop conditions are genesis or the node's pruning horizon. */
-const CHUNK = 45_000n;
-const MAX_CHUNKS = 24; // ~1M blocks ≈ days of sub-second Arc blocks — full token history
+/**
+ * Arc rejects any getLogs range much above 10,000 blocks — measured: 9,000
+ * succeeds, 45,000 is refused outright.
+ *
+ * This was 45,000, sized for Blockdaemon's 100k cap, which meant the very first
+ * request of every walk below threw and the loop broke immediately. Neither the
+ * chart's history nor the holders list ever loaded a single log from it.
+ *
+ * These walks are now only a fallback for when the indexer is unavailable, so
+ * the chunk count buys depth rather than speed: 40 x 9,000 is ~360k blocks,
+ * about two days of Arc. Full history comes from the indexer.
+ */
+const CHUNK = 9_000n;
+const MAX_CHUNKS = 40;
 const POLL_MS = 2_000; // fast: new trades and price land within ~a block or two
 
 const INTERVALS = [
@@ -128,6 +137,19 @@ async function fetchIndexedHistory(token: Hex): Promise<SwapPoint[] | null> {
       tokenAmount: BigInt(t.amountToken),
       txHash: t.txHash as Hex,
     }));
+  } catch {
+    return null;
+  }
+}
+
+/** Top holders from the indexer, or null when it cannot answer. */
+async function fetchIndexedHolders(token: Hex): Promise<Array<{ wallet: Hex; balance: bigint }> | null> {
+  try {
+    const res = await fetch(`/api/tokens/${token}/holders`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { holders?: Array<{ wallet: string; balance: string }> };
+    if (body.holders === undefined) return null;
+    return body.holders.map((h) => ({ wallet: h.wallet as Hex, balance: BigInt(h.balance) }));
   } catch {
     return null;
   }
@@ -265,6 +287,13 @@ export function MarketPanels({ pool, token, pairToken, symbol, creator, chainKey
     if (arcPublic === undefined || tab !== "holders" || holders !== null) return;
     let cancelled = false;
     (async () => {
+      // Real balances over the token's whole history, in one request. The walk
+      // below is the fallback and can only reach a couple of days back.
+      const indexed = await fetchIndexedHolders(token);
+      if (indexed !== null) {
+        if (!cancelled) setHolders(indexed);
+        return;
+      }
       const tip = await arcPublic.getBlockNumber();
       const balances = new Map<string, bigint>();
       // Chunked walk-back over Transfer logs (same RPC limits as swaps).
