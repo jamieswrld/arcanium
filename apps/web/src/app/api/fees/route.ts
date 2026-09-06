@@ -52,7 +52,9 @@ export async function GET(request: Request): Promise<NextResponse> {
         SUM(f.creator_reward + f.protocol_reward)::text     AS gross
       FROM fee_distributions f
       JOIN tokens t ON t.token_address = f.token_address AND t.chain_id = ${getChain("arc").id}
-      WHERE f.token_address = ANY(${keys})
+      -- IN over a value list, not = ANY(array): postgres.js sends a bytea[] that
+      -- Postgres rejects with "op ANY/ALL (array) requires array on right side".
+      WHERE f.token_address IN ${sql(keys)}
       GROUP BY f.token_address
     `;
     const fees: Record<string, { creator: string; gross: string }> = {};
@@ -60,7 +62,10 @@ export async function GET(request: Request): Promise<NextResponse> {
       fees[`0x${r.token_address.toString("hex")}`] = { creator: r.creator, gross: r.gross };
     }
     return NextResponse.json({ fees, source: "indexer" });
-  } catch {
+  } catch (err) {
+    // Logged, not swallowed: this route failing looks identical to a creator
+    // having earned nothing, which is the exact confusion it exists to end.
+    console.error("[api/fees] query failed", err);
     return NextResponse.json({ error: "query failed" }, { status: 502 });
   }
 }

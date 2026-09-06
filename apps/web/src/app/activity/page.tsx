@@ -36,7 +36,10 @@ export default async function ActivityPage({ searchParams }: ActivityProps) {
 
   const arc = getChain("arc");
   const result = await getChainTokens(arc);
-  const events = await withTimeout(fetchPulse(result.tokens), [] as PulseEvent[], 9_000, "activity feed");
+  // The full feed, not Explore's sidebar slice. The filters below are only
+  // useful with enough rows to filter — "Launches" over 24 mixed events is
+  // usually two or three.
+  const events = await withTimeout(fetchPulse(result.tokens, 150), [] as PulseEvent[], 9_000, "activity feed");
   const rows = filter === "all" ? events : events.filter((e) => e.kind === filter);
 
   return (

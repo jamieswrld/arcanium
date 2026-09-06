@@ -49,8 +49,9 @@ export interface PulseEvent {
   readonly txHash: Hex;
 }
 
-let cache: { at: number; value: PulseEvent[] } | null = null;
-let inFlight: Promise<PulseEvent[]> | null = null;
+/** Cached per requested size: Explore wants a sidebar's worth, /activity a page. */
+const cache = new Map<number, { at: number; value: PulseEvent[] }>();
+const inFlight = new Map<number, Promise<PulseEvent[]>>();
 
 function toUsdMicro(raw: bigint, decimals: number): bigint {
   if (decimals === 6) return raw;
@@ -58,13 +59,13 @@ function toUsdMicro(raw: bigint, decimals: number): bigint {
   return raw * 10n ** BigInt(6 - decimals);
 }
 
-async function build(tokens: readonly LaunchpadToken[]): Promise<PulseEvent[]> {
+async function build(tokens: readonly LaunchpadToken[], limit: number): Promise<PulseEvent[]> {
   if (tokens.length === 0) return [];
 
   // The indexer already has both halves of this feed in time order. Age comes
   // from the stored block timestamp rather than being estimated from a block
   // delta, so a row's "12s ago" is the real thing.
-  const indexed = await indexedPulse(24).catch(() => null);
+  const indexed = await indexedPulse(limit).catch(() => null);
   if (indexed !== null) {
     const now = Date.now();
     return indexed.map((e) => ({
@@ -137,21 +138,35 @@ async function build(tokens: readonly LaunchpadToken[]): Promise<PulseEvent[]> {
 
   return out
     .sort((a, b) => (b.blockNumber > a.blockNumber ? 1 : b.blockNumber < a.blockNumber ? -1 : 0))
-    .slice(0, 24);
+    .slice(0, limit);
 }
 
-/** Recent activity, cached briefly so the feed does not re-derive per render. */
-export async function fetchPulse(tokens: readonly LaunchpadToken[]): Promise<PulseEvent[]> {
-  if (cache !== null && Date.now() - cache.at < TTL_MS) return cache.value;
-  if (inFlight !== null) return inFlight;
-  inFlight = (async () => {
-    const value = await build(tokens).catch(() => [] as PulseEvent[]);
-    cache = { at: Date.now(), value };
+/**
+ * Recent activity, cached briefly so the feed does not re-derive per render.
+ *
+ * `limit` exists because /activity is the full feed and Explore's sidebar is
+ * not. On the chain path a bigger feed meant more work; against the indexer it
+ * is the same single query with a different LIMIT, so the page that wants a
+ * hundred rows can simply have them.
+ */
+export async function fetchPulse(
+  tokens: readonly LaunchpadToken[],
+  limit = 24,
+): Promise<PulseEvent[]> {
+  const hit = cache.get(limit);
+  if (hit !== undefined && Date.now() - hit.at < TTL_MS) return hit.value;
+  const pending = inFlight.get(limit);
+  if (pending !== undefined) return pending;
+
+  const run = (async () => {
+    const value = await build(tokens, limit).catch(() => [] as PulseEvent[]);
+    cache.set(limit, { at: Date.now(), value });
     return value;
   })();
+  inFlight.set(limit, run);
   try {
-    return await inFlight;
+    return await run;
   } finally {
-    inFlight = null;
+    inFlight.delete(limit);
   }
 }

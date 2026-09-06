@@ -919,6 +919,10 @@ async function mirrorMetadata(cfg: IndexerConfig): Promise<void> {
     FROM tokens
     WHERE chain_id = ${chainId} AND metadata_uri <> ''
     ON CONFLICT (token_address) DO UPDATE SET metadata_uri = EXCLUDED.metadata_uri
+    -- Only when it actually changed. Without this the mirror rewrites every row
+    -- on every cycle: twenty upserts every twelve seconds, forever, to store
+    -- exactly what was already there.
+    WHERE token_metadata.metadata_uri IS DISTINCT FROM EXCLUDED.metadata_uri
   `;
 }
 

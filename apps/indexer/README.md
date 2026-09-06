@@ -31,17 +31,30 @@ Page loads become indexed Postgres queries.
    block range. Name, symbol and fee mode are read once and stored.
 3. **Swaps** — one `getLogs` across *all pools* per range, shared cursor. Rows
    are bulk-inserted per chunk.
-4. **Pool refresh** — quote balance per pool via Multicall3; graduation at 9,000
+4. **Holders** — Transfer events across all launch tokens, netted per chunk and
+   applied as balance deltas.
+5. **Fees** — `FeesDistributed` across every distributor generation.
+6. **Pool refresh** — quote balance per pool via Multicall3; graduation at 9,000
    USDC.
-5. **Rollup** — price, market cap, 24h volume, 24h change, buy/sell counts, all
-   derived in SQL from the `swaps` table.
-6. **Metadata mirror** — `metadata_uri` copied into `token_metadata`, which is
+7. **Rollup** — price, market cap, 24h volume, 24h change, buy/sell counts,
+   holder count and payout totals, all derived in SQL.
+8. **Metadata mirror** — `metadata_uri` copied into `token_metadata`, which is
    where the site reads token logos and socials from.
-7. **Health** — tip, cursor positions and timestamp into `indexer_health`.
+9. **Health** — tip, cursor positions and timestamp into `indexer_health`.
 
-Everything derived is recomputed from raw swaps rather than accumulated, so
+The swaps, holders and fees walks never run past where launches have been read.
+If a launch chunk fails and stalls, a pool or token discovered later would
+otherwise already be behind those cursors, and its early history would never be
+read — a hole nothing retries.
+
+Everything derived is recomputed from raw rows rather than accumulated, so
 re-scanning a range is always safe. That property is what makes restarts,
 rewinds and backfills boring.
+
+Holder balances are the one exception: they accumulate, because recomputing them
+would mean re-reading every Transfer ever. A reorg therefore cannot be absorbed
+by re-scanning, and `rewindIfReorged` wipes the `holders` table and restarts that
+walk instead. Reorgs are rare and the re-walk is ~750 requests.
 
 ## Cost of a full backfill
 
@@ -51,7 +64,11 @@ From the v1 factory at block 12,775,070 to the tip is ~6.7M blocks.
 | --- | --- |
 | launches (4 factories, one walk) | ~750 |
 | swaps (all pools, one walk) | ~750 |
+| holders (all tokens, one walk) | ~750 |
+| fees (3 distributors, one walk) | ~750 |
 | block timestamps | one per block containing a log |
+
+Measured: the first full backfill took 13.6 minutes for launches and swaps.
 
 Walking per factory and per token instead — which is what the first version did
 — would have been ~3,000 and ~15,000 respectively, plus one `getBlock` per
@@ -68,6 +85,7 @@ default in `src/main.ts`.
 | `ARC_RPC_URLS` | `https://rpc.arc-scan.org` (comma-separated; failover in order) |
 | `ARCH_LAUNCHPAD_FACTORIES` | the four known generations |
 | `ARCH_MODE_DISTRIBUTOR_ADDRESS` | `0x7c148B6a581E32CcB6ffF7Bd59AF4250d5ec1eBc` |
+| `ARCH_FEE_DISTRIBUTORS` | the three known distributor generations |
 | `INDEXER_START_BLOCK` | `12775070` |
 | `GRADUATION_QUOTE_UNITS` | `9000000000` |
 | `LOG_LEVEL` | `info` |

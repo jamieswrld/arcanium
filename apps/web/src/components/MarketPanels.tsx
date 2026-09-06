@@ -424,22 +424,29 @@ function TradesTable({ swaps, symbol, chain }: { readonly swaps: SwapPoint[]; re
 
 function HoldersTable({ holders, pool, symbol, chain }: { readonly holders: Array<{ wallet: Hex; balance: bigint }> | null; readonly pool: Hex; readonly symbol: string; readonly chain: LaunchChain }) {
   if (holders === null) return <p className="arch-note">Reading holders…</p>;
-  if (holders.length === 0) return <p className="arch-note">No holders found in the recent window.</p>;
+  if (holders.length === 0) return <p className="arch-note">No holders yet.</p>;
   const SUPPLY = 1_000_000_000n * 10n ** 18n;
+  const BURN = "0x000000000000000000000000000000000000dead";
   return (
     <div style={{ display: "grid", gap: "0.25rem" }}>
       <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 140px 70px", gap: "0.5rem" }} className="arch-note">
         <span>#</span><span>Wallet</span><span>Amount</span><span>Supply</span>
       </div>
       {holders.map((h, i) => {
-        const isPool = h.wallet.toLowerCase() === pool.toLowerCase();
+        const lower = h.wallet.toLowerCase();
+        const isPool = lower === pool.toLowerCase();
+        // Burned supply is a real balance at a real address, but it is nobody's
+        // holding — say so rather than listing it as the third largest holder.
+        const isBurn = lower === BURN;
         const pctBps = Number((h.balance * 10_000n) / SUPPLY);
         return (
           <a key={h.wallet} href={explorerAddress(chain, h.wallet)} target="_blank" rel="noreferrer"
             style={{ display: "grid", gridTemplateColumns: "32px 1fr 140px 70px", gap: "0.5rem", fontSize: "0.85rem", padding: "0.25rem 0", borderBottom: "1px solid var(--arch-border)" }}>
             <span className="arch-note">{i + 1}</span>
             <span style={{ fontFamily: "monospace" }}>
-              {h.wallet.slice(0, 6)}…{h.wallet.slice(-4)}{isPool ? <span className="arch-note"> · LP (locked)</span> : null}
+              {h.wallet.slice(0, 6)}…{h.wallet.slice(-4)}
+              {isPool ? <span className="arch-note"> · LP (locked)</span> : null}
+              {isBurn ? <span className="arch-note"> · burned</span> : null}
             </span>
             <span>{(h.balance / 10n ** 18n).toLocaleString("en-US")} {symbol}</span>
             <span>{(pctBps / 100).toFixed(2)}%</span>
