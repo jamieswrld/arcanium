@@ -4,6 +4,7 @@ import { fetchTokensOn } from "@/lib/launchpadChain";
 import { CHAINS, getChain, type ChainKey, type LaunchChain } from "@/lib/chains";
 import { chainDownFor, loadSnapshot, markChainStatus, saveSnapshot } from "@/lib/listSnapshot";
 import { chainPublicClient } from "@/lib/chainRpc";
+import { cached } from "@/lib/kvCache";
 
 /**
  * Server-side token lists with outage resilience: a good chain read is
@@ -34,6 +35,9 @@ export interface ChainResult {
  * filtered to a healthy chain rendered in 0.3s.
  */
 const DOWN_MEMO_MS = 60_000;
+/** How long a good launch list stays fresh. Launches are infrequent, and the
+ *  per-token live figures on a token page are read separately anyway. */
+const LIST_CACHE_MS = 30_000;
 const downSince = new Map<ChainKey, number>();
 
 function knownDown(key: ChainKey): boolean {
@@ -92,10 +96,15 @@ export async function getTokens(
 ): Promise<{ tokens: LaunchpadToken[]; stale: boolean; unreachable: boolean }> {
   if (await knownDownShared("arc")) return snapshotOnly("arc");
 
-  const live = await Promise.race([
-    fetchAllTokens(arcPublicClient()).catch(() => [] as LaunchpadToken[]),
-    new Promise<LaunchpadToken[]>((r) => setTimeout(() => r([]), timeoutMs)),
-  ]);
+  // Cached across instances: the scan reads four factory generations and every
+  // launch on them, which is the single most expensive thing the page does. On
+  // serverless an in-process memo almost never gets a second hit.
+  const live = await cached("arc:tokenlist", LIST_CACHE_MS, async () =>
+    Promise.race([
+      fetchAllTokens(arcPublicClient()).catch(() => [] as LaunchpadToken[]),
+      new Promise<LaunchpadToken[]>((r) => setTimeout(() => r([]), timeoutMs)),
+    ]),
+  );
   if (live.length > 0) {
     record("arc", false);
     void saveSnapshot(live, "arc");

@@ -1,5 +1,6 @@
 import "server-only";
 import { parseAbiItem, type Hex, type Log } from "viem";
+import { cached } from "@/lib/kvCache";
 import { arcPublicClient, type LaunchpadToken } from "@/lib/launchpad";
 
 /**
@@ -25,7 +26,38 @@ export const swapEvent = parseAbiItem(
   "event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)",
 );
 
-export type SwapLog = Log<bigint, number, false, typeof swapEvent, true>;
+/**
+ * Only the fields consumers actually read.
+ *
+ * viem's Log carries topics, data, indexes and more. This window is cached
+ * across instances, so it is projected down to what market stats and the pulse
+ * use — keeping the stored payload small and the shape stable.
+ */
+export interface SwapLog {
+  readonly address: Hex;
+  readonly blockNumber: bigint;
+  readonly transactionHash: Hex;
+  readonly args: {
+    readonly amount0: bigint;
+    readonly amount1: bigint;
+    readonly sqrtPriceX96: bigint;
+  };
+}
+
+type RawSwapLog = Log<bigint, number, false, typeof swapEvent, true>;
+
+function lean(l: RawSwapLog): SwapLog {
+  return {
+    address: l.address,
+    blockNumber: l.blockNumber ?? 0n,
+    transactionHash: l.transactionHash ?? ("0x" as Hex),
+    args: {
+      amount0: l.args.amount0 ?? 0n,
+      amount1: l.args.amount1 ?? 0n,
+      sqrtPriceX96: l.args.sqrtPriceX96 ?? 0n,
+    },
+  };
+}
 
 const CHUNK = 9_500n;
 /** 0.506s blocks -> ~170.7k blocks in 24h. 18 chunks covers the window. */
@@ -43,9 +75,6 @@ export interface SwapWindow {
 }
 
 const SECONDS_PER_BLOCK = 0.506;
-
-let cache: { at: number; value: SwapWindow } | null = null;
-let inFlight: Promise<SwapWindow> | null = null;
 
 async function build(tokens: readonly LaunchpadToken[]): Promise<SwapWindow> {
   const client = arcPublicClient();
@@ -68,10 +97,10 @@ async function build(tokens: readonly LaunchpadToken[]): Promise<SwapWindow> {
           .getLogs({ address: pools, event: swapEvent, fromBlock: r.from, toBlock: r.to })
           // A failed range is skipped, never fatal: older ranges can sit past the
           // node's pruning horizon while newer ones read perfectly.
-          .catch(() => [] as SwapLog[]),
+          .catch(() => [] as RawSwapLog[]),
       ),
     );
-    for (const s of sets) collected.push(...(s as SwapLog[]));
+    for (const set of sets) for (const l of set as RawSwapLog[]) collected.push(lean(l));
   }
 
   const oldest = ranges[ranges.length - 1]?.from ?? tip;
@@ -81,23 +110,12 @@ async function build(tokens: readonly LaunchpadToken[]): Promise<SwapWindow> {
 /** The 24h Swap window for our pools. Shared by market stats, protocol stats
  *  and the activity feed so the chain is walked once per minute, not per view. */
 export async function fetchSwapWindow(tokens: readonly LaunchpadToken[]): Promise<SwapWindow> {
-  if (cache !== null && Date.now() - cache.at < TTL_MS) return cache.value;
-  if (inFlight !== null) return inFlight;
-  inFlight = (async () => {
-    const value = await build(tokens).catch(
-      async (): Promise<SwapWindow> => ({
-        tip: 0n,
-        logs: [],
-        fromBlock: 0n,
-        secondsPerBlock: SECONDS_PER_BLOCK,
-      }),
-    );
-    cache = { at: Date.now(), value };
-    return value;
-  })();
-  try {
-    return await inFlight;
-  } finally {
-    inFlight = null;
-  }
+  // Cached across instances, not just in-process. On serverless each request
+  // can land on a fresh instance, so a purely in-memory memo never gets a second
+  // hit and every visitor pays the whole 18-chunk walk.
+  return cached(`arc:swapwindow:${tokens.length}`, TTL_MS, async () =>
+    build(tokens).catch(
+      (): SwapWindow => ({ tip: 0n, logs: [], fromBlock: 0n, secondsPerBlock: SECONDS_PER_BLOCK }),
+    ),
+  );
 }
