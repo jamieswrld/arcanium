@@ -127,11 +127,16 @@ const ARC: LaunchChain = {
     decimals: 6,
     label: "native USDC",
   },
+  // Read back from the deployed launchpad factory and from a live pool, not
+  // copied from another chain. The previous values were wrong in a way that
+  // could not fail loudly: positionManager was Uniswap's canonical mainnet
+  // address (no contract at all on Arc) and swapRouter fell back to Base's
+  // router, so trading depended entirely on an env override being present.
   uniswap: {
-    factory: "0x33F26c5d1eE1B8Bd6C4A8B0C0e1C4B37F9a5D3e2",
-    positionManager: "0xC36442b4a4522E871399CD717aBDD847Ab11FE88",
+    factory: "0xf0db7b58379503491d857dB50AC9ece64c653918",
+    positionManager: "0x39654A85A4C05127f5Fd6ED22CAeC077A0fB1377",
     swapRouter: (addr(process.env["NEXT_PUBLIC_UNISWAP_SWAP_ROUTER_ADDRESS"]) ??
-      "0x2626664c2603336E57B271c5C0b26F421741e481") as Hex,
+      "0x4C91c54E60B59b1F949Af57064EA70bD73434720") as Hex,
   },
   poolFee: 10_000,
   factories: factoryList(process.env["NEXT_PUBLIC_ARCH_LAUNCHPAD_FACTORY_ADDRESS"], [
