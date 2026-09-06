@@ -3,6 +3,7 @@ import { parseAbiItem, type Hex } from "viem";
 import { arcPublicClient, type LaunchpadToken } from "@/lib/launchpad";
 import { getChain } from "@/lib/chains";
 import { fetchSwapWindow, type SwapLog } from "@/lib/swapLogs";
+import { indexedPulse } from "@/lib/indexed";
 
 /**
  * ARC PULSE — recent protocol activity, from real indexed events.
@@ -50,6 +51,24 @@ function toUsdMicro(raw: bigint, decimals: number): bigint {
 
 async function build(tokens: readonly LaunchpadToken[]): Promise<PulseEvent[]> {
   if (tokens.length === 0) return [];
+
+  // The indexer already has both halves of this feed in time order. Age comes
+  // from the stored block timestamp rather than being estimated from a block
+  // delta, so a row's "12s ago" is the real thing.
+  const indexed = await indexedPulse(24).catch(() => null);
+  if (indexed !== null) {
+    const now = Date.now();
+    return indexed.map((e) => ({
+      kind: e.kind,
+      token: e.token,
+      symbol: e.symbol === "" ? "—" : e.symbol,
+      valueUnits: e.valueUnits,
+      blockNumber: e.blockNumber,
+      secondsAgo: Math.max(0, Math.round((now - e.at.getTime()) / 1000)),
+      txHash: e.txHash,
+    }));
+  }
+
   const chain = getChain("arc");
   const client = arcPublicClient();
 

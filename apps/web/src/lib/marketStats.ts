@@ -2,6 +2,7 @@ import "server-only";
 import { priceUsdE18, type LaunchpadToken } from "@/lib/launchpad";
 import { getChain } from "@/lib/chains";
 import { fetchSwapWindow, type SwapLog } from "@/lib/swapLogs";
+import { indexedMarketWindow } from "@/lib/indexed";
 
 /**
  * Per-token market data, derived from the shared Swap window.
@@ -52,6 +53,17 @@ export async function fetchMarketStats(
 ): Promise<Map<string, TokenMarket>> {
   const out = new Map<string, TokenMarket>();
   if (tokens.length === 0) return out;
+
+  // One indexed query instead of an eighteen-chunk getLogs walk. Null means the
+  // indexer is absent or behind, and the chain path below takes over unchanged.
+  const indexed = await indexedMarketWindow(window === "1h" ? 1 : 24).catch(() => null);
+  if (indexed !== null) {
+    for (const t of tokens) {
+      const key = t.token.toLowerCase();
+      out.set(key, indexed.get(key) ?? EMPTY_MARKET);
+    }
+    return out;
+  }
 
   const chain = getChain("arc");
   const { tip, logs } = await fetchSwapWindow(tokens);

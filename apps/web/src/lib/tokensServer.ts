@@ -5,6 +5,7 @@ import { CHAINS, getChain, type ChainKey, type LaunchChain } from "@/lib/chains"
 import { chainDownFor, loadSnapshot, markChainStatus, saveSnapshot } from "@/lib/listSnapshot";
 import { chainPublicClient } from "@/lib/chainRpc";
 import { cached } from "@/lib/kvCache";
+import { indexedTokens } from "@/lib/indexed";
 
 /**
  * Server-side token lists with outage resilience: a good chain read is
@@ -90,10 +91,23 @@ async function snapshotOnly(
   return { tokens: [], stale: false, unreachable: true };
 }
 
-/** Arc keeps its original, battle-tested read path. */
+/** Indexer first, chain second, snapshot last. */
 export async function getTokens(
   timeoutMs = READ_TIMEOUT_MS,
 ): Promise<{ tokens: LaunchpadToken[]; stale: boolean; unreachable: boolean }> {
+  // The indexer, when it is live and caught up, is the whole point: one indexed
+  // query instead of a factory enumeration plus a multicall per token against an
+  // RPC that charges ~420ms for any request at all. It returns null the moment
+  // it is stale, still backfilling, or absent, and everything below still works.
+  // No snapshot write here: the snapshot exists so an RPC outage cannot empty
+  // the pad, and the database it would be written to is the same one the list
+  // just came from. Writing it would add a round trip to every page load to
+  // back up data against its own loss.
+  const indexed = await indexedTokens().catch(() => null);
+  if (indexed !== null && indexed.length > 0) {
+    return { tokens: indexed, stale: false, unreachable: false };
+  }
+
   if (await knownDownShared("arc")) return snapshotOnly("arc");
 
   // Cached across instances: the scan reads four factory generations and every
