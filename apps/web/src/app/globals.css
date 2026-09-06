@@ -813,3 +813,46 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
   .tk-metrics > * { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
   .tk-metrics > *:nth-child(2n) { border-right: 0; }
 }
+
+/* ------------------------------------------------------------------ create ---
+   Form on the left, a persistent economics summary on the right. The summary
+   is where the launch happens: everything that will occur is stated beside the
+   button that causes it.                                                     */
+
+.create-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--s5);
+  align-items: start;
+}
+.create-form { min-width: 0; }
+.create-side {
+  position: sticky;
+  top: calc(var(--topbar-h) + var(--s4));
+  min-width: 0;
+}
+.create-side .spread:last-child { border-bottom: 0 !important; }
+
+/* Fee-mode choices: selectable strategies, on the system rather than inline. */
+.mode-card {
+  display: flex;
+  gap: var(--s3);
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-sunk);
+  color: inherit;
+  cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+}
+.mode-card:hover:not(:disabled) { border-color: var(--border-strong); background: var(--surface-1); }
+.mode-card:disabled { opacity: 0.5; cursor: not-allowed; }
+.mode-card-on { border-color: var(--accent-line); background: var(--accent-quiet); }
+
+@media (max-width: 1040px) {
+  .create-grid { grid-template-columns: minmax(0, 1fr); }
+  .create-side { position: static; }
+}

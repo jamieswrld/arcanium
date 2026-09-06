@@ -1,14 +1,13 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useAccount, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
 import { decodeEventLog, parseAbiItem, type Hex } from "viem";
 import { formatUnits, parseUnits } from "viem";
 import { erc20Abi } from "@/lib/bridgeClient";
 import { factoryAbi, LAUNCH_MODES } from "@/lib/launchpad";
-import { liveChains, resolveChain } from "@/lib/chains";
-import { ChainMark } from "@/components/ChainMark";
+import { getChain } from "@/lib/chains";
 import { ArcaneWandIcon, DiviumBillsIcon } from "@/components/ModeIcons";
 import { ensureChain } from "@/lib/wagmi";
 import { useToast } from "@/components/ui/Toast";
@@ -51,14 +50,15 @@ async function compressImage(file: File): Promise<string> {
  */
 export function CreateForm() {
   const router = useRouter();
-  const params = useSearchParams();
   const { address, isConnected, chainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
   const { toast } = useToast();
 
-  const available = liveChains();
-  const chain = resolveChain(params.get("chain"));
+  // Arcanium launches on Arc. Reading it from the URL forced this client
+  // component into a search-params bailout, so the whole form rendered as a
+  // skeleton on the server for no benefit.
+  const chain = getChain("arc");
   const factory = chain.factories[0];
   const quote = chain.quote.address;
   const quoteSymbol = chain.quote.symbol;
@@ -229,37 +229,9 @@ export function CreateForm() {
   const disabled = busy; // validation happens on click with a clear message
 
   return (
-    <div>
-      <div className="arch-form-row" style={{ marginBottom: "0.9rem" }}>
-        <label>Launch on</label>
-        <div className="arch-chain-choices">
-          {available.map((c) => {
-            const on = c.key === chain.key;
-            return (
-              <button
-                key={c.key}
-                type="button"
-                disabled={busy}
-                aria-pressed={on}
-                onClick={() => router.replace(`/create?chain=${c.key}`, { scroll: false })}
-                className={on ? "arch-chain-choice arch-chain-choice-active" : "arch-chain-choice"}
-                style={{ ["--chain-accent" as string]: c.accent }}
-              >
-                <ChainMark chain={c} size={19} />
-                <span>
-                  <span style={{ display: "block", fontWeight: 700 }}>{c.shortName}</span>
-                  <span className="arch-note" style={{ fontSize: "0.68rem" }}>Pairs with {c.quote.symbol}</span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        <p className="arch-note" style={{ margin: "0.4rem 0 0", fontSize: "0.75rem" }}>
-          Your token launches on {chain.name} and pairs with {chain.quote.symbol}. You pay{" "}
-          {chain.nativeCurrency.symbol} for gas — nothing else.
-        </p>
-      </div>
-
+    <div className="create-grid">
+      <div className="create-form">
+        <p className="eyebrow" style={{ marginBottom: "var(--s3)" }}>Token</p>
       <div className="arch-form-grid">
         <div className="arch-form-row">
           <label htmlFor="cf-name">Token name *</label>
@@ -301,8 +273,9 @@ export function CreateForm() {
         <textarea id="cf-desc" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} disabled={busy} maxLength={500} />
       </div>
 
+      <p className="eyebrow" style={{ margin: "var(--s5) 0 var(--s3)" }}>Links</p>
       <details>
-        <summary className="arch-note" style={{ cursor: "pointer", marginBottom: "0.5rem" }}>Social links (optional)</summary>
+        <summary className="arch-note" style={{ cursor: "pointer", marginBottom: "0.5rem" }}>Website, X and Telegram (optional)</summary>
         <div className="arch-form-row">
           <label htmlFor="cf-web">Website</label>
           <input id="cf-web" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://…" disabled={busy} />
@@ -317,14 +290,16 @@ export function CreateForm() {
         </div>
       </details>
 
+      <p className="eyebrow" style={{ margin: "var(--s5) 0 var(--s3)" }}>Market</p>
       <div className="arch-form-row">
         <label htmlFor="cf-buy">Initial buy (optional, in {quoteSymbol})</label>
         <input id="cf-buy" value={creatorBuy} onChange={(e) => setCreatorBuy(e.target.value)} placeholder="0.00" inputMode="decimal" disabled={busy} />
         <span className="arch-note">Executed atomically inside the launch — nobody can trade before you.</span>
       </div>
 
+      <p className="eyebrow" style={{ margin: "var(--s5) 0 var(--s3)" }}>Creator rewards</p>
       <div className="arch-form-row">
-        <label>Creator fee mode</label>
+        <label>How your trading fees are paid</label>
         <div style={{ display: "grid", gap: "0.5rem" }}>
           {LAUNCH_MODES.map((m) => {
             const active = mode === m.id;
@@ -334,13 +309,8 @@ export function CreateForm() {
                 type="button"
                 disabled={busy}
                 onClick={() => setMode(m.id as 0 | 1 | 2)}
-                style={{
-                  display: "flex", gap: "0.7rem", alignItems: "flex-start", textAlign: "left", cursor: busy ? "not-allowed" : "pointer",
-                  border: `1px solid ${active ? "color-mix(in oklch, var(--primary) 65%, var(--border))" : "var(--border)"}`,
-                  background: active ? "color-mix(in oklch, var(--primary) 12%, var(--card))" : "color-mix(in oklch, var(--background) 45%, var(--card))",
-                  borderRadius: 12, padding: "0.7rem 0.8rem", color: "inherit",
-                  boxShadow: active ? "0 0 20px oklch(0.58 0.24 295 / 0.16)" : "none",
-                }}
+                className={active ? "mode-card mode-card-on" : "mode-card"}
+                aria-pressed={active}
               >
                 <span aria-hidden style={{ marginTop: 1, width: 26, display: "grid", placeItems: "center" }}>
                   {m.id === 1 ? <DiviumBillsIcon size={24} /> : m.id === 2 ? <ArcaneWandIcon size={24} /> : <span style={{ fontSize: 18 }}>💼</span>}
@@ -360,52 +330,102 @@ export function CreateForm() {
         </span>
       </div>
 
+      <details style={{ marginTop: "var(--s2)" }}>
+        <summary className="arch-note" style={{ cursor: "pointer", marginBottom: "var(--s2)" }}>
+          Advanced: pay rewards to a different wallet
+        </summary>
       <div className="arch-form-row">
-        <label htmlFor="cf-feewallet">Creator fee wallet (optional)</label>
+        <label htmlFor="cf-feewallet">Creator fee wallet</label>
         <input id="cf-feewallet" value={feeWallet} onChange={(e) => setFeeWallet(e.target.value)} placeholder="0x… (defaults to your wallet)" spellCheck={false} disabled={busy} style={{ fontFamily: "monospace", fontSize: "0.85rem" }} />
         <span className="arch-note">
           {mode === 0 ? "Trading-fee rewards for this token are paid to this wallet, forever. Leave blank to use the wallet you launch with." : "In this mode fees go to holders or the burn — this wallet only owns the launch record."}
         </span>
       </div>
 
-      <div style={{ padding: "0.5rem 0", fontSize: "0.875rem" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", padding: "0.2rem 0" }}>
-          <span style={{ color: "var(--arch-text-muted)" }}>Launch fee</span>
-          <span>{launchFee.data === undefined ? "—" : launchFee.data === 0n ? "Free — you only pay gas" : `${fmtQuote(launchFee.data)} ${quoteSymbol}`}</span>
-        </div>
-        {buyAmount > 0n ? (
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "0.2rem 0" }}>
-            <span style={{ color: "var(--arch-text-muted)" }}>Initial buy</span>
-            <span>{fmtQuote(buyAmount)} {quoteSymbol}</span>
-          </div>
-        ) : null}
-        <div style={{ display: "flex", justifyContent: "space-between", padding: "0.2rem 0" }}>
-          <span style={{ color: "var(--arch-text-muted)" }}>Your {quoteSymbol} on Arc</span>
-          <span>{pairBalance.data !== undefined ? `${fmtQuote(pairBalance.data)} ${quoteSymbol}` : "—"}</span>
-        </div>
+      </details>
+
       </div>
 
-      {formError !== null ? <p className="arch-note" style={{ color: "var(--arch-negative)" }}>{formError}</p> : null}
+      {/* Persistent economics. Everything that will happen, before signing. */}
+      <aside className="create-side">
+        <section className="panel">
+          <div className="panel-head">
+            <span className="eyebrow">Launch summary</span>
+          </div>
+          <div className="panel-body" style={{ display: "grid", gap: 0 }}>
+            <SummaryRow label="Chain" value={chain.name} />
+            <SummaryRow label="Pair" value={chain.quote.symbol} />
+            <SummaryRow label="Supply" value="1,000,000,000 fixed" />
+            <SummaryRow label="Pool" value="Uniswap v3 · 1% fee" />
+            <SummaryRow label="Liquidity" value="Locked permanently" />
+            <SummaryRow
+              label="Creator rewards"
+              value={mode === 1 ? "Divium — paid to holders" : mode === 2 ? "Arcane — buy and burn" : "Paid to your wallet"}
+            />
+            <SummaryRow label="Initial buy" value={buyAmount > 0n ? `${fmtQuote(buyAmount)} ${quoteSymbol}` : "None"} />
+            <SummaryRow
+              label="Launch cost"
+              value={
+                launchFee.data === undefined
+                  ? "—"
+                  : launchFee.data === 0n
+                    ? "Free — gas only"
+                    : `${fmtQuote(launchFee.data)} ${quoteSymbol}`
+              }
+            />
+            <SummaryRow
+              label={`Your ${quoteSymbol}`}
+              value={pairBalance.data !== undefined ? `${fmtQuote(pairBalance.data)} ${quoteSymbol}` : "—"}
+            />
+          </div>
 
-      {state.step === "needs_gas" ? (
-        <div className="arch-note" style={{ color: "var(--arch-warning)", margin: "0.25rem 0 0.5rem" }}>
-          You need a little Arc gas (native USDC) to launch. Top up your wallet with Arc USDC, then press Launch again.
-        </div>
-      ) : null}
+          <div className="panel-body" style={{ borderTop: "1px solid var(--border)", display: "grid", gap: "var(--s2)" }}>
+            {formError !== null ? <p className="err" style={{ margin: 0 }}>{formError}</p> : null}
 
-      {!isConnected ? (
-        <ConnectButton />
-      ) : (
-        <button
-          className="arch-primary-button"
-          style={{ cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.7 : 1 }}
-          disabled={disabled}
-          onClick={() => void submit()}
-        >
-          {state.step === "approving" ? `Approving ${quoteSymbol}…` : state.step === "launching" ? "Launching…" : "Launch token"}
-        </button>
-      )}
-      {state.step === "error" ? <p className="arch-note" style={{ color: "var(--arch-negative)" }}>{state.message}</p> : null}
+            {state.step === "needs_gas" ? (
+              <p className="arch-note" style={{ color: "var(--warning)", margin: 0 }}>
+                You need a little Arc gas (native USDC) to launch. Top up, then press Launch again.
+              </p>
+            ) : null}
+
+            {!isConnected ? (
+              <ConnectButton />
+            ) : (
+              <button
+                className="btn btn-primary btn-lg"
+                style={{ width: "100%" }}
+                disabled={disabled}
+                onClick={() => void submit()}
+              >
+                {state.step === "approving"
+                  ? `Approving ${quoteSymbol}…`
+                  : state.step === "launching"
+                    ? "Launching…"
+                    : "Launch token"}
+              </button>
+            )}
+
+            {state.step === "error" ? <p className="err" style={{ margin: 0 }}>{state.message}</p> : null}
+
+            <p className="hint" style={{ margin: 0 }}>
+              One transaction creates the token, its Uniswap pool and permanently locked
+              liquidity. Your wallet will show exactly what it is signing.
+            </p>
+          </div>
+        </section>
+      </aside>
+    </div>
+  );
+}
+
+function SummaryRow({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <div
+      className="spread"
+      style={{ padding: "7px 0", borderBottom: "1px solid var(--border)", fontSize: "0.82rem" }}
+    >
+      <span style={{ color: "var(--text-secondary)" }}>{label}</span>
+      <span className="num" style={{ fontWeight: 600, textAlign: "right" }}>{value}</span>
     </div>
   );
 }

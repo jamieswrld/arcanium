@@ -1,54 +1,46 @@
 import { Suspense } from "react";
-import { Card, StatRow } from "@arch/ui";
+import Link from "next/link";
 import { CreateForm } from "@/components/CreateForm";
-import { resolveChain } from "@/lib/chains";
+import { getChain } from "@/lib/chains";
 
-interface CreatePageProps {
-  readonly searchParams: Promise<{ chain?: string }>;
-}
+export const metadata = { title: "Create a token — Arcanium" };
 
 /**
- * Create token — live launch flow. The review facts below are constants of
- * the protocol; the fee is read live from the factory inside the form. The
- * chain (and therefore the pair asset and gas token) comes from ?chain=.
+ * Create.
+ *
+ * The form carries its own two-column layout (fields left, persistent launch
+ * summary right) because the summary reflects live form state. This page only
+ * supplies the heading and the one thing a creator needs to know before they
+ * start: what it costs and what they get.
  */
-export default async function CreateTokenPage({ searchParams }: CreatePageProps) {
-  const { chain: chainParam } = await searchParams;
-  const chain = resolveChain(chainParam);
+export default function CreateTokenPage() {
+  const chain = getChain("arc");
 
   return (
-    <div style={{ maxWidth: 640, margin: "0 auto" }}>
-      <div style={{ marginBottom: "1.25rem" }}>
-        <h1 style={{ margin: 0, fontSize: "1.75rem", fontWeight: 700, letterSpacing: "-0.02em" }}>Create a token</h1>
-        <p className="arch-note" style={{ margin: "0.25rem 0 0" }}>
-          One transaction mints your token, its Uniswap v3 pool, and permanently locked liquidity.
-        </p>
-      </div>
-
-      <div className="arch-stack">
-        <Card>
-          <Suspense fallback={null}>
-            <CreateForm />
-          </Suspense>
-        </Card>
-
-        <Card title="What you get">
-          <StatRow label="Supply" value="1,000,000,000 (fixed forever)" />
-          <StatRow label="Starting market cap" value="≈ $3,000" />
-          <StatRow label="Pool" value="Uniswap v3 · 1% fee tier" />
-          <StatRow label="Liquidity" value="Permanently locked" />
-          <StatRow label="Creator rewards" value="A share of trading fees, forever" />
-          <StatRow label="Chain" value={chain.name} />
-          <StatRow label="Pairs with" value={chain.quote.label} />
-          <StatRow label="Gas paid in" value={chain.nativeCurrency.symbol} />
-          <p className="arch-note" style={{ marginBottom: 0 }}>
-            No bonding curve, no pre-market: your token trades on real Uniswap against{" "}
-            {chain.quote.symbol} from its first block. Launching is free — you only pay{" "}
-            {chain.name} network gas. Nobody — including Arcanium — can ever withdraw the
-            launch liquidity. Prices can go down as well as up.
+    <div className="stack">
+      <header className="spread" style={{ alignItems: "flex-end", flexWrap: "wrap", gap: "var(--s4)" }}>
+        <div style={{ minWidth: 0 }}>
+          <h1>Create a token</h1>
+          <p className="arch-note" style={{ marginTop: 6, maxWidth: 620 }}>
+            One transaction mints your token, opens its Uniswap v3 pool and locks the liquidity
+            permanently. Launching is free — you pay {chain.nativeCurrency.symbol} gas and nothing
+            else.
           </p>
-        </Card>
-      </div>
+        </div>
+        <Link href="/docs" className="btn btn-secondary" style={{ flexShrink: 0 }}>
+          How it works
+        </Link>
+      </header>
+
+      <Suspense fallback={<div className="skeleton" style={{ height: 520 }} />}>
+        <CreateForm />
+      </Suspense>
+
+      <p className="arch-note" style={{ fontSize: "0.76rem", maxWidth: 720 }}>
+        Every launch pairs with {chain.quote.label} at a starting market cap of roughly $3,000. The
+        full 1,000,000,000 supply goes into the pool as a single locked position — nobody, including
+        Arcanium, can withdraw it. Your creator fee mode is fixed at launch and can never be changed.
+      </p>
     </div>
   );
 }
