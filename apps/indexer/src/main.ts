@@ -47,6 +47,10 @@ const transferEvent = parseAbiItem(
   "event Transfer(address indexed from, address indexed to, uint256 value)",
 );
 
+const feesDistributedEvent = parseAbiItem(
+  "event FeesDistributed(address indexed token, address indexed pairToken, uint256 tokenFeesBurned, uint256 creatorReward, uint256 protocolReward)",
+);
+
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 const CANDLE_INTERVALS = [60, 300, 900, 3600, 14400, 86400];
@@ -84,6 +88,13 @@ const DEFAULT_START_BLOCK = 12_775_070n;
 /** Records each launch's fee mode. Same address the website reads. */
 const DEFAULT_MODE_DISTRIBUTOR = "0x7c148B6a581E32CcB6ffF7Bd59AF4250d5ec1eBc";
 
+/** Every contract that has ever paid out launch fees. All are live on Arc. */
+const DEFAULT_DISTRIBUTORS = [
+  "0x7c148B6a581E32CcB6ffF7Bd59AF4250d5ec1eBc", // mode distributor (current)
+  "0x789896401c1c90df95757dfd3228989b627418b4",
+  "0xbdc362f9ddea2ae9c39b108e0712f7d6e2f00e5f",
+] as const;
+
 /** 9,000 USDC, at Arc USDC's 6 decimals. */
 const DEFAULT_GRADUATION_UNITS = 9_000_000_000n;
 
@@ -103,6 +114,7 @@ interface IndexerConfig {
   readonly chainId: number;
   readonly startBlock: bigint;
   readonly modeDistributor: Hex;
+  readonly distributors: readonly Hex[];
 }
 
 function requireEnv(name: string): string {
@@ -512,6 +524,82 @@ async function indexSwaps(cfg: IndexerConfig, blocks: BlockCache): Promise<void>
   }
 }
 
+/* --------------------------------------------------------------------- fees */
+
+/**
+ * Fee payouts, from FeesDistributed across every distributor generation.
+ *
+ * The portfolio worked this out in the browser with the same broken 45,000-block
+ * walk the holders tab used, so "Already claimed" has always read zero for every
+ * creator — a payout figure, shown wrong, on the page people check to see what
+ * they have earned. fee_distributions has been in the schema since the start and
+ * has never had a row in it.
+ */
+async function indexFees(cfg: IndexerConfig, blocks: BlockCache): Promise<void> {
+  const { arc, sql, chainId } = cfg;
+  const known = await sql<{ token_address: Buffer }[]>`
+    SELECT token_address FROM tokens WHERE chain_id = ${chainId}
+  `;
+  if (known.length === 0) return;
+  const tokenSet = new Set(known.map((t) => t.token_address.toString("hex")));
+
+  const stream = "fees:all";
+  const head = (await arc.getBlockNumber()) - CONFIRMATIONS;
+  const launchesAt = (await getCursor(sql, chainId, "launches:all")) ?? cfg.startBlock;
+  const tip = launchesAt < head ? launchesAt : head;
+  const from = (await getCursor(sql, chainId, stream)) ?? cfg.startBlock;
+  if (from > tip) return;
+
+  let chunksDone = 0;
+  for (let start = from; start <= tip; start += CHUNK) {
+    const end = start + CHUNK - 1n < tip ? start + CHUNK - 1n : tip;
+    const logs = await arc
+      .getLogs({ address: [...cfg.distributors], event: feesDistributedEvent, fromBlock: start, toBlock: end })
+      .catch((err: unknown) => {
+        log.warn({ err, start: start.toString(), end: end.toString() }, "fee chunk failed");
+        return null;
+      });
+    if (logs === null) break;
+
+    if (logs.length > 0) {
+      await blocks.warm(logs.map((l) => l.blockNumber ?? end));
+      const rows: Record<string, unknown>[] = [];
+      for (const l of logs) {
+        const token = l.args.token;
+        if (token === undefined || l.transactionHash === null || l.logIndex === null) continue;
+        // fee_distributions has a foreign key to tokens; a payout for something
+        // this indexer has not seen launch would fail the whole insert.
+        const key = token.slice(2).toLowerCase();
+        if (!tokenSet.has(key)) continue;
+        const { time } = await blocks.get(l.blockNumber ?? end);
+        rows.push({
+          tx_hash: addr32(l.transactionHash),
+          log_index: l.logIndex,
+          token_address: Buffer.from(key, "hex"),
+          pair_token: addr(l.args.pairToken ?? "0x"),
+          token_fees_burned: (l.args.tokenFeesBurned ?? 0n).toString(),
+          creator_reward: (l.args.creatorReward ?? 0n).toString(),
+          protocol_reward: (l.args.protocolReward ?? 0n).toString(),
+          block_number: (l.blockNumber ?? end).toString(),
+          block_time: time,
+        });
+      }
+      if (rows.length > 0) {
+        await sql`
+          INSERT INTO fee_distributions ${sql(rows)}
+          ON CONFLICT (tx_hash, log_index) DO NOTHING
+        `;
+        log.info({ payouts: rows.length, end: end.toString() }, "fees indexed");
+      }
+    }
+
+    const endBlock = await blocks.get(end);
+    await setCursor(sql, chainId, stream, end, endBlock.hash);
+    if (++chunksDone % HEALTH_EVERY_CHUNKS === 0) await publishHealth(cfg, head);
+    if (end < tip) await sleep(CHUNK_DELAY_MS);
+  }
+}
+
 /* ------------------------------------------------------------------ holders */
 
 /**
@@ -751,6 +839,22 @@ async function rollup(cfg: IndexerConfig): Promise<void> {
 
   await cfg.sql`
     UPDATE token_stats ts SET
+      creator_rewards_distributed = COALESCE(f.creator, 0),
+      protocol_revenue            = COALESCE(f.protocol, 0),
+      tokens_burned               = COALESCE(f.burned, 0)
+    FROM tokens t
+    LEFT JOIN (
+      SELECT token_address,
+             SUM(creator_reward)    AS creator,
+             SUM(protocol_reward)   AS protocol,
+             SUM(token_fees_burned) AS burned
+      FROM fee_distributions GROUP BY token_address
+    ) f ON f.token_address = t.token_address
+    WHERE ts.token_address = t.token_address
+  `;
+
+  await cfg.sql`
+    UPDATE token_stats ts SET
       holder_count = COALESCE(h.n, 0)
     FROM tokens t
     LEFT JOIN (
@@ -867,6 +971,7 @@ async function main(): Promise<void> {
     chainId: await arc.getChainId(),
     startBlock: BigInt(process.env["INDEXER_START_BLOCK"] ?? DEFAULT_START_BLOCK.toString()),
     modeDistributor: (process.env["ARCH_MODE_DISTRIBUTOR_ADDRESS"] ?? DEFAULT_MODE_DISTRIBUTOR) as Hex,
+    distributors: envList("ARCH_FEE_DISTRIBUTORS", DEFAULT_DISTRIBUTORS),
   };
 
   const applied = await runMigrations(databaseUrl);
@@ -890,9 +995,11 @@ async function main(): Promise<void> {
       await rewindIfReorged(cfg, "swaps:all");
       await rewindIfReorged(cfg, "launches:all");
       await rewindIfReorged(cfg, "holders:all");
+      await rewindIfReorged(cfg, "fees:all");
       await indexLaunches(cfg, blocks);
       await indexSwaps(cfg, blocks);
       await indexHolders(cfg, blocks);
+      await indexFees(cfg, blocks);
       await refreshPools(cfg);
       await rollup(cfg);
       await mirrorMetadata(cfg);

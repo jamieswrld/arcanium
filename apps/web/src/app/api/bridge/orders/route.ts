@@ -23,8 +23,23 @@ const BASE_RPC = process.env["NEXT_PUBLIC_BASE_RPC_URL"] ?? "https://mainnet.bas
 const BASE_FINALITY_BLOCKS = 65;
 const ARC_FINALITY_BLOCKS = 65;
 
-const LOOKBACK = 300_000n; // generous: covers days of Base blocks
-const CHUNK = 45_000n;
+/**
+ * Log-range limits are per chain, because the two nodes are nothing alike.
+ *
+ * Base takes a 45,000-block range happily. Arc refuses anything much above
+ * 10,000 — measured: 9,000 succeeds, 45,000 is refused. Both sides shared the
+ * 45,000 constant, so every Arc chunk threw and broke the loop on its first
+ * iteration: an Arc-to-Base bridge order has never appeared in this list.
+ *
+ * Each lookback is what eight chunks of that size actually reaches. Arc's works
+ * out at ~10 hours of its half-second blocks, which comfortably covers an
+ * in-flight CCTP transfer without making the route walk for 14 seconds.
+ */
+const BASE_LOOKBACK = 300_000n;
+const BASE_CHUNK = 45_000n;
+const ARC_LOOKBACK = 72_000n;
+const ARC_CHUNK = 9_000n;
+const MAX_CHUNKS = 8;
 
 interface Order {
   burnTx: string;
@@ -44,8 +59,8 @@ export async function GET(request: Request): Promise<NextResponse> {
   }
 
   const chains = [
-    { key: "toArc" as const, router: BRIDGE_ROUTER_BASE, rpc: BASE_RPC, chain: base, domain: BASE_DOMAIN, finality: BASE_FINALITY_BLOCKS },
-    { key: "toBase" as const, router: BRIDGE_ROUTER_ARC, rpc: ARC_RPC, chain: undefined, domain: ARC_DOMAIN, finality: ARC_FINALITY_BLOCKS },
+    { key: "toArc" as const, router: BRIDGE_ROUTER_BASE, rpc: BASE_RPC, chain: base, domain: BASE_DOMAIN, finality: BASE_FINALITY_BLOCKS, chunk: BASE_CHUNK, lookback: BASE_LOOKBACK },
+    { key: "toBase" as const, router: BRIDGE_ROUTER_ARC, rpc: ARC_RPC, chain: undefined, domain: ARC_DOMAIN, finality: ARC_FINALITY_BLOCKS, chunk: ARC_CHUNK, lookback: ARC_LOOKBACK },
   ];
 
   const orders: Order[] = [];
@@ -57,10 +72,10 @@ export async function GET(request: Request): Promise<NextResponse> {
       });
       const tip = await client.getBlockNumber().catch(() => null);
       if (tip === null) return;
-      const floor = tip > LOOKBACK ? tip - LOOKBACK : 0n;
+      const floor = tip > c.lookback ? tip - c.lookback : 0n;
       let end = tip;
-      for (let i = 0; i < 8 && end > floor; i++) {
-        const start = end >= CHUNK ? end - CHUNK + 1n : 0n;
+      for (let i = 0; i < MAX_CHUNKS && end > floor; i++) {
+        const start = end >= c.chunk ? end - c.chunk + 1n : 0n;
         let logs;
         try {
           logs = await client.getLogs({

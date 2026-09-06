@@ -25,8 +25,17 @@ const launchedEvent = parseAbiItem(
   "event Launched(address indexed token, address indexed creator, address pairToken, address pool, uint256 positionId, string metadataUri)",
 );
 
-/** Launches are read over the newest ~4h only; older ones are old news here. */
-const LAUNCH_LOOKBACK = 28_500n;
+/**
+ * Launches are read over the newest slice only; older ones are old news here.
+ *
+ * This was 28,500 in a single getLogs, which Arc refuses — anything much above
+ * 10,000 blocks is rejected — so the call always threw into its catch and the
+ * pulse has never shown a launch. 9,000 blocks is ~76 minutes of Arc, which is
+ * the right horizon for a live feed anyway, and it is a range the node accepts.
+ *
+ * Only the fallback now: the indexer serves launches and trades together.
+ */
+const LAUNCH_LOOKBACK = 9_000n;
 const TTL_MS = 20_000;
 
 export interface PulseEvent {

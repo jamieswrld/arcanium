@@ -43,8 +43,35 @@ const ALL_DISTRIBUTORS: Hex[] = [
   "0xbdc362f9ddea2ae9c39b108e0712f7d6e2f00e5f",
 ];
 
-const CHUNK = 45_000n;
-const MAX_CHUNKS = 10;
+/**
+ * Arc refuses a getLogs range much above 10,000 blocks — measured: 9,000
+ * succeeds, 45,000 is refused. This was 45,000.
+ *
+ * Only reached now when the indexer cannot answer, so the chunk count buys
+ * depth rather than speed.
+ */
+const CHUNK = 9_000n;
+const MAX_CHUNKS = 40;
+
+/** Fees already paid out per token, keyed lowercase, or null if unavailable. */
+async function fetchIndexedFees(
+  tokens: readonly Hex[],
+): Promise<Map<string, { creator: bigint; gross: bigint }> | null> {
+  if (tokens.length === 0) return new Map();
+  try {
+    const res = await fetch(`/api/fees?tokens=${tokens.join(",")}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { fees?: Record<string, { creator: string; gross: string }> };
+    if (body.fees === undefined) return null;
+    const out = new Map<string, { creator: bigint; gross: bigint }>();
+    for (const [k, v] of Object.entries(body.fees)) {
+      out.set(k.toLowerCase(), { creator: BigInt(v.creator), gross: BigInt(v.gross) });
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
 
 interface CreatorRow {
   readonly pendingCreator: bigint;
@@ -157,6 +184,17 @@ export function PortfolioDashboard({
 
     const loadClaimed = async (): Promise<void> => {
       claimedByToken.clear();
+
+      // Whole payout history in one request. The walk below is the fallback and
+      // has never actually returned anything: its 45,000-block chunk is refused
+      // by Arc, so the first request throws and the loop breaks immediately.
+      const indexed = await fetchIndexedFees(created.map((c) => c.token));
+      if (indexed !== null) {
+        for (const [k, v] of indexed) claimedByToken.set(k, v);
+        claimedLoaded = true;
+        return;
+      }
+
       const tip = await arcPublic.getBlockNumber();
       let end = tip;
       for (let i = 0; i < MAX_CHUNKS; i++) {
