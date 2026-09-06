@@ -94,9 +94,49 @@ function toCandles(swaps: readonly SwapPoint[], spotE18: bigint | null, interval
     .map(([time, b]) => ({ time, open: b.o, high: b.h, low: b.l, close: b.c, volume: b.v }));
 }
 
+interface IndexedTradeJson {
+  readonly txHash: string;
+  readonly blockNumber: string;
+  readonly time: string;
+  readonly side: string;
+  readonly amountToken: string;
+  readonly valueUsdE6: string;
+  readonly priceUsdE18: string;
+  readonly wallet: string;
+}
+
+/**
+ * Full trade history for a token from the indexer, or null if it has none.
+ *
+ * Returns null rather than an empty array on failure so the caller can tell
+ * "the indexer has nothing for this token" apart from "ask the chain instead".
+ */
+async function fetchIndexedHistory(token: Hex): Promise<SwapPoint[] | null> {
+  try {
+    const res = await fetch(`/api/tokens/${token}/market?trades=2000`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { trades?: IndexedTradeJson[] };
+    const trades = body.trades;
+    if (trades === undefined) return null;
+    return trades.map((t) => ({
+      block: BigInt(t.blockNumber),
+      timeMs: new Date(t.time).getTime(),
+      priceE18: BigInt(t.priceUsdE18),
+      quoteVolume: BigInt(t.valueUsdE6),
+      isBuy: t.side === "buy",
+      wallet: t.wallet as Hex,
+      tokenAmount: BigInt(t.amountToken),
+      txHash: t.txHash as Hex,
+    }));
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Trading terminal panels: TradingView-engine candles (live-ticking), trades
- * feed, holders. One fast initial getLogs, then 2s incremental polling.
+ * feed, holders. History from the indexer in one request, then 2s incremental
+ * polling of the chain for the live tail.
  */
 export function MarketPanels({ pool, token, pairToken, symbol, creator, chainKey = "arc" }: MarketPanelsProps) {
   const chain = getChain(chainKey);
@@ -147,6 +187,17 @@ export function MarketPanels({ pool, token, pairToken, symbol, creator, chainKey
       await readSpot(); // chart renders immediately, even with zero trades
       cursor = tip;
       timer = setTimeout(() => void poll(), POLL_MS);
+
+      // History from the indexer, in one request, with real block timestamps.
+      // The walk below is the fallback: it costs up to 24 getLogs calls from
+      // every visitor's browser, and it can only reach as far back as the node
+      // still keeps logs, so older trades were simply invisible.
+      const seeded = await fetchIndexedHistory(token);
+      if (seeded !== null && seeded.length > 0) {
+        if (cancelled) return;
+        setSwaps(seeded);
+        return;
+      }
 
       // Full history: walk back from the tip in RPC-sized chunks, streaming
       // results into the chart as each chunk lands (newest first). Stops at

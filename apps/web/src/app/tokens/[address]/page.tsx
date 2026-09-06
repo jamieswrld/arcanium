@@ -5,6 +5,7 @@ import { fetchMarketStats, EMPTY_MARKET } from "@/lib/marketStats";
 import { explorerAddress, getChain } from "@/lib/chains";
 import { fetchTokenMeta } from "@/lib/tokenImages";
 import { withTimeout } from "@/lib/withTimeout";
+import { indexedToken } from "@/lib/indexed";
 import { TradePanel } from "@/components/TradePanel";
 import { MarketPanels } from "@/components/MarketPanels";
 import { TokenAvatar } from "@/components/TokenAvatar";
@@ -39,7 +40,12 @@ export default async function TokenPage({ params }: TokenPageProps) {
     return <NotFound />;
   }
 
-  const detail = await withTimeout(fetchToken(arcPublicClient(), address as Hex), null, 10_000, "token detail");
+  // The indexer knows which factory minted this token, so the lookup is a
+  // primary key rather than asking all four generations and then making five
+  // more reads on whichever one answers.
+  const detail =
+    (await indexedToken(address).catch(() => null)) ??
+    (await withTimeout(fetchToken(arcPublicClient(), address as Hex), null, 10_000, "token detail"));
   if (detail === null) return <NotFound />;
 
   const [meta, marketMap] = await Promise.all([

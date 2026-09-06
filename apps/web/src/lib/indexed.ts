@@ -147,6 +147,48 @@ export async function indexedTokens(): Promise<LaunchpadToken[] | null> {
   }
 }
 
+/**
+ * One launch by address.
+ *
+ * The chain version asks all four factory generations whether they know this
+ * token, then makes five more reads on the answer. Here the factory that minted
+ * it is already recorded, so it is a primary-key lookup.
+ */
+export async function indexedToken(address: string): Promise<LaunchpadToken | null> {
+  if (!(await healthy())) return null;
+  const sql = getDb();
+  if (sql === null) return null;
+  try {
+    const rows = await sql<TokenRow[]>`
+      SELECT
+        t.token_address, t.name, t.symbol, t.creator, t.pair_token, t.pool_address,
+        t.position_id, t.graduated, t.mode,
+        s.price_usd_e18, s.market_cap_usd_e6, s.quote_balance
+      FROM tokens t
+      LEFT JOIN token_stats s ON s.token_address = t.token_address
+      WHERE t.token_address = ${Buffer.from(address.slice(2), "hex")}
+    `;
+    const r = rows[0];
+    if (r === undefined) return null;
+    return {
+      token: hex(r.token_address),
+      name: r.name,
+      symbol: r.symbol,
+      creator: hex(r.creator),
+      pairToken: hex(r.pair_token),
+      pool: hex(r.pool_address),
+      positionId: BigInt(r.position_id),
+      priceE18: BigInt(r.price_usd_e18 ?? "0"),
+      marketCapUnits: BigInt(r.market_cap_usd_e6 ?? "0"),
+      quoteBalance: BigInt(r.quote_balance ?? "0"),
+      graduated: r.graduated,
+      mode: r.mode,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export interface IndexedMarketStat {
   readonly volume24hUnits: bigint;
   /** Percent change over 24h, or null when the token has no trades in it. */

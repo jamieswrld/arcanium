@@ -60,6 +60,9 @@ const POLL_MS = 12_000;
 const CONFIRMATIONS = 2n;
 /** Arc drops requests out of a large parallel burst; keep waves small. */
 const BLOCK_FETCH_CONCURRENCY = 6;
+/** Publish progress this often mid-walk. A 6.7M-block backfill is one very long
+ *  cycle, and without this there is no way to see how far along it is. */
+const HEALTH_EVERY_CHUNKS = 40;
 
 /** Every factory generation. Tokens are never dropped because of an upgrade. */
 const DEFAULT_FACTORIES = [
@@ -302,6 +305,7 @@ async function indexLaunches(cfg: IndexerConfig, blocks: BlockCache): Promise<vo
   const from = (await getCursor(sql, chainId, stream)) ?? cfg.startBlock;
   if (from > tip) return;
 
+  let chunksDone = 0;
   for (let start = from; start <= tip; start += CHUNK) {
     const end = start + CHUNK - 1n < tip ? start + CHUNK - 1n : tip;
     const logs = await arc
@@ -365,6 +369,7 @@ async function indexLaunches(cfg: IndexerConfig, blocks: BlockCache): Promise<vo
 
     const endBlock = await blocks.get(end);
     await setCursor(sql, chainId, stream, end, endBlock.hash);
+    if (++chunksDone % HEALTH_EVERY_CHUNKS === 0) await publishHealth(cfg, tip + CONFIRMATIONS);
     if (end < tip) await sleep(CHUNK_DELAY_MS);
   }
 }
@@ -399,10 +404,22 @@ async function indexSwaps(cfg: IndexerConfig, blocks: BlockCache): Promise<void>
   const addresses = pools.map((p) => `0x${p.pool_address.toString("hex")}` as Hex);
 
   const stream = "swaps:all";
-  const tip = (await arc.getBlockNumber()) - CONFIRMATIONS;
+  const head = (await arc.getBlockNumber()) - CONFIRMATIONS;
+
+  // Never scan past where launches have been read.
+  //
+  // The pool list above is whatever the tokens table knows right now. If a
+  // launch chunk failed and stalled its cursor while this one ran ahead, a pool
+  // discovered later would already be behind the swap cursor, and its early
+  // trades would never be read — a permanent hole that nothing retries. Holding
+  // this walk at the launch frontier makes that impossible.
+  const launchesAt = (await getCursor(sql, chainId, "launches:all")) ?? cfg.startBlock;
+  const tip = launchesAt < head ? launchesAt : head;
+
   const from = (await getCursor(sql, chainId, stream)) ?? cfg.startBlock;
   if (from > tip) return;
 
+  let chunksDone = 0;
   for (let start = from; start <= tip; start += CHUNK) {
     const end = start + CHUNK - 1n < tip ? start + CHUNK - 1n : tip;
     const logs = await arc
@@ -472,6 +489,7 @@ async function indexSwaps(cfg: IndexerConfig, blocks: BlockCache): Promise<void>
 
     const endBlock = await blocks.get(end);
     await setCursor(sql, chainId, stream, end, endBlock.hash);
+    if (++chunksDone % HEALTH_EVERY_CHUNKS === 0) await publishHealth(cfg, head);
     if (end < tip) await sleep(CHUNK_DELAY_MS);
   }
 }

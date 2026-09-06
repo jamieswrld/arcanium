@@ -20,7 +20,12 @@ export async function GET(
   if (sql === null) {
     return NextResponse.json({ error: "database not configured" }, { status: 503 });
   }
-  const interval = INTERVALS[new URL(request.url).searchParams.get("interval") ?? "5m"] ?? 300;
+  const params = new URL(request.url).searchParams;
+  const interval = INTERVALS[params.get("interval") ?? "5m"] ?? 300;
+  // The chart seeds its whole history from this, so it needs more than a
+  // preview. Bounded so a crafted query cannot ask for the entire table.
+  const requested = Number.parseInt(params.get("trades") ?? "100", 10);
+  const tradeLimit = Number.isFinite(requested) ? Math.min(Math.max(requested, 1), 2000) : 100;
   const tokenBuf = Buffer.from(token.slice(2), "hex");
   try {
     const [candles, trades] = await Promise.all([
@@ -30,9 +35,10 @@ export async function GET(
         ORDER BY bucket_start ASC LIMIT 1000
       `,
       sql<Record<string, unknown>[]>`
-        SELECT tx_hash, block_time, is_buy, amount_token, volume_usd_e6, recipient
+        SELECT tx_hash, block_number, block_time, is_buy, amount_token, volume_usd_e6,
+               price_usd_e18, recipient
         FROM swaps WHERE token_address = ${tokenBuf}
-        ORDER BY block_time DESC LIMIT 100
+        ORDER BY block_time DESC LIMIT ${tradeLimit}
       `,
     ]);
     return NextResponse.json({
@@ -47,10 +53,14 @@ export async function GET(
       })),
       trades: trades.map((t) => ({
         txHash: `0x${(t["tx_hash"] as Buffer).toString("hex")}`,
+        blockNumber: String(t["block_number"]),
         time: t["block_time"],
         side: (t["is_buy"] as boolean) ? "buy" : "sell",
         amountToken: String(t["amount_token"]),
         valueUsdE6: String(t["volume_usd_e6"]),
+        // The chart buckets its own candles from these, so it needs the price
+        // each trade left behind — otherwise it has to re-read the logs itself.
+        priceUsdE18: String(t["price_usd_e18"]),
         wallet: `0x${(t["recipient"] as Buffer).toString("hex")}`,
       })),
       source: "indexer",
