@@ -1,4 +1,4 @@
-import { parseAbiItem } from "viem";
+import { parseAbiItem, type Hex } from "viem";
 import { getDb } from "@/lib/db";
 import { chainPublicClient } from "@/lib/chainRpc";
 import { getChain, type ChainKey, type LaunchChain } from "@/lib/chains";
@@ -100,7 +100,73 @@ const LAUNCHED_EVENT = parseAbiItem(
   "event Launched(address indexed token, address indexed creator, address pairToken, address pool, uint256 positionId, string metadataUri)",
 );
 const CHAIN_IMAGES_TTL_MS = 300_000;
+/**
+ * How far back to look for Launched events.
+ *
+ * Arc's public RPC refuses a getLogs range much above 10k blocks, so this is
+ * walked in chunks. It used to be requested as a single 400k-block call, which
+ * failed every single time and was swallowed by a .catch — meaning on-chain
+ * logos and socials never resolved at all and only the DB mirror worked.
+ */
 const LOOKBACK_BLOCKS = 400_000n;
+const LOG_CHUNK = 9_500n;
+const LOG_CONCURRENCY = 6;
+/** Launch metadata is immutable, so a hit is good for a long time. */
+const LAUNCH_LOGS_TTL_MS = 600_000;
+
+type LaunchedLog = { readonly args: { readonly token?: Hex; readonly metadataUri?: string } };
+
+const launchLogCache = new Map<ChainKey, { at: number; logs: LaunchedLog[] }>();
+const launchLogInFlight = new Map<ChainKey, Promise<LaunchedLog[]>>();
+
+/** Every Launched event in the lookback window, chunked to respect the RPC's
+ *  range cap and shared by the image and metadata paths. */
+async function fetchLaunchedLogs(chain: LaunchChain): Promise<LaunchedLog[]> {
+  const hit = launchLogCache.get(chain.key);
+  if (hit !== undefined && Date.now() - hit.at < LAUNCH_LOGS_TTL_MS) return hit.logs;
+  const pending = launchLogInFlight.get(chain.key);
+  if (pending !== undefined) return pending;
+
+  const run = (async (): Promise<LaunchedLog[]> => {
+    const out: LaunchedLog[] = [];
+    try {
+      const client = chainPublicClient(chain);
+      const head = await client.getBlockNumber();
+      const floor = head > LOOKBACK_BLOCKS ? head - LOOKBACK_BLOCKS : 0n;
+
+      const ranges: { from: bigint; to: bigint }[] = [];
+      for (let to = head; to > floor; to -= LOG_CHUNK) {
+        const from = to > floor + LOG_CHUNK ? to - LOG_CHUNK + 1n : floor;
+        ranges.push({ from, to });
+      }
+
+      for (let i = 0; i < ranges.length; i += LOG_CONCURRENCY) {
+        const batch = ranges.slice(i, i + LOG_CONCURRENCY);
+        const sets = await Promise.all(
+          batch.flatMap((r) =>
+            chain.factories.map((address) =>
+              client
+                .getLogs({ address, event: LAUNCHED_EVENT, fromBlock: r.from, toBlock: r.to })
+                .catch(() => []),
+            ),
+          ),
+        );
+        for (const set of sets) out.push(...(set as unknown as LaunchedLog[]));
+      }
+    } catch {
+      // Leave what we have; callers degrade to the DB mirror or no logo.
+    }
+    launchLogCache.set(chain.key, { at: Date.now(), logs: out });
+    return out;
+  })();
+
+  launchLogInFlight.set(chain.key, run);
+  try {
+    return await run;
+  } finally {
+    launchLogInFlight.delete(chain.key);
+  }
+}
 const chainImages = new Map<ChainKey, { at: number; map: Record<string, string> }>();
 
 async function imagesFromChain(chain: LaunchChain): Promise<Record<string, string>> {
@@ -109,17 +175,7 @@ async function imagesFromChain(chain: LaunchChain): Promise<Record<string, strin
 
   const map: Record<string, string> = {};
   try {
-    const client = chainPublicClient(chain);
-    const head = await client.getBlockNumber();
-    const from = head > LOOKBACK_BLOCKS ? head - LOOKBACK_BLOCKS : 0n;
-    const logs = await Promise.all(
-      chain.factories.map((address) =>
-        client
-          .getLogs({ address, event: LAUNCHED_EVENT, fromBlock: from, toBlock: head })
-          .catch(() => []),
-      ),
-    );
-    for (const log of logs.flat()) {
+    for (const log of await fetchLaunchedLogs(chain)) {
       const token = log.args.token;
       const img = decodeImage(log.args.metadataUri);
       if (token !== undefined && img !== null) map[token.toLowerCase()] = img;
@@ -234,15 +290,7 @@ async function metaFromChain(chain: LaunchChain): Promise<Record<string, TokenMe
   if (hit !== undefined && Date.now() - hit.at < META_TTL_MS) return hit.map;
   const map: Record<string, TokenMeta> = {};
   try {
-    const client = chainPublicClient(chain);
-    const head = await client.getBlockNumber();
-    const from = head > LOOKBACK_BLOCKS ? head - LOOKBACK_BLOCKS : 0n;
-    const logs = await Promise.all(
-      chain.factories.map((address) =>
-        client.getLogs({ address, event: LAUNCHED_EVENT, fromBlock: from, toBlock: head }).catch(() => []),
-      ),
-    );
-    for (const log of logs.flat()) {
+    for (const log of await fetchLaunchedLogs(chain)) {
       const token = log.args.token;
       if (token !== undefined) map[token.toLowerCase()] = decodeMeta(log.args.metadataUri);
     }

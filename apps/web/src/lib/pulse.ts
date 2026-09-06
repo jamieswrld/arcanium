@@ -1,41 +1,32 @@
 import "server-only";
-import { parseAbiItem, type Hex, type PublicClient } from "viem";
+import { parseAbiItem, type Hex } from "viem";
 import { arcPublicClient, type LaunchpadToken } from "@/lib/launchpad";
 import { getChain } from "@/lib/chains";
+import { fetchSwapWindow, type SwapLog } from "@/lib/swapLogs";
 
 /**
  * ARC PULSE — recent protocol activity, from real indexed events.
  *
- * Every row here is an on-chain log. Nothing is generated, sampled or padded:
- * an empty pulse means the chain was quiet, and that is the honest answer.
+ * Every row is an on-chain log. Nothing is generated, sampled or padded: an
+ * empty pulse means the chain was quiet, and that is the honest answer.
  *
- * Two event sources:
- *   Swap      on our pools -> BUY / SELL, with the quote-side amount
- *   Launched  on our factories -> LAUNCH
+ * Trades come from the shared Swap window rather than a separate walk. Launches
+ * are a different event on a different address set, so they still need their own
+ * request — but only over the newest slice, since a launch older than that will
+ * already be visible in the market table.
  *
- * Graduation is deliberately absent. There is no graduation event on-chain —
- * it is a threshold on the pool's balance — so surfacing it here would mean
- * inventing a timestamp for something that never happened at a specific moment.
+ * Graduation is deliberately absent. There is no graduation event on-chain — it
+ * is a threshold on the pool's balance — so surfacing it here would mean
+ * inventing a timestamp for something that never happened at a moment.
  */
 
-const swapEvent = parseAbiItem(
-  "event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)",
-);
 const launchedEvent = parseAbiItem(
   "event Launched(address indexed token, address indexed creator, address pairToken, address pool, uint256 positionId, string metadataUri)",
 );
 
-/** Arc's public RPC rejects a getLogs range much above 10k blocks. */
-const CHUNK = 9_500n;
-/** ~28.5k blocks at 0.506s ≈ 4 hours of history, in three parallel requests. */
-const CHUNKS = 3;
-/** Measured on Arc: steady 0.506s blocks. Used to age events without paying a
- *  getBlock call per row — the drift over a few hours is a second or two. */
-const SECONDS_PER_BLOCK = 0.506;
-
+/** Launches are read over the newest ~4h only; older ones are old news here. */
+const LAUNCH_LOOKBACK = 28_500n;
 const TTL_MS = 20_000;
-let cache: { at: number; value: PulseEvent[] } | null = null;
-let inFlight: Promise<PulseEvent[]> | null = null;
 
 export interface PulseEvent {
   readonly kind: "buy" | "sell" | "launch";
@@ -48,6 +39,9 @@ export interface PulseEvent {
   readonly txHash: Hex;
 }
 
+let cache: { at: number; value: PulseEvent[] } | null = null;
+let inFlight: Promise<PulseEvent[]> | null = null;
+
 function toUsdMicro(raw: bigint, decimals: number): bigint {
   if (decimals === 6) return raw;
   if (decimals > 6) return raw / 10n ** BigInt(decimals - 6);
@@ -57,8 +51,9 @@ function toUsdMicro(raw: bigint, decimals: number): bigint {
 async function build(tokens: readonly LaunchpadToken[]): Promise<PulseEvent[]> {
   if (tokens.length === 0) return [];
   const chain = getChain("arc");
-  const client: PublicClient = arcPublicClient();
-  const tip = await client.getBlockNumber();
+  const client = arcPublicClient();
+
+  const { tip, logs, secondsPerBlock } = await fetchSwapWindow(tokens);
 
   const byPool = new Map(
     tokens.map((t) => [
@@ -67,36 +62,15 @@ async function build(tokens: readonly LaunchpadToken[]): Promise<PulseEvent[]> {
     ]),
   );
   const byToken = new Map(tokens.map((t) => [t.token.toLowerCase(), t.symbol]));
-  const pools = tokens.map((t) => t.pool) as Hex[];
 
-  const ranges = Array.from({ length: CHUNKS }, (_, i) => {
-    const to = tip - BigInt(i) * CHUNK;
-    return { from: to > CHUNK ? to - CHUNK + 1n : 0n, to };
-  });
-
-  const [swapSets, launchSets] = await Promise.all([
-    Promise.all(
-      ranges.map((r) =>
-        client.getLogs({ address: pools, event: swapEvent, fromBlock: r.from, toBlock: r.to }).catch(() => []),
-      ),
-    ),
-    Promise.all(
-      ranges.map((r) =>
-        client
-          .getLogs({ address: [...chain.factories], event: launchedEvent, fromBlock: r.from, toBlock: r.to })
-          .catch(() => []),
-      ),
-    ),
-  ]);
-
-  const age = (block: bigint): number => Math.max(0, Math.round(Number(tip - block) * SECONDS_PER_BLOCK));
+  const age = (block: bigint): number => Math.max(0, Math.round(Number(tip - block) * secondsPerBlock));
   const out: PulseEvent[] = [];
 
-  for (const log of swapSets.flat()) {
+  for (const log of logs as readonly SwapLog[]) {
     const pool = byPool.get(log.address.toLowerCase());
     if (pool === undefined) continue;
-    // The quote-side delta is what the trade was worth. Its sign tells us the
-    // direction: quote leaving the trader (positive to the pool) is a buy.
+    // The quote-side delta is what the trade was worth; its sign gives the
+    // direction — quote flowing into the pool is a buy.
     const quoteDelta = pool.tokenIsToken0 ? (log.args.amount1 ?? 0n) : (log.args.amount0 ?? 0n);
     if (quoteDelta === 0n) continue;
     out.push({
@@ -110,7 +84,16 @@ async function build(tokens: readonly LaunchpadToken[]): Promise<PulseEvent[]> {
     });
   }
 
-  for (const log of launchSets.flat()) {
+  const launchLogs = await client
+    .getLogs({
+      address: [...chain.factories],
+      event: launchedEvent,
+      fromBlock: tip > LAUNCH_LOOKBACK ? tip - LAUNCH_LOOKBACK : 0n,
+      toBlock: tip,
+    })
+    .catch(() => []);
+
+  for (const log of launchLogs) {
     const token = log.args.token;
     if (token === undefined) continue;
     out.push({
@@ -124,10 +107,12 @@ async function build(tokens: readonly LaunchpadToken[]): Promise<PulseEvent[]> {
     });
   }
 
-  return out.sort((a, b) => (b.blockNumber > a.blockNumber ? 1 : b.blockNumber < a.blockNumber ? -1 : 0)).slice(0, 24);
+  return out
+    .sort((a, b) => (b.blockNumber > a.blockNumber ? 1 : b.blockNumber < a.blockNumber ? -1 : 0))
+    .slice(0, 24);
 }
 
-/** Recent activity, cached briefly so the feed does not re-walk logs per render. */
+/** Recent activity, cached briefly so the feed does not re-derive per render. */
 export async function fetchPulse(tokens: readonly LaunchpadToken[]): Promise<PulseEvent[]> {
   if (cache !== null && Date.now() - cache.at < TTL_MS) return cache.value;
   if (inFlight !== null) return inFlight;

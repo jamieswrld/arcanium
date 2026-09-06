@@ -52,8 +52,6 @@ const Q192 = 2n ** 192n;
 
 /** Launches hidden from the Arcanium UI.
  *
- *  Empty by design: every launch, on every factory generation, stays listed.
- *
  *  Hiding is presentation only — a token here still exists on-chain, still
  *  trades, still holds its locked liquidity and still pays its fees. Nothing is
  *  ever deleted. Add an address below (or to NEXT_PUBLIC_ARCH_HIDDEN_TOKENS) to
@@ -63,7 +61,10 @@ const Q192 = 2n ** 192n;
  *  never reaches production, so an env-only denylist silently does nothing once
  *  deployed.
  */
-const HIDDEN_DEFAULTS: readonly string[] = [];
+const HIDDEN_DEFAULTS: readonly string[] = [
+  "0xCA7a7c18122996980baD41062b269f25c0F881DE", // SASHIMI — "sashimi"
+  "0x10667F1aF42927cae3C4E41d95B009A1a3140bC6", // RDCK    — "Redirect Check"
+];
 
 const HIDDEN_TOKENS = new Set(
   [...HIDDEN_DEFAULTS, ...(process.env["NEXT_PUBLIC_ARCH_HIDDEN_TOKENS"] ?? "").split(",")]

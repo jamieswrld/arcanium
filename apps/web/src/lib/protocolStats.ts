@@ -1,19 +1,17 @@
-import { parseAbiItem, type Hex, type PublicClient } from "viem";
 import { getDb } from "@/lib/db";
 import type { LaunchpadToken } from "@/lib/launchpad";
-import { chainPublicClient } from "@/lib/chainRpc";
+import { fetchSwapWindow } from "@/lib/swapLogs";
 import type { ChainKey, LaunchChain } from "@/lib/chains";
 
 /**
- * Protocol-wide stats for the hero bar: trade count and volume (24h and
- * all-time) across every launch pool. Prefers the indexer's Postgres (true
- * all-time history); falls back to a chunked chain walk that covers the RPC's
- * full retention window. Cached in-memory so the ISR'd homepage stays fast.
+ * Protocol-wide stats for the stat strip: trade count and volume across every
+ * launch pool.
+ *
+ * Prefers the indexer's Postgres, which is the only source with true all-time
+ * history. Otherwise the figures are summed from the shared Swap window, and
+ * the `source` field says so, so the UI can label a bounded number honestly
+ * rather than calling 24 hours "all time".
  */
-
-const swapEvent = parseAbiItem(
-  "event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)",
-);
 
 export interface ProtocolStats {
   readonly trades: number;
@@ -41,10 +39,8 @@ let inFlight: Promise<ProtocolStats> | null = null;
  */
 const CHUNK = 9_500n;
 /** ~190k blocks at 0.506s/block ≈ 27h, so the 24h window is fully covered. */
-const MAX_CHUNKS = 20;
 /** Chunks are independent ranges, so they are fetched concurrently — but only a
  *  few at a time, because the same RPC drops large parallel bursts. */
-const CHUNK_CONCURRENCY = 5;
 /** Measured 0.506s/block on Arc. */
 const BLOCKS_24H = 170_700n;
 
@@ -65,65 +61,6 @@ async function fromDb(): Promise<ProtocolStats | null> {
     return { trades, volAllUnits: BigInt(all.vol), vol24hUnits: BigInt(day?.vol ?? "0"), source: "indexer" };
   } catch {
     return null;
-  }
-}
-
-async function fromChain(client: PublicClient, tokens: readonly LaunchpadToken[]): Promise<ProtocolStats> {
-  if (tokens.length === 0) return { trades: 0, volAllUnits: 0n, vol24hUnits: 0n, source: "chain" as const };
-  const pools = tokens.map((t) => t.pool);
-  const isToken0 = new Map<string, boolean>(
-    tokens.map((t) => [t.pool.toLowerCase(), t.token.toLowerCase() < t.pairToken.toLowerCase()]),
-  );
-  const tip = await client.getBlockNumber();
-  const cutoff24h = tip > BLOCKS_24H ? tip - BLOCKS_24H : 0n;
-
-  let trades = 0;
-  let volAll = 0n;
-  let vol24h = 0n;
-  let end = tip;
-  for (let i = 0; i < MAX_CHUNKS; i++) {
-    const start = end >= CHUNK ? end - CHUNK + 1n : 0n;
-    let logs;
-    try {
-      logs = await client.getLogs({ address: pools as Hex[], event: swapEvent, fromBlock: start, toBlock: end });
-    } catch {
-      break; // pruning horizon
-    }
-    for (const l of logs) {
-      const t0 = isToken0.get(l.address.toLowerCase());
-      if (t0 === undefined) continue;
-      const quoteDelta = t0 ? (l.args.amount1 ?? 0n) : (l.args.amount0 ?? 0n);
-      const vol = quoteDelta < 0n ? -quoteDelta : quoteDelta;
-      trades += 1;
-      volAll += vol;
-      if ((l.blockNumber ?? 0n) >= cutoff24h) vol24h += vol;
-    }
-    if (start === 0n) break;
-    end = start - 1n;
-  }
-  return { trades, volAllUnits: volAll, vol24hUnits: vol24h, source: "chain" };
-}
-
-export async function fetchProtocolStats(
-  client: PublicClient,
-  tokens: readonly LaunchpadToken[],
-): Promise<ProtocolStats> {
-  if (cache !== null && Date.now() - cache.at < TTL_MS) return cache.value;
-  if (inFlight !== null) return inFlight;
-  inFlight = (async () => {
-    const [db, chain] = await Promise.all([fromDb(), fromChain(client, tokens).catch(() => null)]);
-    // Take whichever source saw more history (DB grows past the RPC horizon).
-    const value =
-      db !== null && (chain === null || db.trades >= chain.trades)
-        ? db
-        : chain ?? { trades: 0, volAllUnits: 0n, vol24hUnits: 0n, source: "chain" as const };
-    cache = { at: Date.now(), value };
-    return value;
-  })();
-  try {
-    return await inFlight;
-  } finally {
-    inFlight = null;
   }
 }
 
@@ -149,58 +86,40 @@ async function fromOneChain(
   chain: LaunchChain,
   tokens: readonly LaunchpadToken[],
 ): Promise<ProtocolStats> {
-  if (tokens.length === 0) return { trades: 0, volAllUnits: 0n, vol24hUnits: 0n, source: "chain" as const };
-  const client = chainPublicClient(chain);
-  const isToken0 = new Map<string, boolean>(
-    tokens.map((t) => [t.pool.toLowerCase(), t.token.toLowerCase() < t.pairToken.toLowerCase()]),
-  );
-  const pools = tokens.map((t) => t.pool) as Hex[];
-  const tip = await client.getBlockNumber();
+  if (tokens.length === 0) return { trades: 0, volAllUnits: 0n, vol24hUnits: 0n, source: "chain" };
+
+  // Derived from the shared Swap window rather than a private 20-chunk walk.
+  // Explore used to trigger three separate walks of the same events — 41 getLogs
+  // requests per cold render, which was most of the page's load time.
+  const { tip, logs } = await fetchSwapWindow(tokens);
   const window24h = BLOCKS_24H_BY_CHAIN[chain.key];
   const cutoff24h = tip > window24h ? tip - window24h : 0n;
 
-  // Build every range up front, then fetch them a few at a time. Walking
-  // sequentially took one round trip per chunk; at 20 chunks that is far longer
-  // than a page render can wait.
-  const ranges: { from: bigint; to: bigint }[] = [];
-  let end = tip;
-  for (let i = 0; i < MAX_CHUNKS && end > 0n; i++) {
-    const start = end >= CHUNK ? end - CHUNK + 1n : 0n;
-    ranges.push({ from: start, to: end });
-    if (start === 0n) break;
-    end = start - 1n;
-  }
+  const isToken0 = new Map<string, boolean>(
+    tokens.map((t) => [t.pool.toLowerCase(), t.token.toLowerCase() < t.pairToken.toLowerCase()]),
+  );
 
   let trades = 0;
   let volAll = 0n;
   let vol24h = 0n;
 
-  for (let i = 0; i < ranges.length; i += CHUNK_CONCURRENCY) {
-    const batch = ranges.slice(i, i + CHUNK_CONCURRENCY);
-    const results = await Promise.all(
-      batch.map((r) =>
-        client
-          .getLogs({ address: pools, event: swapEvent, fromBlock: r.from, toBlock: r.to })
-          // A failed range is skipped, not fatal: older ranges may be past the
-          // node's pruning horizon while newer ones are perfectly readable.
-          .catch(() => []),
-      ),
-    );
-    for (const logs of results) {
-      for (const l of logs) {
-        const t0 = isToken0.get(l.address.toLowerCase());
-        if (t0 === undefined) continue;
-        const quoteDelta = t0 ? (l.args.amount1 ?? 0n) : (l.args.amount0 ?? 0n);
-        const vol = quoteDelta < 0n ? -quoteDelta : quoteDelta;
-        trades += 1;
-        volAll += vol;
-        if ((l.blockNumber ?? 0n) >= cutoff24h) vol24h += vol;
-      }
-    }
+  for (const l of logs) {
+    const t0 = isToken0.get(l.address.toLowerCase());
+    if (t0 === undefined) continue;
+    const quoteDelta = t0 ? (l.args.amount1 ?? 0n) : (l.args.amount0 ?? 0n);
+    const vol = quoteDelta < 0n ? -quoteDelta : quoteDelta;
+    trades += 1;
+    volAll += vol;
+    if ((l.blockNumber ?? 0n) >= cutoff24h) vol24h += vol;
   }
 
   const d = chain.quote.decimals;
-  return { trades, volAllUnits: toUsdMicro(volAll, d), vol24hUnits: toUsdMicro(vol24h, d), source: "chain" };
+  return {
+    trades,
+    volAllUnits: toUsdMicro(volAll, d),
+    vol24hUnits: toUsdMicro(vol24h, d),
+    source: "chain",
+  };
 }
 
 let multiCache: { at: number; value: ProtocolStats } | null = null;

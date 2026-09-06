@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useConnect } from "wagmi";
 
 /**
@@ -16,6 +17,13 @@ import { useConnect } from "wagmi";
  *
  * Real states throughout: idle, connecting (per wallet), failed with the reason,
  * and a genuine empty state when no wallet is installed.
+ *
+ * Rendered through a portal to document.body, and that is load-bearing rather
+ * than tidiness: this component mounts inside the topbar, and the topbar has a
+ * backdrop-filter. Any filter, transform or backdrop-filter makes an element the
+ * containing block for `position: fixed` descendants, so the overlay was being
+ * centred inside a 56px-tall bar and hanging off the top of the screen instead
+ * of covering the viewport.
  */
 export function ConnectModal({
   open,
@@ -25,6 +33,9 @@ export function ConnectModal({
   readonly onClose: () => void;
 }) {
   const { connectors, connect, isPending, variables, error } = useConnect();
+  // Portals need a DOM target, so only render after mount.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     if (!open) return;
@@ -40,7 +51,7 @@ export function ConnectModal({
     };
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
   // wagmi can surface both the injected shim and the EIP-6963 provider for the
   // same wallet; keep one entry each, preferring the one carrying an icon.
@@ -54,7 +65,7 @@ export function ConnectModal({
   }
   const wallets = [...seen.values()];
 
-  return (
+  return createPortal(
     <div className="sheet-backdrop" onClick={onClose} role="presentation">
       <div
         className="sheet"
@@ -146,6 +157,7 @@ export function ConnectModal({
           </p>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
