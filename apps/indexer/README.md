@@ -94,6 +94,55 @@ The website reads the same `DATABASE_URL`, so the indexer must write to the
 database Vercel reads — for us, Neon. Do not point it at a Postgres on the VPS
 unless Vercel can reach that too.
 
+## The fee keeper
+
+Divium dividends and Arcane burns are not self-executing, and that is a property
+of Uniswap v3 rather than a gap in the contracts: a pool's trading fees sit
+uncollected until someone calls `collect`, so `distribute(token)` has to be
+invoked by somebody. Before the keeper that somebody was a person running a
+script, which meant holders were paid and tokens were burned only when one of us
+remembered.
+
+`dist/keeper.js` sweeps every launch on a timer. It enumerates them from the
+factories' `allTokens()` rather than from logs, so it keeps working across Arc's
+log pruning — a log-derived list would quietly lose the oldest launches, which
+are exactly the ones most likely to have unswept fees.
+
+It simulates before it sends. `distribute` reverts when there is nothing to
+collect, which is the normal state for most launches most of the time, so paying
+gas to discover that every cycle would be waste.
+
+**The keeper cannot take anything.** `distribute` is permissionless and always
+pays the configured recipients — creator, holders, burn address, treasury —
+never the caller. Its wallet needs gas and nothing else, and a compromise of its
+key costs exactly that gas. It runs as a separate service for the same reason:
+the indexer holds no signing key and can only read, and keeping it that way is
+worth more than sharing a process.
+
+Measured on 23 launches: 6 had fees ready, ~903k gas total, about 0.018 USDC for
+a full sweep. At the default 15-minute interval that is well under 2 USDC/day
+even if every launch were always ready.
+
+```bash
+# as root
+cat > /etc/arcanium/keeper.env <<'EOF'
+KEEPER_PRIVATE_KEY=0x...   # a wallet holding gas and nothing else
+ARC_RPC_URLS=https://rpc.quicknode.mainnet.arc.io,https://rpc.arc-scan.org
+KEEPER_INTERVAL_MS=900000
+LOG_LEVEL=info
+EOF
+chown root:arcanium /etc/arcanium/keeper.env
+chmod 640 /etc/arcanium/keeper.env
+
+cp /opt/arcanium/apps/indexer/deploy/arcanium-keeper.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now arcanium-keeper
+journalctl -u arcanium-keeper -f
+```
+
+It warns when the wallet drops below 2 USDC of gas, because dividends and burns
+stop silently when it runs dry.
+
 ## Do not let it fall far behind
 
 Arc's public RPCs keep only a few days of logs — measured at roughly 500k blocks

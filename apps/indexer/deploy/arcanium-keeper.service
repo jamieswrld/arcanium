@@ -1,0 +1,41 @@
+[Unit]
+Description=Arcanium fee keeper (Divium dividends, Arcane burns)
+Documentation=https://arcanium.trade
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=arcanium
+WorkingDirectory=/opt/arcanium
+ExecStart=/usr/bin/node /opt/arcanium/apps/indexer/dist/keeper.js
+
+# Its own env file, separate from the indexer's. This one holds a signing key;
+# the indexer's holds none, and keeping them apart is the point of running two
+# services rather than folding the keeper into the indexer loop.
+EnvironmentFile=/etc/arcanium/keeper.env
+
+# A sweep that fails is caught and retried on the next cycle, so an exit here
+# means something structural — a bad key, no RPC at all. Come back, but slowly.
+Restart=always
+RestartSec=30
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=arcanium-keeper
+
+# It needs the network, its own code, and nothing else. No database, no writes.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target
