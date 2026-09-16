@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import { LOCK_DOCS } from "./docs-locks";
 import { REWARD_DOCS } from "./docs-rewards";
 import { LOCKS_API_DOCS } from "./docs-locks-api";
+import { BRIDGE_DOCS } from "./docs-bridge";
+import { TAX_DOCS } from "./docs-tax";
 
 /** Deployed mainnet contract addresses (Arc chain 5042). */
 /**
@@ -33,7 +35,13 @@ function Callout({ children }: { readonly children: ReactNode }) {
  * Pages defined in their own modules, merged in below. Splitting them keeps
  * this file from growing without bound as sections are added.
  */
-const EXTRA_DOCS: Record<string, ReactNode> = { ...LOCK_DOCS, ...REWARD_DOCS, ...LOCKS_API_DOCS };
+const EXTRA_DOCS: Record<string, ReactNode> = {
+  ...LOCK_DOCS,
+  ...REWARD_DOCS,
+  ...LOCKS_API_DOCS,
+  ...BRIDGE_DOCS,
+  ...TAX_DOCS,
+};
 
 const CORE_DOCS: Record<string, ReactNode> = {
   "": (
@@ -95,10 +103,11 @@ const CORE_DOCS: Record<string, ReactNode> = {
     <>
       <h1>Getting USDC on Arc</h1>
       <p className="docs-lead">Everything on Arcanium is denominated in USDC held on the Arc network. That one balance covers gas, optional first buys, and trades.</p>
-      <h2>You start with USDC on Base or Ethereum</h2>
-      <p>To get USDC onto Arc you first need <strong>USDC on Base or Ethereum</strong>, then bridge it across. If you don&apos;t have any yet, buy USDC on an exchange (Coinbase, Kraken, and others) and withdraw it on the <strong>Base</strong> or <strong>Ethereum</strong> network.</p>
-      <h2>Bridge it to Arc with Circle CCTP</h2>
-      <p>Use Circle&apos;s Cross-Chain Transfer Protocol (CCTP) — the official USDC bridge — to move your USDC from Base or Ethereum to Arc. CCTP burns the USDC on the source chain and mints native USDC to you on Arc, one for one. Make sure the destination is the <strong>Arc</strong> network (chain 5042).</p>
+      <h2>Start with USDC anywhere</h2>
+      <p>You first need USDC on a chain Arcanium can bridge from — there are eleven, including Ethereum, Base, Arbitrum, OP Mainnet, Polygon and Avalanche. If you have none yet, buy USDC on an exchange (Coinbase, Kraken, and others) and withdraw it on whichever of those networks is cheapest for you.</p>
+      <h2>Bridge it here</h2>
+      <p>Use the <a href="/bridge">Bridge</a>. It runs on Circle&apos;s CCTP, so your USDC is burned on the source chain and native USDC is minted to you on Arc, one for one — nothing is wrapped and Arcanium never holds it. Arriving needs no Arc gas: the claim is relayed for you, which is what makes this work when Arc is a network you have never touched.</p>
+      <p>The full list of routes, and the two chains deliberately left out, is under <a href="/docs/bridge/chains">Supported chains</a>.</p>
       <h2>How much you need</h2>
       <ul>
         <li>Enough USDC for an optional first buy — launching itself is free (gas only).</li>

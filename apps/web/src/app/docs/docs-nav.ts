@@ -24,6 +24,14 @@ export const DOCS_NAV: readonly DocSection[] = [
       { slug: "launchpad", title: "Launching a token" },
       { slug: "launchpad/economics", title: "Pricing and graduation" },
       { slug: "launchpad/trading", title: "Buying and selling" },
+      { slug: "launchpad/tax", title: "Trade tax" },
+    ],
+  },
+  {
+    title: "Bridge",
+    links: [
+      { slug: "bridge", title: "Bridging USDC" },
+      { slug: "bridge/chains", title: "Supported chains" },
     ],
   },
   {
