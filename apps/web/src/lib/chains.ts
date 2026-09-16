@@ -101,6 +101,43 @@ function graduationUnits(decimals: number): bigint {
 
 // ---------------------------------------------------------------- Arc (5042)
 
+/**
+ * The Arc endpoints we actually rely on, best first.
+ *
+ * QuickNode is the preferred primary: measured ~2.4x faster than arc-scan on a
+ * filtered getLogs (287ms vs ~700ms), and it retains noticeably more log
+ * history — it still served ranges arc-scan had already pruned. Same ~10k-block
+ * getLogs ceiling, so the chunked walk in swapLogs.ts stays correct either way.
+ *
+ * QuickNode does rate-limit, despite what an earlier comment here claimed:
+ * sustained bursts come back as -32005, and pruned ranges usually come back as
+ * a bare -32603 "internal error" rather than anything naming pruning. Both are
+ * why the indexer retries a chunk before drawing any conclusion from a failure.
+ *
+ * arc-scan is kept alongside it, having been observed both capacity-limited and
+ * briefly unreachable — which is precisely why the transport ranks rather than
+ * pins.
+ */
+export const ARC_PRIMARY_RPCS: readonly string[] = [
+  "https://rpc.quicknode.mainnet.arc.io",
+  "https://rpc.arc-scan.org",
+];
+
+/**
+ * Emergency fallbacks only, for our own ranked transport.
+ *
+ * These are never offered to a wallet: both thirdweb entries have been observed
+ * returning bare "Unauthorized" and an internal error, and a wallet does not
+ * rank or fail over the way viem's fallback transport does — it simply uses
+ * what it is handed.
+ */
+const ARC_FALLBACK_RPCS: readonly string[] = [
+  "https://rpc.blockdaemon.mainnet.arc.io",
+  "https://5042.rpc.thirdweb.com/8b0c89cd3b125e7f8f744f5e56f6436a",
+  "https://5042.rpc.thirdweb.com",
+];
+
+
 const ARC: LaunchChain = {
   key: "arc",
   id: 5042,
@@ -110,26 +147,8 @@ const ARC: LaunchChain = {
   rpcUrls: [
     ...envUrls(process.env["NEXT_PUBLIC_ARC_RPC_URLS"]),
     ...envUrls(process.env["NEXT_PUBLIC_ARC_RPC_URL"]),
-    // QuickNode is the preferred primary: measured ~2.4x faster than arc-scan on
-    // a filtered getLogs (287ms vs ~700ms), and it retains noticeably more log
-    // history — it still served ranges arc-scan had already pruned. Same
-    // ~10k-block getLogs ceiling, so the chunked walk in swapLogs.ts stays
-    // correct either way.
-    //
-    // It does rate-limit, despite what an earlier version of this comment said:
-    // sustained bursts come back as -32005, and pruned ranges usually come back
-    // as a bare -32603 "internal error" rather than anything that names pruning.
-    // Both are why the indexer retries a chunk before drawing any conclusion
-    // from a failure.
-    "https://rpc.quicknode.mainnet.arc.io",
-    // Kept as a fallback. It has been observed both capacity-limited and briefly
-    // unreachable, which is precisely why the transport ranks rather than pins.
-    "https://rpc.arc-scan.org",
-    // Kept as fallbacks. Both required auth during the outage; if they open
-    // up again the ranked transport will start using them on its own.
-    "https://rpc.blockdaemon.mainnet.arc.io",
-    "https://5042.rpc.thirdweb.com/8b0c89cd3b125e7f8f744f5e56f6436a",
-    "https://5042.rpc.thirdweb.com",
+    ...ARC_PRIMARY_RPCS,
+    ...ARC_FALLBACK_RPCS,
   ],
   explorer: { name: "Blockscout", url: "https://arc-mainnet.cloud.blockscout.com" },
   quote: {

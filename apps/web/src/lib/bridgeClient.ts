@@ -5,6 +5,7 @@ import {
   type Hex,
 } from "viem";
 import { base, baseSepolia } from "viem/chains";
+import { ARC_PRIMARY_RPCS } from "./chains";
 
 /**
  * Client-side bridge constants and helpers. All financial math is bigint.
@@ -13,13 +14,32 @@ import { base, baseSepolia } from "viem/chains";
 
 const ARC_CHAIN_ID = Number(process.env["NEXT_PUBLIC_ARC_CHAIN_ID"] ?? "5042");
 
+/** A single configured URL, or nothing. Keeps an unset env var out of the list
+ *  rather than putting `undefined` in front of the endpoints that work. */
+function envList(raw: string | undefined): string[] {
+  return raw !== undefined && /^https?:\/\//.test(raw.trim()) ? [raw.trim()] : [];
+}
+
 export const arcTestnet = defineChain({
   id: ARC_CHAIN_ID,
   name: process.env["NEXT_PUBLIC_ARC_CHAIN_NAME"] ?? "Arc",
   nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
   rpcUrls: {
     default: {
-      http: [process.env["NEXT_PUBLIC_ARC_RPC_URL"] ?? "https://rpc.blockdaemon.mainnet.arc.io"],
+      /**
+       * What the wallet is handed for wallet_addEthereumChain — and therefore
+       * what it uses for its own estimates and receipts.
+       *
+       * This had drifted: it still named Blockdaemon as the primary long after
+       * every read path in the app moved to QuickNode, so the wallet and the
+       * site disagreed about which node Arc was. Sharing ARC_PRIMARY_RPCS is
+       * what stops that happening again. Only the endpoints we would be content
+       * to be pinned to are offered, since a wallet does not fail over.
+       */
+      http:
+        ARC_CHAIN_ID === 5042
+          ? [...envList(process.env["NEXT_PUBLIC_ARC_RPC_URL"]), ...ARC_PRIMARY_RPCS]
+          : [process.env["NEXT_PUBLIC_ARC_RPC_URL"] ?? "https://rpc.blockdaemon.mainnet.arc.io"],
     },
   },
   blockExplorers: {

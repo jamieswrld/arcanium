@@ -10,18 +10,40 @@ import { arcRpcUrls } from "@/lib/arcRpc";
  */
 export const dynamic = "force-dynamic";
 
-/** A JSON-RPC body that carries an `error` is a failed upstream for our
- *  purposes — fall through to the next provider rather thanreturning it. */
+/**
+ * Codes that mean "this endpoint could not serve the request", so the next one
+ * is worth trying. Everything else is an answer, even an unwelcome one.
+ *
+ * This list is deliberately an allowlist of failures rather than an allowlist
+ * of answers. The previous rule kept only -32000..-32099 as real answers, and
+ * Arc reports a reverted call as code 3 — the standard revert code, carrying
+ * the reason in `data`. So every ordinary revert looked like a broken provider:
+ * the proxy swept all five upstreams, got the same revert from each, threw the
+ * reason away and told the user "All Arc RPC endpoints are unavailable". A
+ * failed gas estimate is the normal way a contract says no, and it was being
+ * reported as an outage — while costing five upstream requests each time, which
+ * fed the rate limiting that then caused real failures.
+ */
+const ENDPOINT_FAILURE_CODES = new Set([
+  -32005, // rate limited / out of capacity (arc-scan, QuickNode)
+  -32014, // QuickNode: requested data not available (pruned range)
+  -32603, // internal error
+  -32601, // method not found — another provider may well implement it
+  -32006, // JSON-RPC version unsupported: a quarrel with that provider, not an
+  //         answer. Showing it to a user as "Version of JSON-RPC protocol is
+  //         not supported" explains nothing they can act on.
+  4444, // arc-scan: pruned history unavailable
+]);
+
+/** Whether an upstream response should be returned, or the next one tried. */
 function isUsable(text: string): boolean {
   if (text.trimStart().startsWith("<")) return false; // HTML error page
   try {
     const body = JSON.parse(text) as { error?: { code?: number } } | Array<{ error?: unknown }>;
     if (Array.isArray(body)) return true; // batch: let the client sort it out
     if (body.error === undefined) return true;
-    // -32000..-32099 are execution-level errors (a real answer); anything else
-    // (auth, rate limit, internal) means try the next endpoint.
-    const code = body.error.code ?? 0;
-    return code <= -32000 && code >= -32099;
+    const code = body.error.code;
+    return code === undefined || !ENDPOINT_FAILURE_CODES.has(code);
   } catch {
     return false;
   }
