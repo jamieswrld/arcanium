@@ -81,7 +81,21 @@ export function CreateLockPanel() {
   const [recipient, setRecipient] = useState("");
   const [preset, setPreset] = useState<string>("30d");
   const [customDate, setCustomDate] = useState("");
-  const [allowance, setAllowance] = useState<bigint>(0n);
+  /**
+   * The allowance, and which token it belongs to.
+   *
+   * It is deliberately monotonic — a stale read must not undo an approval that
+   * has already confirmed — but monotonic alone was wrong: paste token A,
+   * approve it, then paste token B, and A's allowance still satisfied B's
+   * approval gate. The Lock button went straight to a transaction that
+   * reverted for insufficient allowance. Tagging it with the token makes the
+   * value reset when the subject changes while still never going backwards for
+   * the same one.
+   */
+  const [allowance, setAllowance] = useState<{ token: Hex | null; value: bigint }>({
+    token: null,
+    value: 0n,
+  });
   const [approved, setApproved] = useState(false);
   const [phase, setPhase] = useState<Phase>("idle");
   const [message, setMessage] = useState<string | null>(null);
@@ -162,16 +176,24 @@ export function CreateLockPanel() {
           args: [address, ARC_TOKEN_LOCKER as Hex],
         })
         .catch(() => 0n);
-      // Monotonic: an allowance only ever grows here, so a stale read must not
-      // undo what a confirmed approval established.
-      if (!cancelled) setAllowance((prev) => (a > prev ? a : prev));
+      // Monotonic per token: an allowance only ever grows for the token it was
+      // read for, and a different token starts from that token's own figure.
+      if (!cancelled) {
+        setAllowance((prev) =>
+          prev.token === meta.address
+            ? { token: meta.address, value: a > prev.value ? a : prev.value }
+            : { token: meta.address, value: a },
+        );
+      }
     })();
     return () => {
       cancelled = true;
     };
   }, [meta, pub, address, phase]);
 
-  const needsApproval = units !== null && units > 0n && allowance < units;
+  const allowanceForThisToken =
+    meta !== null && allowance.token === meta.address ? allowance.value : 0n;
+  const needsApproval = units !== null && units > 0n && allowanceForThisToken < units;
   const recipientValid = isAddress(recipient.trim());
   const unlockValid = unlockAt !== null && unlockAt > Math.floor(Date.now() / 1000);
   const amountValid = units !== null && units > 0n && meta !== null && units <= meta.balance;
@@ -202,7 +224,7 @@ export function CreateLockPanel() {
       // ranked fallback and can land on a node that has not seen this block
       // yet, which left the button stuck on "Approve" after a successful
       // approval — the user had spent gas and nothing appeared to happen.
-      setAllowance(units);
+      setAllowance({ token: meta.address, value: units });
       setApproved(true);
       setPhase("idle");
     } catch (err) {

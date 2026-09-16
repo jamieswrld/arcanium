@@ -138,6 +138,13 @@ export function CctpBridge() {
    * app could not finish. Null while unknown, so nothing is promised early.
    */
   const [relayed, setRelayed] = useState<readonly string[] | null>(null);
+  /**
+   * The furthest step actually reached, so a failure is drawn where it
+   * happened. The checklist used to treat every error as though it had got as
+   * far as "attesting", which ticked "Approve USDC" and "Deposit" as complete
+   * after a failure in which no transaction was ever sent.
+   */
+  const [reached, setReached] = useState<Phase>("idle");
 
   // Circle's live fast-lane fee for this route (bps). Determines the maxFee
   // we must allow for fast finality to engage.
@@ -177,6 +184,10 @@ export function CctpBridge() {
       setPhase("attesting");
     }
   }, []);
+
+  useEffect(() => {
+    if (phase !== "error") setReached(phase);
+  }, [phase]);
 
   // Elapsed timer while waiting on Circle.
   useEffect(() => {
@@ -436,11 +447,12 @@ export function CctpBridge() {
 
   const stepState = (want: Phase[]): "done" | "active" | "todo" => {
     const order: Phase[] = ["idle", "switching", "approving", "burning", "attesting", "claiming", "done"];
-    const cur = order.indexOf(phase === "error" ? "attesting" : phase);
+    const effective: Phase = phase === "error" ? reached : phase;
+    const cur = order.indexOf(effective);
     const mine = Math.max(...want.map((w) => order.indexOf(w)));
     if (phase === "done") return "done";
     if (cur > mine) return "done";
-    if (want.includes(phase)) return "active";
+    if (want.includes(effective)) return "active";
     return "todo";
   };
 
