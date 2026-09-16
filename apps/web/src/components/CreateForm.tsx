@@ -61,16 +61,26 @@ export function CreateForm() {
   // skeleton on the server for no benefit.
   const chain = getChain("arc");
   /**
-   * New launches go to v4 once it is deployed, and to v3 until then.
+   * Which Uniswap to launch on. Both stay available.
    *
-   * Undefined is the honest default: a missing address means the v4 path does
-   * not exist on this deployment, not that we should guess one. Existing v3
-   * tokens are untouched either way — their pools, liquidity and fee streams
-   * are immutable and no longer involve the launchpad at all.
+   * v4 is the default because it is strictly better for a new token: the fee
+   * is taken inside the swap, so payouts and burns happen in the same
+   * transaction as the trade instead of waiting for a keeper, a tax is
+   * possible at all, and liquidity is locked by a contract with no withdrawal
+   * code rather than by a vault that promises not to use one.
+   *
+   * v3 is kept because it is the venue every existing Arcanium token trades
+   * on, and therefore the one aggregators and terminals already know how to
+   * route. Until they index v4 on Arc, a v3 launch is the more discoverable
+   * one, and that is a real reason to choose it.
+   *
+   * An undefined v4 address means the path does not exist on this deployment,
+   * which forces v3 rather than guessing an address.
    */
-  const v4 = chain.v4?.launchpad;
-  const useV4 = v4 !== undefined;
-  const factory = v4 ?? chain.factories[0];
+  const v4Addr = chain.v4?.launchpad;
+  const [protocol, setProtocol] = useState<"v3" | "v4">(v4Addr === undefined ? "v3" : "v4");
+  const useV4 = protocol === "v4" && v4Addr !== undefined;
+  const factory = useV4 ? v4Addr : chain.factories[0];
   const quote = chain.quote.address;
   const quoteSymbol = chain.quote.symbol;
   const quoteDecimals = chain.quote.decimals;
@@ -138,21 +148,31 @@ export function CreateForm() {
   const feeWalletValid = feeWalletTrimmed === "" || /^0x[0-9a-fA-F]{40}$/.test(feeWalletTrimmed);
 
   /**
-   * The trade tax is NOT offered, and the value sent is always zero.
+   * The trade tax, offered on v4 and refused on v3.
    *
-   * It is implemented in the token and capped at 9%, but a token that carries
-   * one cannot be sold. Uniswap v3 takes a sell's input by transferring the
-   * tokens into the pool and then checking it received what it was promised;
-   * the tax skims exactly that transfer, so the pool comes up short and
-   * reverts with IIA. Offering the field would let a creator produce a real
-   * honeypot in two clicks — the precise thing scanners already wrongly accuse
-   * our untaxed tokens of being.
+   * On v3 a tax makes a token unsellable. Uniswap v3 takes a sell's input by
+   * transferring into the pool and then checking it received what it was
+   * promised, and an ERC-20 transfer tax skims exactly that transfer, so every
+   * sell reverts with IIA — a honeypot in two clicks.
    *
-   * The v4 hook takes its fee inside the swap instead of skimming a transfer,
-   * so it has no such problem; the option belongs there when v4 launches ship.
-   * See test_a_taxed_token_cannot_be_sold_on_v3 in Modes.t.sol.
+   * The v4 hook does not have the problem, because it takes its fee inside the
+   * swap through afterSwap rather than skimming a transfer: the pool always
+   * receives precisely what it was promised. ArcaniumHook.t.sol sells a token
+   * carrying 5% to prove it, and Modes.t.sol pins the v3 revert so the two
+   * cannot be confused again.
    */
-  const taxBps = 0n;
+  const [taxPct, setTaxPct] = useState("0");
+
+  const taxBps = useMemo<bigint | null>(() => {
+    if (!useV4) return 0n;
+    const raw = taxPct.trim();
+    if (raw === "") return 0n;
+    if (!/^\d{0,2}(\.\d{1,2})?$/.test(raw)) return null;
+    const [whole = "0", frac = ""] = raw.split(".");
+    // Parsed in integer arithmetic so 2.9% is 290 rather than 289.
+    const bps = BigInt(whole) * 100n + BigInt((frac + "00").slice(0, 2));
+    return bps > 900n ? null : bps;
+  }, [taxPct, useV4]);
 
   const formError = ((): string | null => {
     if (name.trim().length === 0) return null;
@@ -161,6 +181,7 @@ export function CreateForm() {
     if (!validUrl(website) || !validUrl(twitter) || !validUrl(telegram)) {
       return "Links must be https:// URLs";
     }
+    if (taxBps === null) return "Trade tax must be between 0% and 9%";
     if (feeDest?.kind === "x") {
       // Binding a fee stream to an identity we could not confirm is the one
       // mistake here with no recovery — the recipient is immutable once
@@ -250,7 +271,7 @@ export function CreateForm() {
             args: [{
               name: name.trim(), symbol: tickerNormalized, metadataUri,
               creatorBuyAmount: buyAmount, minTokensOut: 0n, deadline,
-              feeRecipient, taxBps: Number(taxBps), mode,
+              feeRecipient, taxBps: Number(taxBps ?? 0n), mode,
             }],
             // The fee and the opening buy ride along as value. Arc's native
             // balance is 18-decimal where the ERC-20 view is 6, so the amount
@@ -264,7 +285,7 @@ export function CreateForm() {
             args: [{
               name: name.trim(), symbol: tickerNormalized, metadataUri, pairToken: quote,
               creatorBuyAmount: buyAmount, minTokensOut: 0n, deadline,
-              feeRecipient, taxBps, mode,
+              feeRecipient, taxBps: taxBps ?? 0n, mode,
             }],
             chainId: chain.id,
           });
@@ -397,6 +418,63 @@ export function CreateForm() {
         </span>
       </div>
 
+      {v4Addr === undefined ? null : (
+        <div className="arch-form-row">
+          <label>Pool version</label>
+          <div className="arch-pills" style={{ display: "inline-flex" }}>
+            {(["v4", "v3"] as const).map((p) => (
+              <button
+                key={p}
+                type="button"
+                className={protocol === p ? "arch-pill arch-pill-active" : "arch-pill"}
+                style={{ border: "none", cursor: "pointer" }}
+                onClick={() => setProtocol(p)}
+                disabled={busy}
+                aria-pressed={protocol === p}
+              >
+                Uniswap {p}
+              </button>
+            ))}
+          </div>
+          <span className="arch-note">
+            {protocol === "v4"
+              ? "Rewards and burns settle inside each trade rather than waiting for a sweep, a trade tax is available, and the liquidity is held by a contract with no code to withdraw it. One transaction to launch."
+              : "The venue every existing Arcanium token trades on, so aggregators and terminals already route it. No trade tax — a v3 token that charges one cannot be sold."}
+          </span>
+        </div>
+      )}
+
+      {!useV4 ? null : (
+        <div className="arch-form-row">
+          <label htmlFor="cf-tax">Trade tax (optional)</label>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <input
+              id="cf-tax"
+              value={taxPct}
+              onChange={(e) => setTaxPct(e.target.value)}
+              placeholder="0"
+              inputMode="decimal"
+              disabled={busy}
+              style={{ maxWidth: 110 }}
+            />
+            <span className="arch-note" style={{ margin: 0 }}>% per trade, max 9%</span>
+          </div>
+          <span className="arch-note">
+            An extra cut taken on every buy and sell, on top of the 1% base. Where it goes follows
+            the mode you picked above: the token side is always burned, and the rest is split like
+            any other fee. Traders can still sell normally — the fee is taken inside the swap, not
+            skimmed off the transfer.
+            {taxBps !== null && taxBps > 0n ? (
+              <>
+                {" "}
+                At {(Number(taxBps) / 100).toFixed(2)}% a trade costs{" "}
+                {(Number(taxBps) / 100 + 1).toFixed(2)}% all in.
+              </>
+            ) : null}
+          </span>
+        </div>
+      )}
+
       <details style={{ marginTop: "var(--s2)" }}>
         <summary className="arch-note" style={{ cursor: "pointer", marginBottom: "var(--s2)" }}>
           Advanced: where creator rewards go
@@ -429,12 +507,20 @@ export function CreateForm() {
             <SummaryRow label="Chain" value={chain.name} />
             <SummaryRow label="Pair" value={chain.quote.symbol} />
             <SummaryRow label="Supply" value="1,000,000,000 fixed" />
-            <SummaryRow label="Pool" value="Uniswap v3 · 1% fee" />
+            <SummaryRow label="Pool" value={useV4 ? "Uniswap v4 · 1% via hook" : "Uniswap v3 · 1% fee"} />
             <SummaryRow label="Liquidity" value="Locked permanently" />
             <SummaryRow
               label="Creator rewards"
               value={mode === 1 ? "Divium — paid to holders" : mode === 2 ? "Arcane — buy and burn" : "Paid to your wallet"}
             />
+            {!useV4 ? null : (
+              <SummaryRow
+                label="Trade tax"
+                value={
+                  taxBps === null ? "—" : taxBps === 0n ? "None" : `${(Number(taxBps) / 100).toFixed(2)}%`
+                }
+              />
+            )}
             <SummaryRow label="Initial buy" value={buyAmount > 0n ? `${fmtQuote(buyAmount)} ${quoteSymbol}` : "None"} />
             <SummaryRow
               label="Launch cost"

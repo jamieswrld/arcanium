@@ -126,7 +126,11 @@ interface TokenRow {
   readonly creator: Buffer;
   readonly pair_token: Buffer;
   readonly pool_address: Buffer;
-  readonly position_id: string;
+  /** Null for a v4 launch: liquidity belongs to the launchpad contract, not to
+   *  an NFT, so there is no position to identify. */
+  readonly position_id: string | null;
+  readonly protocol?: string | null;
+  readonly pool_id?: Buffer | null;
   readonly graduated: boolean;
   readonly mode: number | null;
   readonly price_usd_e18: string | null;
@@ -151,7 +155,7 @@ export async function indexedTokens(): Promise<LaunchpadToken[] | null> {
     const rows = await sql<TokenRow[]>`
       SELECT
         t.token_address, t.name, t.symbol, t.creator, t.pair_token, t.pool_address,
-        t.position_id, t.graduated, t.mode, t.launch_time,
+        t.position_id, t.protocol, t.pool_id, t.graduated, t.mode, t.launch_time,
         s.price_usd_e18, s.market_cap_usd_e6, s.quote_balance, s.holder_count
       FROM tokens t
       LEFT JOIN token_stats s ON s.token_address = t.token_address
@@ -171,7 +175,7 @@ export async function indexedTokens(): Promise<LaunchpadToken[] | null> {
         creator: hex(r.creator),
         pairToken: hex(r.pair_token),
         pool: hex(r.pool_address),
-        positionId: BigInt(r.position_id),
+        positionId: r.position_id === null ? 0n : BigInt(r.position_id),
         priceE18: BigInt(r.price_usd_e18 ?? "0"),
         marketCapUnits: BigInt(r.market_cap_usd_e6 ?? "0"),
         quoteBalance: BigInt(r.quote_balance ?? "0"),
@@ -200,7 +204,7 @@ export async function indexedToken(address: string): Promise<LaunchpadToken | nu
     const rows = await sql<TokenRow[]>`
       SELECT
         t.token_address, t.name, t.symbol, t.creator, t.pair_token, t.pool_address,
-        t.position_id, t.graduated, t.mode, t.launch_time,
+        t.position_id, t.protocol, t.pool_id, t.graduated, t.mode, t.launch_time,
         s.price_usd_e18, s.market_cap_usd_e6, s.quote_balance, s.holder_count
       FROM tokens t
       LEFT JOIN token_stats s ON s.token_address = t.token_address
@@ -215,7 +219,7 @@ export async function indexedToken(address: string): Promise<LaunchpadToken | nu
       creator: hex(r.creator),
       pairToken: hex(r.pair_token),
       pool: hex(r.pool_address),
-      positionId: BigInt(r.position_id),
+      positionId: r.position_id === null ? 0n : BigInt(r.position_id),
       priceE18: BigInt(r.price_usd_e18 ?? "0"),
       marketCapUnits: BigInt(r.market_cap_usd_e6 ?? "0"),
       quoteBalance: BigInt(r.quote_balance ?? "0"),

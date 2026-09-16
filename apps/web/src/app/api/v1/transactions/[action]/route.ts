@@ -213,7 +213,7 @@ function buildLaunch(
   if (BigInt(taxRaw) !== 0n) {
     return fail(
       "invalid_parameter",
-      "`taxBps` must be 0. A token launched with a transfer tax cannot be sold on Uniswap v3 — the tax breaks the pool's input check and every sell reverts.",
+      "`taxBps` must be 0 on this endpoint. It builds a Uniswap v3 launch, and a v3 token carrying a transfer tax cannot be sold: the tax skims the transfer into the pool, the pool's input check fails, and every sell reverts. Uniswap v4 launches do support a tax — the hook takes it inside the swap — and are available from the launch form.",
     );
   }
 

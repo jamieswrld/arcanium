@@ -1,17 +1,19 @@
 import type { ReactNode } from "react";
 
 /**
- * Why Arcanium tokens carry no transfer tax.
+ * The trade tax.
  *
- * This page previously documented a tax creators could set. That was withdrawn
- * once it turned out a token carrying one cannot be sold at all — so the page
- * now documents the restriction rather than the feature.
- *
- * It is worth its own page rather than a footnote because it is the single
- * most useful thing to be able to point a scanner, a terminal or a sceptical
- * trader at. "No transfer tax" is the claim that distinguishes our tokens from
- * the honeypots they get mistaken for.
+ * This page has been rewritten twice, which is worth knowing when reading it.
+ * It first described a tax creators could set on v3. That was withdrawn once it
+ * turned out a v3 token carrying one cannot be sold at all. It is back because
+ * v4 takes the fee somewhere else entirely — and the difference between those
+ * two situations is the single most important thing on the page, so it is
+ * explained rather than asserted.
  */
+
+function Mono({ children }: { readonly children: ReactNode }) {
+  return <code className="docs-mono">{children}</code>;
+}
 
 function Callout({ children }: { readonly children: ReactNode }) {
   return <div className="docs-callout">{children}</div>;
@@ -20,52 +22,58 @@ function Callout({ children }: { readonly children: ReactNode }) {
 export const TAX_DOCS: Record<string, ReactNode> = {
   "launchpad/tax": (
     <>
-      <h1>No transfer tax</h1>
+      <h1>Trade tax</h1>
       <p className="docs-lead">
-        No token launched on Arcanium taxes its own transfers. Not on buys, not on sells, not on
-        sending it to a friend. The launch form and the API both refuse to set one.
+        A launch can charge up to 9% on every trade, on top of the 1% base fee. It is optional,
+        fixed at launch, and can never be changed afterwards. Most tokens set it to zero.
       </p>
 
-      <h2>Why it is refused rather than simply unused</h2>
+      <h2>Where it goes</h2>
       <p>
-        A token that taxes its own transfers cannot be sold on Uniswap v3. A sell delivers its input
-        to the pool as an ordinary transfer, and the pool then checks that it received the amount it
-        was promised. A tax skims exactly that transfer, so the pool comes up short and the trade
-        reverts.
-      </p>
-      <p>
-        The buy still works, which is what makes it dangerous: the token looks fine until somebody
-        tries to get out. That is the textbook definition of a honeypot, and a launchpad that
-        offered the setting would be a machine for producing them. So the option is not offered.
+        Wherever your reward mode sends fees. The token side of a trade is always burned, and the
+        USDC side is split between you and the protocol — a tax simply makes both larger. Under{" "}
+        <em>Divium</em> that means bigger payouts to holders; under <em>Arcane</em>, more buying and
+        burning. It is a dial on the mechanism you already chose, not a separate revenue stream.
       </p>
 
+      <h2>Why this is safe here and was not before</h2>
+      <p>
+        Taxed tokens have a bad reputation for a specific and correct reason. The usual
+        implementation skims the token&apos;s own transfer. On Uniswap v3 a sell delivers its input
+        to the pool <em>as a transfer</em>, and the pool then checks it received the amount it was
+        promised — so a tax makes the pool come up short and every sell reverts. The buy still
+        works. That is a honeypot, and it is why Arcanium refused to offer a tax on its v3 launches.
+      </p>
+      <p>
+        A v4 launch takes its fee in the hook, during the swap, through <Mono>afterSwap</Mono>. The
+        pool always receives exactly what it was promised, so nothing breaks. The token&apos;s own
+        transfers are completely untaxed — sending it to a friend, an exchange or a cold wallet
+        costs nothing.
+      </p>
       <Callout>
-        This is checkable rather than a promise. Read <code className="docs-mono">taxBps()</code> on
-        any Arcanium token and it returns <code className="docs-mono">0</code>; tokens from the
-        earliest factories do not implement the function at all. Either way there is no code path
-        that takes a cut of a transfer.
+        This is not a claim to take on trust. The test suite sells a token carrying a 5% tax on v4
+        and asserts the USDC arrives, and a second test pins the v3 failure so the two can never be
+        confused again. Read <Mono>taxBps()</Mono> on any older Arcanium token and it returns zero.
       </Callout>
 
-      <h2>If a scanner says otherwise</h2>
+      <h2>What a trader pays</h2>
       <p>
-        Some terminals report Arcanium tokens as &ldquo;unsellable&rdquo; or as likely scams. That
-        is a false positive with a specific cause: a honeypot detector buys and sells inside one
-        simulated transaction, and when it cannot construct the <em>sell</em> route it reports
-        &ldquo;unsellable&rdquo; rather than &ldquo;unsupported&rdquo;. Arc&apos;s Uniswap deployment
-        sits at non-canonical addresses, so a router table keyed to the usual ones finds nothing
-        here — and an unknown venue and a real honeypot produce the same verdict.
+        The tax plus the 1% base. A 5% tax means about 6% per trade. The 9% ceiling exists so the
+        total can never exceed 10%, and it is enforced by the contract rather than the interface.
       </p>
       <p>
-        The sell path works. It can be simulated against live chain state without spending anything,
-        and our token-info API publishes the exact factory, router and fee tier a terminal needs in
-        order to route.
+        Quotes from outside tools do not include it, because it is charged inside the swap. Token
+        pages here show the rate above the trade panel whenever it is not zero, so nobody meets it
+        for the first time in their wallet balance.
       </p>
 
-      <h2>What Arcanium does charge</h2>
+      <h2>Choosing a rate</h2>
       <p>
-        A 1% fee on the pool itself, which is the ordinary Uniswap fee tier every launch uses and is
-        paid out of the trade rather than skimmed from the token. Where it goes is covered under
-        <em> Reward modes</em>.
+        Zero is the default and is right for most tokens: a tax makes yours more expensive to trade
+        than its neighbours, and some aggregators rank or route taxed tokens worse. It earns its
+        place when continuous burning or continuous holder payouts are the actual point of the
+        token rather than a detail — in which case the tax is the engine, and a visible rate is
+        part of the pitch.
       </p>
     </>
   ),
