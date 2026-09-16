@@ -12,9 +12,10 @@ import { usePathname } from "next/navigation";
  * Mobile: the same destinations become a bottom bar. Not a hamburger; on a
  * trading surface the primary destinations must stay one thumb-tap away.
  *
- * Bridge is deliberately absent from both. It is a funding utility, not part of
- * the launch/trade loop, so it lives in the footer and on the launch form where
- * a user actually discovers they need USDC.
+ * Bridge is in the primary nav. It was previously footer-only on the grounds
+ * that it is a funding utility rather than part of the launch/trade loop —
+ * true, but it is also the step a new arrival is blocked on, and something you
+ * cannot find is not a utility.
  *
  * Launching is the one destination that is not a peer of the others: it is the
  * thing the product exists for, and it is what a visitor with an idea came to
@@ -30,6 +31,7 @@ const DESTINATIONS = [
   { href: "/locked", label: "Lock", icon: LockedIcon },
   { href: "/portfolio", label: "Portfolio", icon: PortfolioIcon },
   { href: "/activity", label: "Activity", icon: ActivityIcon },
+  { href: "/bridge", label: "Bridge", icon: BridgeIcon },
   { href: "/docs", label: "Docs", icon: DocsIcon },
 ] as const;
 
@@ -69,12 +71,16 @@ export function LaunchButton() {
   );
 }
 
-/** Mobile only (CSS-gated). Docs is dropped here — five targets is too many for
- *  a thumb bar, and Docs is the least urgent on a phone. Launch is folded back
- *  in as a peer, since a phone has no room for a separate button. */
+/** Mobile only (CSS-gated). Docs and Activity are dropped here — a thumb bar
+ *  fits about five targets, and on a phone the two least urgent are reading the
+ *  documentation and browsing someone else's trades. Launch folds back in as a
+ *  peer, since there is no room for a separate button. */
 export function BottomNav() {
   const isCurrent = useIsCurrent();
-  const items = [...DESTINATIONS.filter((d) => d.href !== "/docs"), LAUNCH];
+  const items = [
+    ...DESTINATIONS.filter((d) => d.href !== "/docs" && d.href !== "/activity"),
+    LAUNCH,
+  ];
   return (
     <nav className="botnav" aria-label="Primary (mobile)">
       {items.map((d) => {
@@ -136,6 +142,15 @@ function ActivityIcon() {
   return (
     <svg {...S}>
       <path d="M3 12h4l2.5-7 5 14L17 12h4" />
+    </svg>
+  );
+}
+function BridgeIcon() {
+  return (
+    <svg {...S}>
+      <path d="M3 16h18" />
+      <path d="M6 16v-3a6 6 0 0 1 12 0v3" />
+      <path d="M3 16v3M21 16v3" />
     </svg>
   );
 }

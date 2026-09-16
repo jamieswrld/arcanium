@@ -88,6 +88,26 @@ export async function indexerHealth(): Promise<IndexerHealth | null> {
 const HEALTH_MEMO_MS = 10_000;
 let healthMemo: { at: number; value: IndexerHealth | null } | null = null;
 
+/**
+ * Whether the database can be read at all, regardless of how current it is.
+ *
+ * The distinction this draws is the whole point. A 24h volume from a stale
+ * indexer is wrong — the window has moved and the numbers have not. An
+ * all-time total from a stale indexer is merely *behind*: every row it has is
+ * still true, it is just missing the most recent few minutes.
+ *
+ * Gating both on the same freshness check meant an indexer that paused for an
+ * hour erased all-time volume, the launch count and the graduated count from
+ * the site entirely, when the data was sitting in Postgres the whole time.
+ * Undercounting by an hour is a far better answer than showing nothing.
+ */
+async function reachable(): Promise<boolean> {
+  if (healthMemo === null || Date.now() - healthMemo.at > HEALTH_MEMO_MS) {
+    healthMemo = { at: Date.now(), value: await indexerHealth().catch(() => null) };
+  }
+  return healthMemo.value !== null;
+}
+
 async function healthy(): Promise<boolean> {
   if (healthMemo === null || Date.now() - healthMemo.at > HEALTH_MEMO_MS) {
     healthMemo = { at: Date.now(), value: await indexerHealth().catch(() => null) };
@@ -124,7 +144,7 @@ interface TokenRow {
  * worse from a Vercel region.
  */
 export async function indexedTokens(): Promise<LaunchpadToken[] | null> {
-  if (!(await healthy())) return null;
+  if (!(await reachable())) return null;
   const sql = getDb();
   if (sql === null) return null;
   try {
@@ -173,7 +193,7 @@ export async function indexedTokens(): Promise<LaunchpadToken[] | null> {
  * it is already recorded, so it is a primary-key lookup.
  */
 export async function indexedToken(address: string): Promise<LaunchpadToken | null> {
-  if (!(await healthy())) return null;
+  if (!(await reachable())) return null;
   const sql = getDb();
   if (sql === null) return null;
   try {
@@ -338,7 +358,7 @@ interface ActivityRow {
  * by time, so it is one union and a LIMIT.
  */
 export async function indexedPulse(limit = 24): Promise<IndexedActivity[] | null> {
-  if (!(await healthy())) return null;
+  if (!(await reachable())) return null;
   const sql = getDb();
   if (sql === null) return null;
   try {
@@ -397,7 +417,7 @@ export interface IndexedProtocolStats {
  * which is why the header had to say "Recent volume".
  */
 export async function indexedProtocolStats(): Promise<IndexedProtocolStats | null> {
-  if (!(await healthy())) return null;
+  if (!(await reachable())) return null;
   const sql = getDb();
   if (sql === null) return null;
   try {
@@ -441,7 +461,7 @@ export interface DailyPoint {
  * one reads as a collapse in volume every single morning.
  */
 export async function indexedDaily(days: number): Promise<DailyPoint[] | null> {
-  if (!(await healthy())) return null;
+  if (!(await reachable())) return null;
   const sql = getDb();
   if (sql === null) return null;
   const span = Math.max(1, Math.min(Math.floor(days), 365));
@@ -494,7 +514,7 @@ export interface BurnedTotals {
  * market caps shown elsewhere, so this is not netted off them.
  */
 export async function indexedBurned(): Promise<BurnedTotals | null> {
-  if (!(await healthy())) return null;
+  if (!(await reachable())) return null;
   const sql = getDb();
   if (sql === null) return null;
   try {
