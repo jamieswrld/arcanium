@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { formatUnits, type Hex } from "viem";
 import { arcPublicClient, fetchToken, formatAgeLong, formatPriceE18, formatUsdCompact, isHidden } from "@/lib/launchpad";
@@ -35,6 +36,31 @@ interface TokenPageProps {
  * Metrics are typography and separators rather than a row of giant cards — five
  * numbers a trader reads together should sit together.
  */
+/**
+ * Per-token social metadata.
+ *
+ * The title and description are what a crawler shows beside the generated
+ * card. Falling back to the address rather than a generic string keeps a
+ * shared link identifiable even when the token cannot be read.
+ */
+export async function generateMetadata({ params }: TokenPageProps): Promise<Metadata> {
+  const { address } = await params;
+  const token = /^0x[0-9a-fA-F]{40}$/.test(address)
+    ? await fetchToken(arcPublicClient(), address as Hex).catch(() => null)
+    : null;
+  const label = token === null ? `${address.slice(0, 10)}…` : `${token.symbol}`;
+  const desc =
+    token === null
+      ? "A market on Arcanium, on Arc."
+      : `${token.name} — trade ${token.symbol} on Arcanium. Liquidity locked from the first block.`;
+  return {
+    title: label,
+    description: desc,
+    openGraph: { title: `${label} — Arcanium`, description: desc },
+    twitter: { card: "summary_large_image", title: `${label} — Arcanium`, description: desc },
+  };
+}
+
 export default async function TokenPage({ params }: TokenPageProps) {
   const { address } = await params;
   const chain = getChain("arc");

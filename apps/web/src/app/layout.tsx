@@ -49,9 +49,35 @@ export const viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Arcanium — Markets begin here",
+  // Required for relative OG image URLs to resolve. Without it Next emits a
+  // relative path and every crawler ignores the image.
+  metadataBase: new URL("https://arcanium.trade"),
+  title: {
+    default: "Arcanium — Markets begin here",
+    template: "%s — Arcanium",
+  },
   description:
     "Launch and trade permanently locked markets on Arc. Fixed supply, real Uniswap liquidity, locked from block one.",
+  applicationName: "Arcanium",
+  // There were no social tags at all, so a link posted anywhere rendered as a
+  // bare URL. The images themselves are generated per route.
+  openGraph: {
+    type: "website",
+    siteName: "Arcanium",
+    url: "https://arcanium.trade",
+    title: "Arcanium — Markets begin here",
+    description:
+      "Launch a token on Arc with real Uniswap liquidity, locked from the first block.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    site: "@arcaniumtrade",
+    creator: "@arcaniumtrade",
+    title: "Arcanium — Markets begin here",
+    description:
+      "Launch a token on Arc with real Uniswap liquidity, locked from the first block.",
+  },
+  icons: { icon: "/icon.png", apple: "/apple-icon.png" },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
