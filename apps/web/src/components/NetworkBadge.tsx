@@ -35,14 +35,11 @@ export function NetworkBadge() {
     );
   }
 
-  if (!isConnected) {
-    return (
-      <span className="chip" title="Arcanium launches and trades on Arc (chain 5042)">
-        <Dot color="var(--text-muted)" />
-        Arc
-      </span>
-    );
-  }
+  // Nothing to say while disconnected. Arcanium is Arc-only, so a chip reading
+  // "Arc" beside every other control is decoration: it never changes, and it
+  // cannot be acted on. The badge now appears only when the network is wrong,
+  // which is the one case where it is information.
+  if (!isConnected) return null;
 
   if (!onArc) {
     return (
@@ -64,12 +61,8 @@ export function NetworkBadge() {
     );
   }
 
-  return (
-    <span className="chip chip-pos" title="Connected to Arc (chain 5042)">
-      <Dot color="var(--positive)" />
-      Arc
-    </span>
-  );
+  // Connected and on the only chain this product uses: nothing worth a chip.
+  return null;
 }
 
 function Dot({ color, pulse = false }: { readonly color: string; readonly pulse?: boolean }) {

@@ -26,6 +26,13 @@ import { usePathname } from "next/navigation";
 
 const LAUNCH = { href: "/create", label: "Launch", icon: LaunchIcon } as const;
 
+/**
+ * The protocol's own token. Linked from the nav because it is the one market
+ * everything here is downstream of, and people arriving look for it by name
+ * rather than hunting it out of the table.
+ */
+const ARCANIUM_TOKEN = "0xEbB871bc394E83008120Fab3c9ed5773642A29A1";
+
 const DESTINATIONS = [
   { href: "/", label: "Explore", icon: ExploreIcon },
   { href: "/locked", label: "Lock", icon: LockedIcon },
@@ -67,6 +74,15 @@ export function LaunchButton() {
   return (
     <Link href={LAUNCH.href} className="btn btn-primary nav-launch">
       {LAUNCH.label}
+    </Link>
+  );
+}
+
+/** Straight to the protocol token's market. */
+export function ArcaniumTokenLink() {
+  return (
+    <Link href={`/tokens/${ARCANIUM_TOKEN}`} className="nav-token" title="Arcanium — the protocol token">
+      $ARCANIUM
     </Link>
   );
 }

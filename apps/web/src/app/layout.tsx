@@ -8,7 +8,7 @@ import { Providers } from "./providers";
 import { WalletButton } from "@/components/WalletButton";
 import { VersionGuard } from "@/components/VersionGuard";
 import { SearchCommand } from "@/components/SearchCommand";
-import { TopNav, BottomNav, LaunchButton } from "@/components/Nav";
+import { TopNav, BottomNav, LaunchButton, ArcaniumTokenLink } from "@/components/Nav";
 import { NetworkBadge } from "@/components/NetworkBadge";
 
 /**
@@ -101,6 +101,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 <Suspense fallback={null}>
                   <SearchCommand />
                 </Suspense>
+                <ArcaniumTokenLink />
                 <NetworkBadge />
                 <LaunchButton />
                 <WalletButton />

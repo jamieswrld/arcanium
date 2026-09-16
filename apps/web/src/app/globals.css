@@ -1508,3 +1508,23 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
   .lock-step { grid-template-columns: 24px minmax(0, 1fr); }
   .lock-step .btn { grid-column: 1 / -1; }
 }
+
+/* The protocol token, in the topbar. Monospace and quiet: it is a ticker, not
+   a call to action, and it sits next to one. */
+.nav-token {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+  text-decoration: none;
+  padding: 0 10px;
+  height: var(--h-sm);
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.nav-token:hover { color: var(--accent); background: var(--surface-1); }
+
+@media (max-width: 860px) { .nav-token { display: none; } }
