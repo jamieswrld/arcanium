@@ -37,6 +37,20 @@ const log = pino({ level: process.env["LOG_LEVEL"] ?? "info", name: "arch-keeper
 /** How often to sweep every launch. */
 const INTERVAL_MS = Number(process.env["KEEPER_INTERVAL_MS"] ?? 15 * 60_000);
 
+/**
+ * The flywheel: buy ARCANIUM with a share of protocol fees and burn it.
+ *
+ * Hourly rather than on every sweep, and that spacing is load-bearing. Each
+ * buy nudges the price up while the contract's floor is a time-weighted
+ * average that follows more slowly, so firing repeatedly in quick succession
+ * gets refused — correctly, since the buyback would be paying a price it had
+ * just moved itself. An hour is comfortably longer than the averaging window.
+ */
+const BUYBACK_ADDRESS = (process.env["ARC_BUYBACK"] ?? "") as Hex;
+const BUYBACK_INTERVAL_MS = Number(process.env["KEEPER_BUYBACK_INTERVAL_MS"] ?? 60 * 60_000);
+let lastBuyback = 0;
+
+
 /** Pause between sends, so a sweep does not arrive as one burst. */
 const SEND_GAP_MS = 1_500;
 
@@ -71,6 +85,10 @@ const tokenAbi = [
 ] as const;
 
 const distributorAbi = [fn("distribute", [{ type: "address" }], [], "nonpayable")] as const;
+const buybackAbi = [
+  fn("buyAndBurn", [], [{ type: "uint256" }, { type: "uint256" }], "nonpayable"),
+  fn("pending", [], [{ type: "uint256" }], "view"),
+] as const;
 
 const splitterAbi = [fn("flush", [{ type: "address" }], [], "nonpayable")] as const;
 
@@ -304,7 +322,62 @@ async function sweep(
   await flushSplitter(arc, wallet, chain, caller, splitter).catch((err: unknown) =>
     log.warn({ err }, "flush failed"),
   );
+  await maybeBuyBack(arc, wallet, chain, caller).catch((err: unknown) =>
+    log.warn({ err }, "buyback attempt failed"),
+  );
+
   log.info({ distributed: done, ready: ready.length, launches: tokens.length }, "sweep complete");
+}
+
+/**
+ * Trigger the buyback, at most once an hour.
+ *
+ * Simulated before it is sent, like everything else here. The contract refuses
+ * on purpose in two ordinary situations — too little accumulated to be worth
+ * the gas, and a price that has drifted past its floor — and neither is an
+ * error worth paying for a reverted transaction to discover.
+ */
+async function maybeBuyBack(
+  arc: PublicClient,
+  wallet: WalletClient,
+  chain: Chain,
+  caller: Hex,
+): Promise<void> {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(BUYBACK_ADDRESS)) return;
+  const now = Date.now();
+  if (now - lastBuyback < BUYBACK_INTERVAL_MS) return;
+
+  const waiting = (await arc
+    .readContract({ address: BUYBACK_ADDRESS, abi: buybackAbi, functionName: "pending" })
+    .catch(() => 0n)) as bigint;
+
+  const ok = await arc
+    .simulateContract({
+      address: BUYBACK_ADDRESS,
+      abi: buybackAbi,
+      functionName: "buyAndBurn",
+      account: caller,
+    })
+    .then(() => true)
+    .catch(() => false);
+
+  if (!ok) {
+    log.info({ waiting: formatUnits(waiting, 6) }, "buyback not ready");
+    return;
+  }
+
+  const hash = await wallet.writeContract({
+    address: BUYBACK_ADDRESS,
+    abi: buybackAbi,
+    functionName: "buyAndBurn",
+    account: caller,
+    chain,
+  });
+  const receipt = await arc.waitForTransactionReceipt({ hash });
+  // Only a landed burn resets the clock, so a failed hour is retried on the
+  // next cycle rather than skipped until the next one.
+  if (receipt.status === "success") lastBuyback = now;
+  log.info({ spent: formatUnits(waiting, 6), status: receipt.status, hash }, "bought and burned");
 }
 
 async function main(): Promise<void> {

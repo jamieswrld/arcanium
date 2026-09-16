@@ -171,6 +171,16 @@ export const ARC_ARCANIUM_V4: {
   tickSpacing: 200,
 };
 
+/**
+ * The flywheel. Receives a share of protocol fees from the splitter, buys
+ * ARCANIUM with it and burns it.
+ *
+ * No owner, no withdraw, no rescue, no pause. USDC that arrives has exactly one
+ * exit — through the pool into 0xdead — which is the point of sending fees to a
+ * contract rather than to a wallet that intends the same thing.
+ */
+export const ARC_BUYBACK = "0x92651195749132B6C631C88E5b2f405F7BEF80F0" as Address;
+
 /** Block the v4 launchpad was deployed in, and the floor for its backfill. */
 export const ARC_LAUNCHPAD_V4_BLOCK = 21_223_800n;
 
