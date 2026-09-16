@@ -3,14 +3,12 @@ pragma solidity 0.8.28;
 
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {PoolId} from "v4-core/src/types/PoolId.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
-import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 import {PoolSwapTest} from "v4-core/src/test/PoolSwapTest.sol";
@@ -18,72 +16,51 @@ import {PoolModifyLiquidityTest} from "v4-core/src/test/PoolModifyLiquidityTest.
 import {HookMiner} from "v4-periphery/test/shared/HookMiner.sol";
 
 import {ArcaniumHook} from "../../src/launchpad/v4/ArcaniumHook.sol";
+import {ArcaniumLaunchToken} from "../../src/launchpad/v4/ArcaniumLaunchToken.sol";
 import {MockUSDC} from "../mocks/MockUSDC.sol";
 
-/// A launch token stand-in that records Divium notifications.
-contract MockLaunchToken is ERC20 {
-    uint256 public notified;
-
-    constructor() ERC20("Mock Launch", "MOCK") {
-        _mint(msg.sender, 1_000_000_000e18);
-    }
-
-    function notifyRewardAmount(uint256 amount) external {
-        notified += amount;
-    }
-}
-
 /**
- * The v4 hook, against the PoolManager bytecode that is actually deployed on
- * Arc.
+ * The v4 hook, against the PoolManager bytecode actually deployed on Arc.
  *
  * PoolManager is not compiled here. It pins `pragma solidity 0.8.26` while this
- * repo is on 0.8.28, and more to the point, compiling our own copy would test a
- * PoolManager that nobody uses. Its runtime code is fetched from Arc and etched
- * at the address it occupies there, which is not a stylistic choice: PoolManager
- * inherits NoDelegateCall, which stores its own address as an immutable baked
- * into the runtime code, so the same bytes at any other address reject every
- * call as a delegatecall.
+ * repo is on 0.8.28, and compiling our own copy would test a PoolManager nobody
+ * uses. Its runtime code is fetched from Arc and etched at the address it
+ * occupies there, which is not a stylistic choice: PoolManager inherits
+ * NoDelegateCall, which stores its own address as an immutable baked into the
+ * runtime code, so the same bytes at any other address reject every call.
  *
  * Etching drops constructor-set storage, which for PoolManager is the owner and
- * therefore only protocol-fee administration. Arcanium sets no protocol fee, so
- * nothing under test depends on it.
+ * therefore only protocol-fee administration. Arcanium sets no protocol fee.
+ *
+ * Pools are opened with an LP fee of zero, as the launchpad will: the hook
+ * takes the 1% itself so it can route it in the same transaction, and leaving
+ * the pool fee on as well would charge traders twice.
  */
 contract ArcaniumHookTest is Test {
     address constant POOL_MANAGER = 0x8366a39CC670B4001A1121B8F6A443A643e40951;
     address constant BURN = 0x000000000000000000000000000000000000dEaD;
-    address constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
     IPoolManager internal manager;
     PoolSwapTest internal swapRouter;
     PoolModifyLiquidityTest internal lpRouter;
     ArcaniumHook internal hook;
-
     MockUSDC internal quote;
-    MockLaunchToken internal token;
 
     address internal admin = makeAddr("admin");
     address internal creator = makeAddr("creator");
     address internal treasury = makeAddr("treasury");
-    address internal distributor = makeAddr("distributor");
     address internal trader = makeAddr("trader");
 
-    uint24 internal constant LP_FEE = 10_000; // 1%, matching the v3 launches
+    uint24 internal constant LP_FEE = 0;
     int24 internal constant TICK_SPACING = 200;
-    uint16 internal constant TAX_BPS = 500; // 5%
+    uint16 internal constant TAX_BPS = 500; // 5% on top of the 1% base
 
     function setUp() public {
-        string memory hex_ = vm.readFile("test/artifacts/PoolManager.runtime.hex");
-        vm.etch(POOL_MANAGER, vm.parseBytes(_trim(hex_)));
+        vm.etch(POOL_MANAGER, vm.parseBytes(_trim(vm.readFile("test/artifacts/PoolManager.runtime.hex"))));
         manager = IPoolManager(POOL_MANAGER);
-
         swapRouter = new PoolSwapTest(manager);
         lpRouter = new PoolModifyLiquidityTest(manager);
-
         quote = new MockUSDC();
-        token = new MockLaunchToken();
-
-        // The hook's permissions live in its address, so it has to be mined.
         hook = _deployHook();
     }
 
@@ -97,12 +74,10 @@ contract ArcaniumHookTest is Test {
     }
 
     function _deployHook() private returns (ArcaniumHook h) {
-        uint160 flags = uint160(
-            uint160(1 << 13) | uint160(1 << 6) | uint160(1 << 2) // beforeInitialize, afterSwap, afterSwapReturnsDelta
-        );
+        uint160 flags = uint160(1 << 13) | uint160(1 << 6) | uint160(1 << 2);
         bytes memory args = abi.encode(manager, admin, treasury, uint256(4_000));
-        // `new X{salt:}` issues CREATE2 from this contract, not from the
-        // canonical deployer proxy, so that is who the salt must be mined for.
+        // `new X{salt:}` issues CREATE2 from this contract, so that is who the
+        // salt has to be mined for.
         (address predicted, bytes32 salt) =
             HookMiner.find(address(this), flags, type(ArcaniumHook).creationCode, args);
         h = new ArcaniumHook{salt: salt}(manager, admin, treasury, 4_000);
@@ -111,19 +86,24 @@ contract ArcaniumHookTest is Test {
         h.setFactory(address(this));
     }
 
-    function _key(ArcaniumHook.Mode mode) private returns (PoolKey memory key) {
+    /// Deploy a token and open its pool, as the launchpad will.
+    function _launch(ArcaniumHook.Mode mode, uint16 taxBps)
+        private
+        returns (ArcaniumLaunchToken token, PoolKey memory key)
+    {
+        token = new ArcaniumLaunchToken("Mock", "MOCK", address(hook), mode == ArcaniumHook.Mode.DIVIUM);
+
         (Currency c0, Currency c1) = address(token) < address(quote)
             ? (Currency.wrap(address(token)), Currency.wrap(address(quote)))
             : (Currency.wrap(address(quote)), Currency.wrap(address(token)));
         key = PoolKey({
-            currency0: c0,
-            currency1: c1,
-            fee: LP_FEE,
-            tickSpacing: TICK_SPACING,
-            hooks: IHooks(address(hook))
+            currency0: c0, currency1: c1, fee: LP_FEE, tickSpacing: TICK_SPACING, hooks: IHooks(address(hook))
         });
-        hook.configurePool(key, address(token), address(quote), creator, distributor, TAX_BPS, mode);
+
+        hook.configurePool(key, address(token), address(quote), creator, address(0), taxBps, mode);
         manager.initialize(key, TickMath.getSqrtPriceAtTick(0));
+        // The venue holds the liquidity; it is not a holder to pay.
+        token.excludeFromRewards(POOL_MANAGER);
 
         quote.mint(address(this), 1e30);
         quote.approve(address(lpRouter), type(uint256).max);
@@ -140,15 +120,16 @@ contract ArcaniumHookTest is Test {
         );
     }
 
-    function _swap(PoolKey memory key, bool zeroForOne, int256 amountSpecified) private {
+    function _fundTrader(ArcaniumLaunchToken token) private {
         quote.mint(trader, 1e30);
+        token.transfer(trader, 1_000_000e18);
         vm.startPrank(trader);
         quote.approve(address(swapRouter), type(uint256).max);
         token.approve(address(swapRouter), type(uint256).max);
         vm.stopPrank();
-        // The test contract holds the token supply; fund the trader for sells.
-        token.transfer(trader, 1_000_000e18);
+    }
 
+    function _swap(PoolKey memory key, bool zeroForOne, int256 amountSpecified) private {
         vm.prank(trader);
         swapRouter.swap(
             key,
@@ -163,7 +144,7 @@ contract ArcaniumHookTest is Test {
     }
 
     /// A buy is the swap whose output is the launch token.
-    function _buyIsZeroForOne() private view returns (bool) {
+    function _buyIsZeroForOne(ArcaniumLaunchToken token) private view returns (bool) {
         return address(quote) < address(token);
     }
 
@@ -175,10 +156,10 @@ contract ArcaniumHookTest is Test {
     }
 
     function test_standard_splits_the_quote_side_between_creator_and_protocol() public {
-        PoolKey memory key = _key(ArcaniumHook.Mode.STANDARD);
-        // A sell pays its fee in the quote asset, which is the side that gets
-        // split. A buy pays in the token and is burned instead.
-        _swap(key, !_buyIsZeroForOne(), -1_000e18);
+        (ArcaniumLaunchToken token, PoolKey memory key) = _launch(ArcaniumHook.Mode.STANDARD, TAX_BPS);
+        _fundTrader(token);
+        // A sell pays in the quote asset, which is the side that gets split.
+        _swap(key, !_buyIsZeroForOne(token), -1_000e18);
 
         uint256 toCreator = quote.balanceOf(creator);
         uint256 toProtocol = quote.balanceOf(treasury);
@@ -187,147 +168,167 @@ contract ArcaniumHookTest is Test {
         uint256 total = toCreator + toProtocol;
         assertApproxEqAbs(toCreator, (total * 4_000) / 10_000, 2, "split is not 40/60");
 
-        // And the rate itself, not just its division. Asserting only the ratio
-        // would pass just as happily on a hook charging a tenth of the fee it
-        // was configured with.
-        uint256 received = quote.balanceOf(trader) - 1e30;
-        uint256 gross = received + total;
+        // And the rate, not only its division: asserting the ratio alone would
+        // pass on a hook charging a tenth of what it was configured with.
+        uint256 gross = (quote.balanceOf(trader) - 1e30) + total;
         uint256 rate = hook.BASE_FEE_BPS() + TAX_BPS;
         assertApproxEqRel(total, (gross * rate) / 10_000, 1e15, "rate is not base + tax");
     }
 
     function test_the_token_side_is_burned_in_every_mode() public {
-        PoolKey memory key = _key(ArcaniumHook.Mode.STANDARD);
+        (ArcaniumLaunchToken token, PoolKey memory key) = _launch(ArcaniumHook.Mode.STANDARD, TAX_BPS);
+        _fundTrader(token);
         uint256 burn0 = token.balanceOf(BURN);
-        _swap(key, _buyIsZeroForOne(), -1_000e6);
+        _swap(key, _buyIsZeroForOne(token), -1_000e6);
 
         assertGt(token.balanceOf(BURN) - burn0, 0, "the token side was not burned");
-        // Paying a creator in their own token would hand them sell pressure on
-        // their own market, and paying the protocol in it would make revenue
-        // depend on whatever happened to trade. Neither should receive any.
         assertEq(token.balanceOf(creator), 0, "creator was paid in the launch token");
         assertEq(token.balanceOf(treasury), 0, "protocol was paid in the launch token");
     }
 
-    function test_arcane_burns_buys_outright_and_parks_sells() public {
-        PoolKey memory key = _key(ArcaniumHook.Mode.ARCANE);
+    function test_arcane_burns_on_a_buy_and_on_a_sell_without_a_keeper() public {
+        (ArcaniumLaunchToken token, PoolKey memory key) = _launch(ArcaniumHook.Mode.ARCANE, TAX_BPS);
+        _fundTrader(token);
+
         uint256 burn0 = token.balanceOf(BURN);
+        _swap(key, _buyIsZeroForOne(token), -1_000e6);
+        uint256 afterBuy = token.balanceOf(BURN);
+        assertGt(afterBuy - burn0, 0, "nothing burned on a buy");
 
-        // A buy pays in the token: burned in the same transaction, no swap,
-        // nothing to fail. This is the case v3 could not do.
-        _swap(key, _buyIsZeroForOne(), -1_000e6);
-        assertGt(token.balanceOf(BURN) - burn0, 0, "nothing burned on a buy");
-        assertEq(hook.pendingBurnQuote(key.toId()), 0, "a buy should leave nothing parked");
-
-        // A sell pays in USDC, which cannot be burned and cannot be swapped
-        // back mid-swap, so it is parked for sweepQuote.
-        _swap(key, !_buyIsZeroForOne(), -1_000e18);
-        assertGt(hook.pendingBurnQuote(key.toId()), 0, "a sell left nothing to sweep");
+        // A sell pays in USDC, which is bought back and burned in the same
+        // transaction rather than parked for anyone to come and collect.
+        _swap(key, !_buyIsZeroForOne(token), -1_000e18);
+        assertGt(token.balanceOf(BURN) - afterBuy, 0, "the sell's share was not burned");
+        assertEq(hook.pendingBurnQuote(key.toId()), 0, "a burn was deferred when it should have completed");
         assertEq(quote.balanceOf(creator), 0, "creator was paid in a burn mode");
+        assertEq(quote.balanceOf(address(hook)), 0, "quote stranded in the hook");
     }
 
-    function test_arcane_sweep_hands_the_parked_quote_to_the_distributor() public {
-        PoolKey memory key = _key(ArcaniumHook.Mode.ARCANE);
-        _swap(key, !_buyIsZeroForOne(), -1_000e18);
-        uint256 parked = hook.pendingBurnQuote(key.toId());
-        assertGt(parked, 0, "nothing parked to sweep");
+    function test_divium_pays_the_trader_inside_the_very_transaction() public {
+        (ArcaniumLaunchToken token, PoolKey memory key) = _launch(ArcaniumHook.Mode.DIVIUM, TAX_BPS);
+        _fundTrader(token);
 
-        // Permissionless: it can only move funds to the address fixed at
-        // launch, so a stranger calling it has nothing to steer.
-        vm.prank(trader);
-        hook.sweepQuote(key);
+        _swap(key, !_buyIsZeroForOne(token), -1_000e18);
 
-        assertEq(quote.balanceOf(distributor), parked, "distributor did not receive the parked quote");
-        assertEq(hook.pendingBurnQuote(key.toId()), 0, "still parked after sweeping");
-        vm.expectRevert(ArcaniumHook.NothingPending.selector);
-        hook.sweepQuote(key);
-    }
-
-    function test_divium_notifies_the_token_on_a_quote_side_fee() public {
-        PoolKey memory key = _key(ArcaniumHook.Mode.DIVIUM);
-        // A sell pays its fee in the quote asset, which is what holders are owed.
-        _swap(key, !_buyIsZeroForOne(), -1_000e18);
-
-        assertGt(quote.balanceOf(distributor), 0, "distributor received nothing");
-        assertEq(token.notified(), quote.balanceOf(distributor), "notified amount does not match");
+        // The trader's own token movement settles their rewards on the way
+        // past, so by the end of the trade there is nothing left to collect.
+        // This is the whole point: nobody has to come back and claim.
+        assertEq(hook.claimable(address(token), trader), 0, "the trader was left holding a claim");
         assertGt(quote.balanceOf(treasury), 0, "protocol share of the quote side is missing");
     }
 
+    function test_divium_accrues_to_a_passive_holder_and_anyone_can_settle_them() public {
+        (ArcaniumLaunchToken token, PoolKey memory key) = _launch(ArcaniumHook.Mode.DIVIUM, TAX_BPS);
+        _fundTrader(token);
+
+        // Somebody who holds but never trades. They cannot be paid on their own
+        // activity because they have none, which is exactly the case a pull has
+        // to exist for.
+        address hodler = makeAddr("hodler");
+        vm.prank(trader);
+        token.transfer(hodler, 500_000e18);
+
+        _swap(key, !_buyIsZeroForOne(token), -1_000e18);
+
+        uint256 owed = hook.claimable(address(token), hodler);
+        assertGt(owed, 0, "a holder accrued nothing");
+        assertGe(quote.balanceOf(address(hook)), owed, "hook cannot cover what it owes");
+
+        uint256 before = quote.balanceOf(hodler);
+        hook.payOut(address(token), hodler);
+        assertEq(quote.balanceOf(hodler) - before, owed, "holder was not paid");
+        assertEq(hook.claimable(address(token), hodler), 0, "still owed after paying");
+    }
+
+    function test_divium_pays_a_holder_automatically_when_they_move_tokens() public {
+        (ArcaniumLaunchToken token, PoolKey memory key) = _launch(ArcaniumHook.Mode.DIVIUM, TAX_BPS);
+        _fundTrader(token);
+
+        address hodler = makeAddr("hodler");
+        vm.prank(trader);
+        token.transfer(hodler, 500_000e18);
+
+        _swap(key, !_buyIsZeroForOne(token), -1_000e18);
+        assertGt(hook.claimable(address(token), hodler), 0, "nothing accrued to collect");
+
+        uint256 before = quote.balanceOf(hodler);
+        // No claim call: an ordinary transfer settles what they are owed.
+        vm.prank(hodler);
+        token.transfer(makeAddr("friend"), 1e18);
+
+        assertGt(quote.balanceOf(hodler), before, "a transfer did not settle the holder's rewards");
+        assertEq(hook.claimable(address(token), hodler), 0, "rewards still outstanding after a transfer");
+    }
+
+    function test_payout_pays_the_holder_not_the_caller() public {
+        (ArcaniumLaunchToken token, PoolKey memory key) = _launch(ArcaniumHook.Mode.DIVIUM, TAX_BPS);
+        _fundTrader(token);
+
+        address hodler = makeAddr("hodler");
+        vm.prank(trader);
+        token.transfer(hodler, 500_000e18);
+        _swap(key, !_buyIsZeroForOne(token), -1_000e18);
+
+        address thief = makeAddr("thief");
+        assertGt(hook.claimable(address(token), hodler), 0);
+
+        vm.prank(thief);
+        hook.payOut(address(token), hodler);
+
+        assertEq(quote.balanceOf(thief), 0, "the caller was paid");
+        assertEq(hook.claimable(address(token), hodler), 0, "the holder was not settled");
+    }
+
     function test_a_pool_with_no_creator_tax_still_charges_the_base_fee() public {
-        (Currency c0, Currency c1) = address(token) < address(quote)
-            ? (Currency.wrap(address(token)), Currency.wrap(address(quote)))
-            : (Currency.wrap(address(quote)), Currency.wrap(address(token)));
-        PoolKey memory key = PoolKey({
-            currency0: c0,
-            currency1: c1,
-            fee: LP_FEE,
-            tickSpacing: TICK_SPACING + 10,
-            hooks: IHooks(address(hook))
-        });
-        hook.configurePool(key, address(token), address(quote), creator, distributor, 0, ArcaniumHook.Mode.STANDARD);
-        manager.initialize(key, TickMath.getSqrtPriceAtTick(0));
-        quote.mint(address(this), 1e30);
-        quote.approve(address(lpRouter), type(uint256).max);
-        token.approve(address(lpRouter), type(uint256).max);
-        lpRouter.modifyLiquidity(
-            key,
-            ModifyLiquidityParams({
-                tickLower: -(TICK_SPACING + 10) * 50,
-                tickUpper: (TICK_SPACING + 10) * 50,
-                liquidityDelta: 1_000_000e18,
-                salt: bytes32(0)
-            }),
-            ""
-        );
+        (ArcaniumLaunchToken token, PoolKey memory key) = _launch(ArcaniumHook.Mode.STANDARD, 0);
+        _fundTrader(token);
         uint256 burn0 = token.balanceOf(BURN);
-        _swap(key, _buyIsZeroForOne(), -1_000e6);
-        // Zero creator tax does not mean zero fee: the 1% base still applies,
-        // and on a buy it is burned.
+        _swap(key, _buyIsZeroForOne(token), -1_000e6);
+        // Zero creator tax is not zero fee: the 1% base still applies, and on
+        // a buy it is burned.
         assertGt(token.balanceOf(BURN) - burn0, 0, "the base fee was not charged");
     }
 
     function test_a_stranger_cannot_open_a_pool_on_this_hook() public {
-        (Currency c0, Currency c1) = address(token) < address(quote)
-            ? (Currency.wrap(address(token)), Currency.wrap(address(quote)))
-            : (Currency.wrap(address(quote)), Currency.wrap(address(token)));
         PoolKey memory rogue = PoolKey({
-            currency0: c0,
-            currency1: c1,
+            currency0: Currency.wrap(address(0x1111)),
+            currency1: Currency.wrap(address(quote)),
             fee: 3_000,
             tickSpacing: 60,
             hooks: IHooks(address(hook))
         });
-        // Never configured by the factory, so initialize must fail.
         vm.expectRevert();
         manager.initialize(rogue, TickMath.getSqrtPriceAtTick(0));
     }
 
     function test_only_the_factory_can_configure() public {
-        (Currency c0, Currency c1) = address(token) < address(quote)
-            ? (Currency.wrap(address(token)), Currency.wrap(address(quote)))
-            : (Currency.wrap(address(quote)), Currency.wrap(address(token)));
         PoolKey memory key = PoolKey({
-            currency0: c0, currency1: c1, fee: LP_FEE, tickSpacing: 60, hooks: IHooks(address(hook))
+            currency0: Currency.wrap(address(0x1111)),
+            currency1: Currency.wrap(address(quote)),
+            fee: LP_FEE,
+            tickSpacing: 60,
+            hooks: IHooks(address(hook))
         });
         vm.prank(trader);
         vm.expectRevert(ArcaniumHook.NotFactory.selector);
-        hook.configurePool(key, address(token), address(quote), creator, distributor, 100, ArcaniumHook.Mode.STANDARD);
+        hook.configurePool(key, address(0x1111), address(quote), creator, address(0), 100, ArcaniumHook.Mode.STANDARD);
     }
 
     function test_terms_cannot_be_rewritten() public {
-        PoolKey memory key = _key(ArcaniumHook.Mode.STANDARD);
+        (ArcaniumLaunchToken token, PoolKey memory key) = _launch(ArcaniumHook.Mode.STANDARD, TAX_BPS);
         vm.expectRevert(ArcaniumHook.AlreadyConfigured.selector);
-        hook.configurePool(key, address(token), address(quote), trader, distributor, 900, ArcaniumHook.Mode.ARCANE);
+        hook.configurePool(key, address(token), address(quote), trader, address(0), 900, ArcaniumHook.Mode.ARCANE);
     }
 
     function test_tax_above_the_cap_is_refused() public {
-        (Currency c0, Currency c1) = address(token) < address(quote)
-            ? (Currency.wrap(address(token)), Currency.wrap(address(quote)))
-            : (Currency.wrap(address(quote)), Currency.wrap(address(token)));
         PoolKey memory key = PoolKey({
-            currency0: c0, currency1: c1, fee: LP_FEE, tickSpacing: 60, hooks: IHooks(address(hook))
+            currency0: Currency.wrap(address(0x1111)),
+            currency1: Currency.wrap(address(quote)),
+            fee: LP_FEE,
+            tickSpacing: 60,
+            hooks: IHooks(address(hook))
         });
         vm.expectRevert(ArcaniumHook.TaxAboveCap.selector);
-        hook.configurePool(key, address(token), address(quote), creator, distributor, 901, ArcaniumHook.Mode.STANDARD);
+        hook.configurePool(key, address(0x1111), address(quote), creator, address(0), 901, ArcaniumHook.Mode.STANDARD);
     }
 }

@@ -16,9 +16,13 @@ import {Currency} from "v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
 import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
+import {IUnlockCallback} from "v4-core/src/interfaces/callback/IUnlockCallback.sol";
+import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 
 interface IDiviumToken {
     function notifyRewardAmount(uint256 amount) external;
+    function consumeRewards(address account) external returns (uint256);
+    function earned(address account) external view returns (uint256);
 }
 
 /**
@@ -40,16 +44,17 @@ interface IDiviumToken {
  *
  * Which currency the fee lands in follows the swap, not a preference: for the
  * ordinary exact-input trade the fee is charged on the output, so buys pay in
- * the token and sells pay in USDC. ARCANE therefore burns instantly on buys and
- * accumulates on sells, which `sweepQuote` hands to the distributor. That
- * asymmetry is real and is not smoothed over.
+ * the token and sells pay in USDC. A buy is burned directly; a sell is bought
+ * back and burned in the same transaction, through a second swap this hook
+ * makes while the manager is still unlocked. Both are automatic, and neither
+ * waits for a keeper.
  *
  * The address of this contract is not arbitrary. v4 reads a hook's permissions
  * out of the low bits of its own address, so this must be deployed to an
  * address whose bits match `HOOK_FLAGS` or the PoolManager rejects every pool
  * that names it. See ArcaniumHookMiner.
  */
-contract ArcaniumHook is IHooks, Ownable2Step {
+contract ArcaniumHook is IHooks, IUnlockCallback, Ownable2Step {
     using SafeCast for uint256;
     using SafeERC20 for IERC20;
 
@@ -103,6 +108,12 @@ contract ArcaniumHook is IHooks, Ownable2Step {
     mapping(PoolId => PoolConfig) private _configs;
     /// Quote-denominated ARCANE proceeds awaiting a buy-and-burn.
     mapping(PoolId => uint256) public pendingBurnQuote;
+    /// Reward asset per launched token, so a payout needs only the token.
+    mapping(address => address) public quoteOfToken;
+    /// True while sweepAndBurn is swapping this very pool. Without it the
+    /// buy-back would be taxed by afterSwap and park a fresh remainder,
+    /// leaving a residue that can never be fully swept.
+    bool private _sweeping;
 
     event PoolConfigured(PoolId indexed poolId, address indexed token, uint16 taxBps, Mode mode);
     event TaxRouted(
@@ -112,6 +123,11 @@ contract ArcaniumHook is IHooks, Ownable2Step {
         uint256 creatorAmount,
         Mode mode
     );
+    event RewardsClaimed(address indexed token, address indexed holder, uint256 amount);
+    /// A buy-back could not complete in the trade that funded it. The amount
+    /// is parked and sweepAndBurn retries it; nothing is lost and nothing is
+    /// hidden.
+    event BurnDeferred(PoolId indexed poolId, uint256 amount);
     event FactoryUpdated(address oldFactory, address newFactory);
     event ProtocolTreasuryUpdated(address oldTreasury, address newTreasury);
     event CreatorShareUpdated(uint256 oldShareBps, uint256 newShareBps);
@@ -124,6 +140,8 @@ contract ArcaniumHook is IHooks, Ownable2Step {
     error ShareOutOfBounds();
     error HookNotImplemented();
     error NothingPending();
+    error NotSelf();
+    error UnknownToken();
 
     modifier onlyPoolManager() {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
@@ -201,6 +219,7 @@ contract ArcaniumHook is IHooks, Ownable2Step {
             mode: mode,
             configured: true
         });
+        quoteOfToken[token] = quote;
         emit PoolConfigured(id, token, taxBps, mode);
     }
 
@@ -228,6 +247,7 @@ contract ArcaniumHook is IHooks, Ownable2Step {
         BalanceDelta delta,
         bytes calldata
     ) external override onlyPoolManager returns (bytes4, int128) {
+        if (_sweeping) return (IHooks.afterSwap.selector, 0);
         PoolId id = key.toId();
         PoolConfig memory cfg = _configs[id];
         if (!cfg.configured) return (IHooks.afterSwap.selector, 0);
@@ -258,7 +278,7 @@ contract ArcaniumHook is IHooks, Ownable2Step {
             creatorAmount = (feeAmount * creatorShareBps) / BPS_DENOMINATOR;
             protocolAmount = feeAmount - creatorAmount;
             if (protocolAmount > 0) poolManager.take(feeCurrency, protocolTreasury, protocolAmount);
-            if (creatorAmount > 0) _routeCreatorShare(id, cfg, feeCurrency, creatorAmount);
+            if (creatorAmount > 0) _routeCreatorShare(key, id, cfg, feeCurrency, creatorAmount);
         }
 
         emit TaxRouted(id, Currency.unwrap(feeCurrency), protocolAmount, creatorAmount, cfg.mode);
@@ -269,13 +289,9 @@ contract ArcaniumHook is IHooks, Ownable2Step {
      * @dev Where the creator's share of a quote-denominated fee goes, settled
      *      inside the swap. Only ever called with the quote asset — the token
      *      side is burned before it gets here.
-     *
-     *      ARCANE is the one case that cannot finish synchronously: buying the
-     *      token back would mean swapping the pool that is mid-swap. So it is
-     *      parked for sweepQuote. Paying it to the creator instead would
-     *      quietly turn a burn token into a fee token.
      */
     function _routeCreatorShare(
+        PoolKey calldata key,
         PoolId id,
         PoolConfig memory cfg,
         Currency feeCurrency,
@@ -283,12 +299,32 @@ contract ArcaniumHook is IHooks, Ownable2Step {
     ) private {
         if (cfg.mode == Mode.ARCANE) {
             poolManager.take(feeCurrency, address(this), amount);
-            pendingBurnQuote[id] += amount;
+            // Buy back and burn now, in this same transaction. afterSwap runs
+            // after the pool's state is already updated and while the manager
+            // is still unlocked, so a second swap is legal here and needs no
+            // unlock of its own.
+            //
+            // Routed through an external self-call purely so it can be caught.
+            // A buy-back can legitimately fail — a price limit, a pool with
+            // nothing left on the other side — and a failure inside afterSwap
+            // would revert the trade that triggered it. Somebody's sell must
+            // not fail because our burn did. What it must not do is fail
+            // silently, which is the v3 behaviour this whole design exists to
+            // end, so the amount is parked and the reason is announced.
+            try this.buyBackAndBurn(key, amount) {
+                // Burned.
+            } catch {
+                pendingBurnQuote[id] += amount;
+                emit BurnDeferred(id, amount);
+            }
             return;
         }
 
-        if (cfg.mode == Mode.DIVIUM && cfg.distributor != address(0)) {
-            poolManager.take(feeCurrency, cfg.distributor, amount);
+        if (cfg.mode == Mode.DIVIUM) {
+            // Held here, not forwarded. The token only accepts
+            // notifyRewardAmount and consumeRewards from a single address, so
+            // whoever books the rewards must also be the one that pays them.
+            poolManager.take(feeCurrency, address(this), amount);
             IDiviumToken(cfg.token).notifyRewardAmount(amount);
             return;
         }
@@ -297,18 +333,112 @@ contract ArcaniumHook is IHooks, Ownable2Step {
     }
 
     /**
-     * @notice Hand an ARCANE pool's parked USDC to its distributor to be bought
-     *         back and burned. Permissionless: it can only ever move funds to
-     *         the address configured at launch, so there is nothing to steer.
+     * @notice Swap `amount` of the pool's quote for its token and burn it.
+     * @dev External only so the caller can try/catch it; self-calls only.
+     *      Assumes the manager is already unlocked, which is true both from
+     *      afterSwap and from sweepAndBurn's unlock callback.
      */
-    function sweepQuote(PoolKey calldata key) external {
+    function buyBackAndBurn(PoolKey calldata key, uint256 amount) external {
+        if (msg.sender != address(this)) revert NotSelf();
+        _buyBackAndBurn(key, amount);
+    }
+
+    function _buyBackAndBurn(PoolKey memory key, uint256 amount) private {
+        PoolConfig memory cfg = _configs[key.toId()];
+        bool quoteIsCurrency0 = Currency.unwrap(key.currency0) == cfg.quote;
+
+        // Without this the buy-back would itself be taxed by afterSwap, which
+        // would park a fresh remainder and leave a residue that can never be
+        // fully burned.
+        _sweeping = true;
+        BalanceDelta delta = poolManager.swap(
+            key,
+            SwapParams({
+                zeroForOne: quoteIsCurrency0,
+                amountSpecified: -int256(amount),
+                sqrtPriceLimitX96: quoteIsCurrency0
+                    ? TickMath.MIN_SQRT_PRICE + 1
+                    : TickMath.MAX_SQRT_PRICE - 1
+            }),
+            ""
+        );
+        _sweeping = false;
+
+        // Pay the quote we owe the pool out of the balance just taken.
+        Currency quoteCurrency = Currency.wrap(cfg.quote);
+        poolManager.sync(quoteCurrency);
+        IERC20(cfg.quote).safeTransfer(address(poolManager), amount);
+        poolManager.settle();
+
+        // Everything it bought goes straight to the sink.
+        int128 bought = quoteIsCurrency0 ? delta.amount1() : delta.amount0();
+        if (bought > 0) {
+            poolManager.take(Currency.wrap(cfg.token), BURN_ADDRESS, uint128(bought));
+        }
+    }
+
+    /**
+     * @notice Buy the token back with an ARCANE pool's parked USDC and burn it.
+     *
+     * Permissionless. There is nothing to steer: the proceeds can only go to
+     * the burn address, and the caller is never paid.
+     *
+     * The hook does the swap itself rather than handing the USDC to the v3
+     * distributor. That distributor buys back through the v3 router and the v3
+     * pool, neither of which exists for a v4 launch, and its buy-and-burn
+     * swallows failures in a catch — so delegating here would strand the money
+     * and report success, which is the exact behaviour v4 was meant to end.
+     */
+    function sweepAndBurn(PoolKey calldata key) external {
         PoolId id = key.toId();
-        PoolConfig memory cfg = _configs[id];
         uint256 amount = pendingBurnQuote[id];
         if (amount == 0) revert NothingPending();
-        if (cfg.distributor == address(0)) revert ZeroAddress();
         pendingBurnQuote[id] = 0;
-        IERC20(cfg.quote).safeTransfer(cfg.distributor, amount);
+        poolManager.unlock(abi.encode(key, amount));
+    }
+
+    /**
+     * @notice Pay a holder everything they have accrued for `token`.
+     *
+     * Called by the token itself whenever a holder moves their balance, which
+     * is what makes Divium arrive rather than wait to be collected. Also
+     * callable by anyone for anyone: it pays the holder named, never the
+     * caller, so there is no way to point it at yourself.
+     *
+     * Rewards cannot be pushed to every holder at once — that is an unbounded
+     * loop over an open-ended set, and it would get more expensive with every
+     * new holder until it stopped fitting in a block. Paying on the holder's
+     * own activity, plus letting anyone settle anyone, is as close to automatic
+     * as the accounting can honestly get.
+     */
+    function payOut(address token, address holder) external returns (uint256 amount) {
+        address quote = quoteOfToken[token];
+        if (quote == address(0)) revert UnknownToken();
+        amount = IDiviumToken(token).consumeRewards(holder);
+        if (amount == 0) return 0;
+        IERC20(quote).safeTransfer(holder, amount);
+        emit RewardsClaimed(token, holder, amount);
+    }
+
+    /// @notice Settle several holders in one call.
+    function payOutMany(address token, address[] calldata holders) external {
+        for (uint256 i = 0; i < holders.length; i++) {
+            // A holder with nothing owed must not fail the batch.
+            try this.payOut(token, holders[i]) returns (uint256) {} catch {}
+        }
+    }
+
+    /// @notice What a holder could be paid right now.
+    function claimable(address token, address holder) external view returns (uint256) {
+        return IDiviumToken(token).earned(holder);
+    }
+
+    /// @dev The retry path, inside a lock this contract opened.
+    function unlockCallback(bytes calldata data) external override returns (bytes memory) {
+        if (msg.sender != address(poolManager)) revert NotPoolManager();
+        (PoolKey memory key, uint256 amount) = abi.decode(data, (PoolKey, uint256));
+        _buyBackAndBurn(key, amount);
+        return "";
     }
 
     // ------------------------------------------- unused callbacks
