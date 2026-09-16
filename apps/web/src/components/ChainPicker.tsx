@@ -33,6 +33,16 @@ export function ChainPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+  /**
+   * Viewport coordinates for the menu.
+   *
+   * The panel this sits in is `overflow: clip`, which clips absolutely
+   * positioned descendants — so the list was cut off at the panel's edge and
+   * most chains could not be seen or clicked. A fixed-position element is laid
+   * out against the viewport instead, which escapes the clip, but then it has
+   * to be told where the trigger is.
+   */
+  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
@@ -43,13 +53,33 @@ export function ChainPicker({
     const onDown = (e: MouseEvent): void => {
       if (rootRef.current !== null && !rootRef.current.contains(e.target as Node)) setOpen(false);
     };
+    // A fixed menu does not travel with the page, so rather than chase the
+    // trigger on every scroll frame it simply closes.
+    const onScrollOrResize = (): void => setOpen(false);
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    window.addEventListener("scroll", onScrollOrResize, true);
+    window.addEventListener("resize", onScrollOrResize);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("scroll", onScrollOrResize, true);
+      window.removeEventListener("resize", onScrollOrResize);
+    };
   }, [open]);
 
-  useEffect(() => {
-    if (open) setActive(Math.max(0, options.findIndex((o) => o.key === value)));
-  }, [open, options, value]);
+  function openMenu(): void {
+    const el = triggerRef.current;
+    if (el !== null) {
+      const r = el.getBoundingClientRect();
+      // Right-aligned to the trigger, like the old dropdown.
+      setRect({ top: r.bottom + 6, left: r.right, width: r.width });
+    }
+    // Seeded here rather than in an effect keyed on `options`. The parent
+    // rebuilds that array every render, so the effect re-ran on any unrelated
+    // re-render and reset the highlight — arrow to a chain, let a balance
+    // refresh land, and Enter committed a different one.
+    setActive(Math.max(0, options.findIndex((o) => o.key === value)));
+    setOpen(true);
+  }
 
   function commit(key: string): void {
     onChange(key);
@@ -61,7 +91,7 @@ export function ChainPicker({
     if (!open) {
       if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        setOpen(true);
+        openMenu();
       }
       return;
     }
@@ -98,7 +128,7 @@ export function ChainPicker({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={label}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => (open ? setOpen(false) : openMenu())}
       >
         {selected === undefined ? null : (
           <>
@@ -112,7 +142,17 @@ export function ChainPicker({
       </button>
 
       {!open ? null : (
-        <ul className="chain-picker-menu" role="listbox" aria-label={label} tabIndex={-1}>
+        <ul
+          className="chain-picker-menu"
+          role="listbox"
+          aria-label={label}
+          tabIndex={-1}
+          style={
+            rect === null
+              ? undefined
+              : { position: "fixed", top: rect.top, left: rect.left, right: "auto", transform: "translateX(-100%)" }
+          }
+        >
           {options.map((o, i) => (
             <li key={o.key}>
               <button

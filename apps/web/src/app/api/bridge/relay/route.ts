@@ -35,6 +35,19 @@ const RELAYED = new Set(
 
 const inFlight = new Set<string>();
 
+/**
+ * Which destinations we will claim on. The interface needs this before the
+ * deposit is signed, not after: telling somebody the claim is covered and then
+ * discovering it is not, once their USDC is already burned, is the one moment
+ * in this flow where a wrong promise costs them something.
+ */
+export function GET(): NextResponse {
+  return NextResponse.json({
+    relayed: [...RELAYED],
+    configured: RELAYER_KEY !== undefined,
+  });
+}
+
 export async function POST(request: Request): Promise<NextResponse> {
   if (RELAYER_KEY === undefined) return NextResponse.json({ error: "relayer not configured" }, { status: 503 });
   const body = (await request.json().catch(() => null)) as { chain?: string; message?: string; attestation?: string } | null;

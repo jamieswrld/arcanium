@@ -174,34 +174,74 @@ interface Candidate {
   readonly distributor: Hex;
 }
 
+/**
+ * Every distributor a launch might be bound to, newest first.
+ *
+ * A token's taxRecipient is immutable, so which distributor it pays into is
+ * fixed at launch and every generation has to keep being swept.
+ */
+const DISTRIBUTORS: readonly Hex[] = (
+  process.env["KEEPER_DISTRIBUTORS"] ??
+  "0x7c148B6a581E32CcB6ffF7Bd59AF4250d5ec1eBc," +
+  "0xed233972c8a24dFA91671B94E2bb0B1E1E2f943D," +
+  "0x789896401c1c90dF95757dFd3228989B627418b4," +
+  "0xbdc362f9ddEA2ae9C39b108E0712F7d6e2f00e5F"
+)
+  .split(",")
+  .map((a) => a.trim())
+  .filter((a) => /^0x[0-9a-fA-F]{40}$/.test(a)) as Hex[];
+
+/** Cache, so a token's distributor is discovered once rather than every cycle. */
+const distributorOf = new Map<string, Hex | null>();
+
 /** The launches whose distribute() would actually do something right now. */
 async function collectable(arc: PublicClient, tokens: readonly Hex[], caller: Hex): Promise<Candidate[]> {
   const out: Candidate[] = [];
   for (const token of tokens) {
-    const distributor = await arc
-      .readContract({ address: token, abi: tokenAbi, functionName: "taxRecipient" })
-      .catch(() => null);
-    if (distributor === null) continue;
+    // Ask the token first — but only launches from the v4 factory answer.
+    // Everything minted by v1, v2 or v3 reverts on taxRecipient, and the old
+    // code treated that as "skip", so those launches were never swept at all:
+    // their dividends never arrived and their burns never happened. When the
+    // token cannot say, every known distributor is tried instead.
+    const cachedKey = token.toLowerCase();
+    const cached = distributorOf.get(cachedKey);
+    const named = cached !== undefined
+      ? cached
+      : ((await arc
+          .readContract({ address: token, abi: tokenAbi, functionName: "taxRecipient" })
+          .catch(() => null)) as Hex | null);
+
+    const candidates: readonly Hex[] = named !== null ? [named] : DISTRIBUTORS;
 
     // Simulate first. distribute() reverts when there is nothing to collect,
     // which is the normal state for most launches most of the time — paying gas
-    // to discover that for every token every cycle would be pure waste.
-    const ok = await arc
-      .simulateContract({
-        address: distributor as Hex,
-        abi: distributorAbi,
-        functionName: "distribute",
-        args: [token],
-        account: caller,
-      })
-      .then(() => true)
-      .catch(() => false);
-    if (!ok) continue;
+    // to discover that for every token every cycle would be pure waste. It
+    // also reverts for a distributor that does not know the token, which is
+    // what makes this double as the lookup.
+    let hit: Hex | null = null;
+    for (const d of candidates) {
+      const ok = await arc
+        .simulateContract({
+          address: d,
+          abi: distributorAbi,
+          functionName: "distribute",
+          args: [token],
+          account: caller,
+        })
+        .then(() => true)
+        .catch(() => false);
+      if (ok) { hit = d; break; }
+    }
+
+    if (named !== null) distributorOf.set(cachedKey, named);
+    else if (hit !== null) distributorOf.set(cachedKey, hit);
+
+    if (hit === null) continue;
 
     const symbol = await arc
       .readContract({ address: token, abi: tokenAbi, functionName: "symbol" })
       .catch(() => "?");
-    out.push({ token, symbol: symbol as string, distributor: distributor as Hex });
+    out.push({ token, symbol: symbol as string, distributor: hit });
   }
   return out;
 }

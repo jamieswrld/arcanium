@@ -201,12 +201,20 @@ function buildLaunch(
     return fail("invalid_parameter", "`initialBuy` must be an integer in pair-asset base units.");
   }
 
-  // Basis points, so an integrator names the tax exactly rather than through a
-  // float. The factory reverts above 900 and a reverted launch still costs
-  // gas, so the ceiling is checked here where the error can say why.
+  // A non-zero tax is refused outright, not clamped. A token carrying one
+  // cannot be sold: Uniswap v3 takes a sell's input by transferring into the
+  // pool and then checking it received the promised amount, and the tax skims
+  // that very transfer, so every sell reverts with IIA. Building that
+  // transaction would be handing an integrator a honeypot factory.
   const taxRaw = String(body["taxBps"] ?? "0");
-  if (!/^\d+$/.test(taxRaw) || BigInt(taxRaw) > 900n) {
-    return fail("invalid_parameter", "`taxBps` must be an integer from 0 to 900 (0–9%).");
+  if (!/^\d+$/.test(taxRaw)) {
+    return fail("invalid_parameter", "`taxBps` must be an integer.");
+  }
+  if (BigInt(taxRaw) !== 0n) {
+    return fail(
+      "invalid_parameter",
+      "`taxBps` must be 0. A token launched with a transfer tax cannot be sold on Uniswap v3 — the tax breaks the pool's input check and every sell reverts.",
+    );
   }
 
   const MODES: Record<string, number> = { standard: 0, divium: 1, arcane: 2 };
@@ -240,7 +248,7 @@ function buildLaunch(
           minTokensOut: 0n,
           deadline,
           feeRecipient: feeRecipient as Hex,
-          taxBps: BigInt(taxRaw),
+          taxBps: 0n,
           mode,
         },
       ],

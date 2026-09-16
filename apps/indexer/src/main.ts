@@ -98,6 +98,10 @@ const DEFAULT_MODE_DISTRIBUTOR = "0x7c148B6a581E32CcB6ffF7Bd59AF4250d5ec1eBc";
 /** Every contract that has ever paid out launch fees. All are live on Arc. */
 const DEFAULT_DISTRIBUTORS = [
   "0x7c148B6a581E32CcB6ffF7Bd59AF4250d5ec1eBc", // mode distributor (current)
+  // Two launches pay into this one and it was missing from this list, so their
+  // FeesDistributed events were never indexed and their payout totals were
+  // reported as zero rather than unknown.
+  "0xed233972c8a24dfa91671b94e2bb0b1e1e2f943d",
   "0x789896401c1c90df95757dfd3228989b627418b4",
   "0xbdc362f9ddea2ae9c39b108e0712f7d6e2f00e5f",
 ] as const;

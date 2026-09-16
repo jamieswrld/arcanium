@@ -217,6 +217,43 @@ contract ModesTest is Test {
         assertGt(IERC20(token).balanceOf(BURN) - b0, 0, "tax proceeds not burned");
     }
 
+    /**
+     * A taxed token CANNOT be sold on v3. This test pins that down.
+     *
+     * The existing tax test only ever buys, which is the half of the trade a
+     * transfer tax does not interfere with. Selling is where it breaks:
+     * Uniswap v3 takes the input by calling back to the router, which
+     * transfers the tokens INTO the pool, and the pool then asserts it
+     * received what it was promised. The tax skims exactly that transfer, so
+     * the pool comes up short and reverts with IIA — the token is a honeypot.
+     *
+     * This is why the launch form and the transactions API refuse a non-zero
+     * tax. It is asserted rather than merely commented so that the day someone
+     * makes taxed sells work, this test fails and says to re-enable them.
+     *
+     * The v4 hook does not have the problem: it takes its fee inside the swap
+     * via afterSwap rather than by skimming a transfer, so the pool always
+     * receives exactly what it was promised. See ArcaniumHook.t.sol, which
+     * sells a token carrying a 5% tax.
+     */
+    function test_a_taxed_token_cannot_be_sold_on_v3() public {
+        address token = _launch("TAXSELL", 0, 500); // 5%
+        _buy(token, 5_000e6);
+        uint256 held = IERC20(token).balanceOf(trader);
+        assertGt(held, 0, "buy produced nothing");
+
+        vm.startPrank(trader);
+        IERC20(token).approve(address(router), held);
+        vm.expectRevert(bytes("IIA"));
+        router.exactInputSingle(
+            ISwapRouter.ExactInputSingleParams({
+                tokenIn: token, tokenOut: address(quote), fee: 10_000, recipient: trader,
+                amountIn: held / 2, amountOutMinimum: 0, sqrtPriceLimitX96: 0
+            })
+        );
+        vm.stopPrank();
+    }
+
     function test_untaxed_launch_leaves_transfers_untouched() public {
         address token = _launch("NOTAX", 0, 0);
         uint256 got = _buy(token, 5_000e6);

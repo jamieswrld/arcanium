@@ -37,7 +37,7 @@ export default async function LockDetailPage({ params }: Props) {
   return (
     <div className="stack">
       <header>
-        <Link href="/locked" className="arch-note">
+        <Link href="/locked?tab=eco" className="arch-note">
           ← All locks
         </Link>
         <div className="spread" style={{ alignItems: "flex-end", flexWrap: "wrap", gap: "var(--s3)", marginTop: "var(--s2)" }}>

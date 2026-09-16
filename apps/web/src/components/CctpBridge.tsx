@@ -13,6 +13,8 @@ import {
   bridgeRouterAbi,
   FAST_FINALITY,
   maxFeeFor,
+  MESSAGE_TRANSMITTER_V2,
+  messageTransmitterAbi,
   TOKEN_MESSENGER_V2,
   tokenMessengerAbi,
   tokenMessengerMinterAbi,
@@ -128,6 +130,14 @@ export function CctpBridge() {
   const [elapsed, setElapsed] = useState(0);
   const [fastFeeBps, setFastFeeBps] = useState<number | null>(null);
   const [burnLimit, setBurnLimit] = useState<bigint | null>(null);
+  /**
+   * Destinations the relayer claims on. Everything else is a self-claim, which
+   * is a deliberate design — you are bridging TO that chain, so you have gas
+   * there — but the interface previously promised a relayed claim everywhere
+   * and only had code for two chains. That meant burning USDC into a state the
+   * app could not finish. Null while unknown, so nothing is promised early.
+   */
+  const [relayed, setRelayed] = useState<readonly string[] | null>(null);
 
   // Circle's live fast-lane fee for this route (bps). Determines the maxFee
   // we must allow for fast finality to engage.
@@ -144,6 +154,18 @@ export function CctpBridge() {
       .catch(() => undefined);
     return () => { cancelled = true; };
   }, [fromKey, toKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/bridge/relay")
+      .then((r) => r.json())
+      .then((d: { relayed?: string[]; configured?: boolean }) => {
+        if (cancelled) return;
+        setRelayed(d.configured === false ? [] : (d.relayed ?? []));
+      })
+      .catch(() => { if (!cancelled) setRelayed([]); });
+    return () => { cancelled = true; };
+  }, []);
 
   // Restore an in-flight transfer on mount.
   useEffect(() => {
@@ -254,6 +276,50 @@ export function CctpBridge() {
       const res = await fetch(`/api/bridge/attest?domain=${srcDomain}&tx=${p.burnTx}`).then((r) => r.json()).catch(() => ({ status: "pending" }));
       if (res.status === "complete") {
         setPhase("claiming");
+
+        // Not a relayed destination: claim it from the user's own wallet.
+        // receiveMessage is permissionless and always mints to the recipient
+        // baked into the message, so doing it yourself is exactly as safe and
+        // cannot be redirected.
+        if (relayed !== null && !relayed.includes(destination.key)) {
+          try {
+            // The wallet is still on the source chain; the claim is a
+            // transaction on the destination.
+            if (chainId !== destination.chainId) {
+              await switchChainAsync({ chainId: destination.chainId });
+            }
+            const hash = await writeContractAsync({
+              address: MESSAGE_TRANSMITTER_V2,
+              abi: messageTransmitterAbi,
+              functionName: "receiveMessage",
+              args: [res.message as Hex, res.attestation as Hex],
+              chainId: destination.chainId,
+            });
+            savePending(null);
+            setPending(null);
+            setClaimTx(hash);
+            setPhase("done");
+            void srcBal.refetch();
+            void dstBal.refetch();
+            toast({
+              tone: "success",
+              title: `Bridged to ${destination.name}`,
+              description: "Native USDC delivered.",
+              href: `${destination.explorer}/tx/${hash}`,
+              hrefLabel: "View claim",
+            });
+          } catch (err) {
+            const m = err instanceof Error ? (err.message.split("\n")[0] ?? "") : "";
+            setPhase("error");
+            setMessage(
+              m.toLowerCase().includes("already")
+                ? `This transfer was already claimed — your USDC is on ${destination.name}.`
+                : `Claim not sent. Your deposit is attested and safe — press Resume to try again. ${m}`,
+            );
+          }
+          return;
+        }
+
         const relay = await fetch("/api/bridge/relay", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -477,7 +543,13 @@ export function CctpBridge() {
         ) : null}
         <div style={{ display: "flex", justifyContent: "space-between", padding: "0.15rem 0" }}>
           <span style={{ color: "var(--muted-foreground)" }}>Claim gas on {dstName}</span>
-          <span style={{ color: "var(--positive)" }}>Free · Arcanium relays it</span>
+          {relayed === null ? (
+            <span>—</span>
+          ) : relayed.includes(dst.key) ? (
+            <span style={{ color: "var(--positive)" }}>Free · Arcanium relays it</span>
+          ) : (
+            <span>You claim it · a little {dstName} gas</span>
+          )}
         </div>
       </div>
 
@@ -503,7 +575,17 @@ export function CctpBridge() {
         <Step state={stepState(["approving"])} title="Approve USDC" note={`One-time allowance for the ${srcName} router`} />
         <Step state={stepState(["burning"])} title={`Deposit on ${srcName}`} note="Fee taken, remainder burned via Circle CCTP" />
         <Step state={stepState(["attesting"])} title="Wait for Circle" note="Circle signs the deposit — timing is set by Circle, not Arcanium" />
-        <Step state={stepState(["claiming"])} title={`Claim on ${dstName}`} note={`Relayed for you · no ${dstName} gas needed`} />
+        <Step
+          state={stepState(["claiming"])}
+          title={`Claim on ${dstName}`}
+          note={
+            relayed === null
+              ? "Minting your USDC on the destination"
+              : relayed.includes(dst.key)
+                ? `Relayed for you · no ${dstName} gas needed`
+                : `You sign this one · uses a little ${dstName} gas`
+          }
+        />
       </div>
 
       {!isConnected ? (

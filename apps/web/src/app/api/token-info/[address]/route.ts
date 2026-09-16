@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { Hex } from "viem";
 import { arcPublicClient, fetchToken, formatPriceE18, LEGACY_FACTORY_ADDRESS, FACTORY_ADDRESS } from "@/lib/launchpad";
 import { getDb } from "@/lib/db";
+import { ARC_FACTORIES, ARC_ALL_FACTORIES, ARC_UNISWAP, ARC_CHAIN_ID } from "@arch/chain-config";
 
 /**
  * Public token-info API for terminals and aggregators (gmgn, screeners, bots).
@@ -82,13 +83,43 @@ export async function GET(
         liquidityUsd: (Number(detail.quoteBalance) / 1e6).toFixed(2),
         graduated: detail.graduated,
       },
+      /**
+       * How to actually route a trade in this market.
+       *
+       * Terminals hardcode a router per chain, and Arc's Uniswap is a fork at
+       * non-canonical addresses — so a router table keyed on the usual
+       * 0x1F98431c… factory finds nothing here and reports the token as
+       * unroutable, or worse, as unsellable. Publishing the real addresses
+       * beside the pool is the difference between a terminal being able to
+       * quote this market and guessing that it cannot.
+       */
+      dex: {
+        protocol: "uniswap-v3",
+        chainId: ARC_CHAIN_ID,
+        factory: ARC_UNISWAP.factory,
+        router: ARC_UNISWAP.swapRouter,
+        positionManager: ARC_UNISWAP.positionManager,
+        quoteAsset: detail.pairToken,
+        quoteDecimals: 6,
+        feeTier: ARC_UNISWAP.poolFee,
+        tickSpacing: 200,
+      },
       provenance: {
         launchpad: "Arcanium",
         url: `https://arcanium.trade/tokens/${detail.token}`,
-        factory: FACTORY_ADDRESS ?? null,
+        // Canonical, not the env override. A deployment without the variable
+        // set reported factory: null to every aggregator that asked.
+        factory: FACTORY_ADDRESS ?? ARC_FACTORIES.current,
         legacyFactory: LEGACY_FACTORY_ADDRESS,
+        // Every generation, so an integrator enumerating our launches does not
+        // have to discover that three older factories exist.
+        allFactories: ARC_ALL_FACTORIES,
         creator: detail.creator,
         liquidityLocked: true,
+        // No transfer tax on any Arcanium launch. Scanners that cannot build a
+        // sell route on an unknown DEX report the token as a honeypot; this is
+        // the field that says otherwise in a form they can read.
+        transferTaxBps: 0,
       },
     },
     { headers: CORS },

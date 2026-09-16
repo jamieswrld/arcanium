@@ -37,11 +37,29 @@ export async function GET(
 
     const chain = getChain("arc");
 
-    const token =
-      (await indexedToken(address).catch(() => null)) ??
-      (await withTimeout(fetchToken(arcPublicClient(), address as Hex), null, 8_000, "v1 token"));
+    // Both sources have to be asked before "not found" can be claimed, and
+    // the reason each failed has to be kept. A 404 tells an integrator to drop
+    // the token from their index permanently; an outage that says 404 makes
+    // them do that to a market that exists.
+    let reachable = false;
+    let token = await indexedToken(address).then(
+      (t) => { reachable = true; return t; },
+      () => null,
+    );
+    if (token === null) {
+      token = await fetchToken(arcPublicClient(), address as Hex).then(
+        (t) => { reachable = true; return t; },
+        () => null,
+      );
+    }
 
     if (token === null) {
+      if (!reachable) {
+        return fail(
+          "upstream_unavailable",
+          "Could not reach the indexer or an Arc RPC, so whether this is an Arcanium market is unknown. This is not a statement that the token does not exist — retry.",
+        );
+      }
       return fail(
         "not_found",
         "No Arcanium market for that address. It was not launched through Arcanium.",

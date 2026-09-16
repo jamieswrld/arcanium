@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { ARC_TOKEN_LOCKER } from "@arch/chain-config";
 import { lockListResilient, lockStatsResilient } from "@/lib/locks";
+import { indexedTokens } from "@/lib/indexed";
 import type { Hex } from "viem";
 import { arcPublicClient } from "@/lib/launchpad";
 import { EcoLocks, aggregateByToken, type EcoRow } from "@/components/EcoLocks";
@@ -44,7 +45,11 @@ export default async function LockedPage({ searchParams }: Props) {
   // the read-only views are one click away. A legacy ?tab=all or ?tab=claimable
   // link still resolves rather than 404-ing into the wrong view.
   const raw = sp.tab === "all" ? "eco" : sp.tab === "claimable" ? "mine" : sp.tab;
-  const tab: TabKey = TABS.some((t) => t.key === raw) ? (raw as TabKey) : "new";
+  // A ?token= link comes from a token page asking to see that token's locks.
+  // Defaulting it to the Lock form would answer "show me this" with "fill in
+  // a deposit", and silently drop the filter it arrived with.
+  const fallback: TabKey = /^0x[0-9a-fA-F]{40}$/.test(sp.token ?? "") ? "eco" : "new";
+  const tab: TabKey = TABS.some((t) => t.key === raw) ? (raw as TabKey) : fallback;
   // Linked from a token page. Validated here rather than passed through, so a
   // malformed address becomes "all locks" instead of a failed query.
   const token = /^0x[0-9a-fA-F]{40}$/.test(sp.token ?? "") ? sp.token?.toLowerCase() : undefined;
@@ -133,7 +138,11 @@ async function Ecosystem({ token }: { readonly token?: string | undefined }) {
     return <p className="arch-note">Lock data is not available right now.</p>;
   }
 
-  const rows = aggregateByToken(result.locks, new Set());
+  // Which of these the launchpad actually minted. Passing an empty set made
+  // every row claim to be an Arcanium launch.
+  const launched = await indexedTokens().catch(() => null);
+  const nativeTokens = new Set((launched ?? []).map((t) => t.token.toLowerCase()));
+  const rows = aggregateByToken(result.locks, nativeTokens);
   // The indexer only knows the metadata of tokens Arcanium launched, so every
   // other one arrives as a bare address with no decimals. Reading them from
   // chain is what makes this an ecosystem view rather than a list of hashes.

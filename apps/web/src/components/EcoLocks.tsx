@@ -41,7 +41,12 @@ export function aggregateByToken(locks: readonly LockRow[], nativeTokens: Readon
     const key = l.token.toLowerCase();
     const held = l.status !== "claimed";
     const prev = byToken.get(key);
-    const unlock = Number(l.unlockTime);
+    // unlockTime is an ISO-8601 string, not a number of seconds. Number() on
+    // it is NaN, which then survives every comparison below and renders as
+    // "NaNm" — so it is parsed, and an unparseable value becomes null rather
+    // than a number that silently poisons the minimum.
+    const parsedMs = Date.parse(l.unlockTime);
+    const unlock = Number.isNaN(parsedMs) ? null : Math.floor(parsedMs / 1000);
 
     if (prev === undefined) {
       byToken.set(key, {
@@ -49,7 +54,11 @@ export function aggregateByToken(locks: readonly LockRow[], nativeTokens: Readon
         symbol: l.symbol,
         name: l.name,
         decimals: l.decimals,
-        native: nativeTokens.has(key) || l.symbol !== null,
+        // Membership only. Inferring it from "we know the symbol" was wrong:
+        // on the chain-fallback path locks.ts reads the symbol off the ERC-20
+        // itself for every token, so every row claimed to be an Arcanium
+        // launch and linked to a market page that does not exist.
+        native: nativeTokens.has(key),
         lockedUnits: held ? BigInt(l.amount) : 0n,
         activeLocks: held ? 1 : 0,
         totalLocks: 1,
@@ -67,7 +76,9 @@ export function aggregateByToken(locks: readonly LockRow[], nativeTokens: Readon
       activeLocks: prev.activeLocks + (held ? 1 : 0),
       totalLocks: prev.totalLocks + 1,
       nextUnlock:
-        held && (prev.nextUnlock === null || unlock < prev.nextUnlock) ? unlock : prev.nextUnlock,
+        held && unlock !== null && (prev.nextUnlock === null || unlock < prev.nextUnlock)
+          ? unlock
+          : prev.nextUnlock,
     });
   }
 
