@@ -1374,3 +1374,56 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
   border-left: 2px solid var(--accent);
   border-radius: var(--r-md);
 }
+
+/* ----------------------------------------------------------------- locks ---
+   The lock form and detail view. Both are read carefully before a signature
+   that cannot be undone, so they are roomier than the trading surfaces.    */
+
+.lock-form { padding: var(--s4); display: grid; gap: var(--s4); max-width: 560px; }
+.lock-field { display: grid; gap: 4px; }
+
+.arch-input {
+  width: 100%;
+  height: var(--h-md, 38px);
+  padding: 0 12px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  color: var(--text-primary);
+  font: inherit;
+}
+.arch-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* The resolved unlock date. Given its own block because a preset is a
+   shorthand and this is what it actually resolves to. */
+.lock-resolved {
+  display: grid;
+  gap: 2px;
+  padding: var(--s3);
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.lock-warning {
+  margin: 0;
+  padding: var(--s3);
+  background: var(--accent-quiet);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--r-md);
+  font-size: 0.86rem;
+  color: var(--text-secondary);
+}
+
+.lock-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--s4);
+}
+.lock-detail-field { min-width: 0; display: grid; gap: 4px; }
+.lock-detail-field .mono { word-break: break-all; }
+
+@media (max-width: 620px) {
+  .lock-form { padding: var(--s3); }
+  .lock-detail-grid { grid-template-columns: minmax(0, 1fr); }
+}

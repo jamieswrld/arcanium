@@ -129,7 +129,44 @@ defensible figure, and is what the `methodology` string should say.
 - After merge, allow ~24h for the front end to pick it up. No need to chase the
   PR; they are monitored.
 
-### 2b. List Arc's Uniswap deployment, not just Arcanium
+### 2a. Uniswap v4 is now official on Arc — this changes the ask
+
+**Updated 2026-09-17.** Uniswap deployed v4 to Arc on 16 September alongside
+Arc's public mainnet. All five contracts are live, verified on chain:
+
+| Contract | Address |
+|---|---|
+| PoolManager | `0x8366a39CC670B4001A1121B8F6A443A643e40951` |
+| PositionManager | `0x6049c9a0e26405C0985f9E3685C87d0aE917f82B` |
+| UniversalRouter | `0x4fcA4a51Ab4F23A7447b3284fBd7D73289A89Fb1` |
+| StateView | `0xF3334192D15450CdD385c8B70e03f9A6bD9E673b` |
+| Quoter | `0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94` |
+
+Arcanium's pools are **v3**, on `0xf0db7b58…`, and Arc is **not** listed in
+Uniswap's published v3 deployments. That deployment is not a stranger's fork —
+its owner is `0xbCA30b5429935205037069cF5b8A165F55d05a75`, the same address that
+owns the official v4 PoolManager — but it is undocumented, which is what
+aggregators actually key off.
+
+The consequence is uncomfortable and worth stating plainly: **Arc getting
+indexed does not automatically fix routing for Arcanium tokens.** Aggregators
+will index the documented v4 deployment. Our pools live on the undocumented v3
+one, so "No Available Router" can persist even once Arc itself is well covered.
+
+So the submission has to name v3 explicitly rather than saying "index Arc's
+Uniswap" and assuming our pools come along:
+
+- our pools are Uniswap **v3**, factory `0xf0db7b58379503491d857dB50AC9ece64c653918`
+- router `0x4C91c54E60B59b1F949Af57064EA70bD73434720`
+- same operator as the official v4 deployment, which is the credibility argument
+
+There is a larger product question behind this, which is not a listings matter:
+whether future launches should create **v4** pools instead. That would make
+every new launch visible to every aggregator by default, at the cost of new
+factory contracts against a very different API, and it would not move existing
+launches — their liquidity is locked in v3 forever.
+
+### 2b. List Arc's Uniswap v3 deployment, not just Arcanium
 
 Worth separating, because it is the half that actually fixes gmgn.
 

@@ -112,10 +112,14 @@ export const ARC_XCREATOR = {
 } as const;
 
 /**
- * Arc's Uniswap v3 — not ours. Deployed ~10.8M blocks before the first
- * launchpad and owned by 0xbCA30b54…, so Arcanium is a launchpad built on it
- * rather than a DEX of its own. Worth stating here because integrator
- * submissions keep needing the distinction.
+ * The Uniswap v3 deployment Arcanium's pools live on — not ours. Deployed
+ * ~10.8M blocks before the first launchpad and owned by 0xbCA30b54…, so
+ * Arcanium is a launchpad built on it rather than a DEX of its own.
+ *
+ * Note it is *undocumented*: Arc is not listed in Uniswap's published v3
+ * deployments, though the same address owns this factory and the official v4
+ * PoolManager below. Aggregators key off the documented deployment, which is
+ * why our pools can stay unroutable even once Arc is well indexed.
  */
 export const ARC_UNISWAP = {
   factory: "0xf0db7b58379503491d857dB50AC9ece64c653918" as Address,
@@ -123,6 +127,21 @@ export const ARC_UNISWAP = {
   swapRouter: "0x4C91c54E60B59b1F949Af57064EA70bD73434720" as Address,
   /** Fee tier every launch pool uses: 1%, tickSpacing 200. */
   poolFee: 10_000,
+} as const;
+
+/**
+ * Uniswap v4 on Arc, official and documented, live since 2026-09-16.
+ *
+ * Arcanium does not use these yet: every existing launch holds a v3 position
+ * that is locked forever and cannot be moved. Recorded because any question
+ * about routing, aggregator coverage or a future launch venue starts here.
+ */
+export const ARC_UNISWAP_V4 = {
+  poolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951" as Address,
+  positionManager: "0x6049c9a0e26405C0985f9E3685C87d0aE917f82B" as Address,
+  universalRouter: "0x4fcA4a51Ab4F23A7447b3284fBd7D73289A89Fb1" as Address,
+  stateView: "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b" as Address,
+  quoter: "0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94" as Address,
 } as const;
 
 /** Arc's native USDC, as a 6-decimal ERC-20 view of the 18-decimal gas token. */

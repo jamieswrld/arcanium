@@ -27,6 +27,7 @@ const LAUNCH = { href: "/create", label: "Launch", icon: LaunchIcon } as const;
 
 const DESTINATIONS = [
   { href: "/", label: "Explore", icon: ExploreIcon },
+  { href: "/locked", label: "Locked", icon: LockedIcon },
   { href: "/portfolio", label: "Portfolio", icon: PortfolioIcon },
   { href: "/activity", label: "Activity", icon: ActivityIcon },
   { href: "/docs", label: "Docs", icon: DocsIcon },
@@ -113,6 +114,14 @@ function LaunchIcon() {
   return (
     <svg {...S}>
       <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+function LockedIcon() {
+  return (
+    <svg {...S}>
+      <rect x="4.5" y="10.5" width="15" height="9.5" rx="2" />
+      <path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" />
     </svg>
   );
 }

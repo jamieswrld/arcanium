@@ -32,6 +32,16 @@ export interface LockRow {
   readonly status: LockStatus;
   /** Seconds until unlock; 0 once matured. */
   readonly secondsRemaining: number;
+  /**
+   * Token metadata when Arcanium launched it. Null for any other ERC-20 — the
+   * locker works for arbitrary tokens, and the indexer only knows the ones it
+   * launched. The UI falls back to the contract address, which is the honest
+   * thing to show for an unknown token anyway: a symbol is trivially spoofable
+   * and an address is not.
+   */
+  readonly symbol: string | null;
+  readonly name: string | null;
+  readonly decimals: number | null;
 }
 
 interface Raw {
@@ -46,6 +56,9 @@ interface Raw {
   readonly created_tx: Buffer;
   readonly claimed_at: Date | null;
   readonly claimed_tx: Buffer | null;
+  readonly symbol: string | null;
+  readonly name: string | null;
+  readonly decimals: number | null;
 }
 
 const hex = (b: Buffer): string => `0x${b.toString("hex")}`;
@@ -68,11 +81,17 @@ function toRow(r: Raw, now: number): LockRow {
     claimedTx: r.claimed_tx === null ? null : hex(r.claimed_tx),
     status,
     secondsRemaining: status === "locked" ? Math.ceil((unlockMs - now) / 1000) : 0,
+    symbol: r.symbol,
+    name: r.name,
+    decimals: r.decimals,
   };
 }
 
-const COLUMNS =
-  "lock_id, token_address, depositor, beneficiary, amount, created_at, unlock_time, created_block, created_tx, claimed_at, claimed_tx";
+// Left join, not inner: a lock on a token Arcanium did not launch is perfectly
+// valid and must still be listed.
+const COLUMNS = `l.lock_id, l.token_address, l.depositor, l.beneficiary, l.amount,
+  l.created_at, l.unlock_time, l.created_block, l.created_tx, l.claimed_at, l.claimed_tx,
+  t.symbol, t.name, t.decimals`;
 
 export interface LockQuery {
   readonly token?: string | undefined;
@@ -107,51 +126,52 @@ export async function lockList(q: LockQuery): Promise<{ locks: LockRow[]; total:
 
   try {
     const rows = await sql<Raw[]>`
-      SELECT ${sql.unsafe(COLUMNS)} FROM token_locks
-      WHERE chain_id = ${chainId}
-        ${token === null ? sql`` : sql`AND token_address = ${token}`}
+      SELECT ${sql.unsafe(COLUMNS)} FROM token_locks l
+      LEFT JOIN tokens t ON t.token_address = l.token_address AND t.chain_id = l.chain_id
+      WHERE l.chain_id = ${chainId}
+        ${token === null ? sql`` : sql`AND l.token_address = ${token}`}
         ${
           wallet === null
             ? sql``
             : role === "depositor"
-              ? sql`AND depositor = ${wallet}`
+              ? sql`AND l.depositor = ${wallet}`
               : role === "beneficiary"
-                ? sql`AND beneficiary = ${wallet}`
-                : sql`AND (depositor = ${wallet} OR beneficiary = ${wallet})`
+                ? sql`AND l.beneficiary = ${wallet}`
+                : sql`AND (l.depositor = ${wallet} OR l.beneficiary = ${wallet})`
         }
         ${
           status === "all"
             ? sql``
             : status === "claimed"
-              ? sql`AND claimed_at IS NOT NULL`
+              ? sql`AND l.claimed_at IS NOT NULL`
               : status === "claimable"
-                ? sql`AND claimed_at IS NULL AND unlock_time <= now()`
-                : sql`AND claimed_at IS NULL AND unlock_time > now()`
+                ? sql`AND l.claimed_at IS NULL AND l.unlock_time <= now()`
+                : sql`AND l.claimed_at IS NULL AND l.unlock_time > now()`
         }
-      ORDER BY created_at DESC
+      ORDER BY l.created_at DESC
       LIMIT ${limit} OFFSET ${offset}
     `;
     const counted = await sql<{ n: string }[]>`
-      SELECT COUNT(*)::text AS n FROM token_locks
-      WHERE chain_id = ${chainId}
-        ${token === null ? sql`` : sql`AND token_address = ${token}`}
+      SELECT COUNT(*)::text AS n FROM token_locks l
+      WHERE l.chain_id = ${chainId}
+        ${token === null ? sql`` : sql`AND l.token_address = ${token}`}
         ${
           wallet === null
             ? sql``
             : role === "depositor"
-              ? sql`AND depositor = ${wallet}`
+              ? sql`AND l.depositor = ${wallet}`
               : role === "beneficiary"
-                ? sql`AND beneficiary = ${wallet}`
-                : sql`AND (depositor = ${wallet} OR beneficiary = ${wallet})`
+                ? sql`AND l.beneficiary = ${wallet}`
+                : sql`AND (l.depositor = ${wallet} OR l.beneficiary = ${wallet})`
         }
         ${
           status === "all"
             ? sql``
             : status === "claimed"
-              ? sql`AND claimed_at IS NOT NULL`
+              ? sql`AND l.claimed_at IS NOT NULL`
               : status === "claimable"
-                ? sql`AND claimed_at IS NULL AND unlock_time <= now()`
-                : sql`AND claimed_at IS NULL AND unlock_time > now()`
+                ? sql`AND l.claimed_at IS NULL AND l.unlock_time <= now()`
+                : sql`AND l.claimed_at IS NULL AND l.unlock_time > now()`
         }
     `;
     return {
@@ -168,8 +188,9 @@ export async function lockById(lockId: string): Promise<LockRow | null> {
   if (sql === null) return null;
   try {
     const rows = await sql<Raw[]>`
-      SELECT ${sql.unsafe(COLUMNS)} FROM token_locks
-      WHERE chain_id = ${getChain("arc").id} AND lock_id = ${lockId}
+      SELECT ${sql.unsafe(COLUMNS)} FROM token_locks l
+      LEFT JOIN tokens t ON t.token_address = l.token_address AND t.chain_id = l.chain_id
+      WHERE l.chain_id = ${getChain("arc").id} AND l.lock_id = ${lockId}
     `;
     const r = rows[0];
     return r === undefined ? null : toRow(r, Date.now());
