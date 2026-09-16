@@ -57,7 +57,7 @@ export default function Image() {
 
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
           <div style={{ fontSize: 68, fontWeight: 700, letterSpacing: -2, lineHeight: 1.05 }}>
-            Markets begin here.
+            Tokens begin here.
           </div>
           <div style={{ fontSize: 30, color: "#a8a5b3", maxWidth: 860, lineHeight: 1.35 }}>
             Launch a token on Arc with real Uniswap liquidity, locked from the first block.

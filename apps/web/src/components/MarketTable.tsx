@@ -40,7 +40,7 @@ export function MarketTable({ tokens, images, market, window }: MarketTableProps
       <table className="mkt">
         <thead>
           <tr>
-            <th scope="col">Market</th>
+            <th scope="col">Token</th>
             <th scope="col">Price</th>
             <th scope="col">{wl}</th>
             <th scope="col">Market cap</th>
@@ -60,7 +60,7 @@ export function MarketTable({ tokens, images, market, window }: MarketTableProps
 
             return (
               <tr key={t.token}>
-                <td data-label="Market">
+                <td data-label="Token">
                   <Link href={`/tokens/${t.token}`} className="ident" title={`${t.name} (${t.symbol})`}>
                     <span className="num mkt-rank" aria-hidden>
                       {i + 1}

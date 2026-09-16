@@ -70,7 +70,7 @@ export default async function ExplorePage({ searchParams }: ExploreProps) {
     <div className="stack">
       <header className="spread" style={{ alignItems: "flex-end", flexWrap: "wrap", gap: "var(--s4)" }}>
         <div style={{ minWidth: 0 }}>
-          <h1>Markets begin here.</h1>
+          <h1>Tokens begin here.</h1>
           <p className="arch-note" style={{ marginTop: 6, maxWidth: 560 }}>
             Launch and trade permanently locked markets on Arc. Fixed supply, real Uniswap
             liquidity, locked from block one.
@@ -157,7 +157,7 @@ async function StatStrip() {
 
   return (
     <div className="arch-stat-bar">
-      <Stat label="Markets" value={String(result.tokens.length)} />
+      <Stat label="Tokens" value={String(result.tokens.length)} />
       <Stat label="24h volume" value={formatUsdCompact(stats.vol24hUnits)} />
       <Stat
         // Only the indexer sees true all-time history; the chain walk is bounded

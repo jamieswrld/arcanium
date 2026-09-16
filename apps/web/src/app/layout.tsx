@@ -53,7 +53,7 @@ export const metadata: Metadata = {
   // relative path and every crawler ignores the image.
   metadataBase: new URL("https://arcanium.trade"),
   title: {
-    default: "Arcanium — Markets begin here",
+    default: "Arcanium — Tokens begin here",
     template: "%s — Arcanium",
   },
   description:
@@ -65,7 +65,7 @@ export const metadata: Metadata = {
     type: "website",
     siteName: "Arcanium",
     url: "https://arcanium.trade",
-    title: "Arcanium — Markets begin here",
+    title: "Arcanium — Tokens begin here",
     description:
       "Launch a token on Arc with real Uniswap liquidity, locked from the first block.",
   },
@@ -73,7 +73,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     site: "@arcaniumtrade",
     creator: "@arcaniumtrade",
-    title: "Arcanium — Markets begin here",
+    title: "Arcanium — Tokens begin here",
     description:
       "Launch a token on Arc with real Uniswap liquidity, locked from the first block.",
   },

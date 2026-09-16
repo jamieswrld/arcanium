@@ -6,6 +6,7 @@ import { base } from "viem/chains";
 import type { Hex } from "viem";
 import { arcTestnet, erc20Abi, formatQuoteUnits, parseQuoteUnits } from "@/lib/bridgeClient";
 import { ARC, BRIDGE_CHAINS, bridgeChainByKey, type BridgeChain } from "@/lib/bridgeChains";
+import { ChainPicker } from "@/components/ChainPicker";
 import {
   addressToBytes32,
   BRIDGE_FEE_BPS,
@@ -405,24 +406,18 @@ export function CctpBridge() {
         <span>{label}</span>
         <span className="arch-chain-chip" style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
           <UsdcLogo size={16} /> USDC
-          <select
-            className="arch-chain-select"
+          <ChainPicker
+            label={`${label} chain`}
             value={side === "from" ? fromKey : toKey}
             disabled={busy}
-            aria-label={`${label} chain`}
-            onChange={(e) => {
-              if (side === "from") setFromKey(e.target.value);
-              else setToKey(e.target.value);
+            options={options(side)}
+            onChange={(key) => {
+              if (side === "from") setFromKey(key);
+              else setToKey(key);
               setPhase("idle");
               setMessage(null);
             }}
-          >
-            {options(side).map((c) => (
-              <option key={c.key} value={c.key}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          />
         </span>
       </div>
       <div className="arch-amount-row">
@@ -469,15 +464,11 @@ export function CctpBridge() {
       </div>
       {panel("To", "to", dstBalance, false)}
 
+      {/* No itemised fee breakdown. The figure that decides anything is what
+          lands in your wallet, and the "To" panel already states it as a
+          minimum, net of both the platform fee and Circle's. Splitting it into
+          line items added rows without adding information. */}
       <div style={{ padding: "0.8rem 0 0.2rem", fontSize: "0.85rem" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", padding: "0.15rem 0" }}>
-          <span style={{ color: "var(--muted-foreground)" }}>Platform fee · 2%</span>
-          <span>{formatQuoteUnits(platformFee)} USDC</span>
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", padding: "0.15rem 0" }}>
-          <span style={{ color: "var(--muted-foreground)" }}>Max Circle fee{fastFeeBps !== null ? ` · ${fastFeeBps === 0 ? "fast, free" : "fast lane"}` : ""}</span>
-          <span>{formatQuoteUnits(circleMax)} USDC</span>
-        </div>
         {burnLimit !== null && burnLimit > 0n && burnLimit < 1_000_000_000n ? (
           <div style={{ display: "flex", justifyContent: "space-between", padding: "0.15rem 0" }}>
             <span style={{ color: "var(--muted-foreground)" }}>Circle limit from {srcName}</span>

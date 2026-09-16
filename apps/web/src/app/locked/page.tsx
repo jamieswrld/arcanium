@@ -2,7 +2,9 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { ARC_TOKEN_LOCKER } from "@arch/chain-config";
 import { lockListResilient, lockStatsResilient } from "@/lib/locks";
-import { LockTable } from "@/components/LockTable";
+import type { Hex } from "viem";
+import { arcPublicClient } from "@/lib/launchpad";
+import { EcoLocks, aggregateByToken, type EcoRow } from "@/components/EcoLocks";
 import { MyLocks } from "@/components/MyLocks";
 import { CreateLockPanel } from "@/components/CreateLockPanel";
 import { Sk } from "@/components/Skeletons";
@@ -25,10 +27,9 @@ import { getChain, explorerAddress } from "@/lib/chains";
 export const dynamic = "force-dynamic";
 
 const TABS = [
-  { key: "all", label: "All locks" },
-  { key: "mine", label: "My locks" },
-  { key: "claimable", label: "Claimable" },
-  { key: "new", label: "Lock a token" },
+  { key: "new", label: "Lock" },
+  { key: "mine", label: "Your locks" },
+  { key: "eco", label: "Eco Tokens Locked" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -39,7 +40,11 @@ interface Props {
 
 export default async function LockedPage({ searchParams }: Props) {
   const sp = await searchParams;
-  const tab: TabKey = TABS.some((t) => t.key === sp.tab) ? (sp.tab as TabKey) : "all";
+  // Locking is the landing tab: most people arrive here to make a lock, and
+  // the read-only views are one click away. A legacy ?tab=all or ?tab=claimable
+  // link still resolves rather than 404-ing into the wrong view.
+  const raw = sp.tab === "all" ? "eco" : sp.tab === "claimable" ? "mine" : sp.tab;
+  const tab: TabKey = TABS.some((t) => t.key === raw) ? (raw as TabKey) : "new";
   // Linked from a token page. Validated here rather than passed through, so a
   // malformed address becomes "all locks" instead of a failed query.
   const token = /^0x[0-9a-fA-F]{40}$/.test(sp.token ?? "") ? sp.token?.toLowerCase() : undefined;
@@ -71,7 +76,7 @@ export default async function LockedPage({ searchParams }: Props) {
         {TABS.map((t) => (
           <Link
             key={t.key}
-            href={t.key === "all" ? "/locked" : `/locked?tab=${t.key}`}
+            href={t.key === "new" ? "/locked" : `/locked?tab=${t.key}`}
             className={tab === t.key ? "arch-pill arch-pill-active" : "arch-pill"}
             aria-current={tab === t.key ? "page" : undefined}
           >
@@ -82,12 +87,12 @@ export default async function LockedPage({ searchParams }: Props) {
 
       {tab === "new" ? (
         <CreateLockPanel />
-      ) : tab === "all" ? (
+      ) : tab === "eco" ? (
         <Suspense fallback={<Sk h={240} />}>
-          <AllLocks token={token} />
+          <Ecosystem token={token} />
         </Suspense>
       ) : (
-        <MyLocks mode={tab === "claimable" ? "claimable" : "mine"} />
+        <MyLocks mode="mine" />
       )}
 
       <p className="arch-note">
@@ -122,24 +127,65 @@ async function Stats() {
   );
 }
 
-async function AllLocks({ token }: { readonly token?: string | undefined }) {
-  const result = await lockListResilient({ limit: 100, token });
+async function Ecosystem({ token }: { readonly token?: string | undefined }) {
+  const result = await lockListResilient({ limit: 200, token });
   if (result === null) {
     return <p className="arch-note">Lock data is not available right now.</p>;
   }
+
+  const rows = aggregateByToken(result.locks, new Set());
+  // The indexer only knows the metadata of tokens Arcanium launched, so every
+  // other one arrives as a bare address with no decimals. Reading them from
+  // chain is what makes this an ecosystem view rather than a list of hashes.
+  const enriched = await enrichExternal(rows);
+
   return (
-    <div className="panel">
-      <LockTable
-        locks={result.locks}
-        empty={
-          token === undefined
-            ? "No locks have been created yet. The first one sets the tone."
-            : "No locks hold this token."
-        }
-      />
+    <div className="stack">
+      <EcoLocks rows={enriched} />
+      <p className="arch-note">
+        Every token held in the locker, including ones launched somewhere other than Arcanium —
+        it accepts any Arc ERC-20. Amounts count only locks still held, so a token cannot inflate
+        this by locking and unlocking the same balance.
+      </p>
     </div>
   );
 }
+
+/** Fill in name, symbol and decimals for tokens the indexer does not know. */
+async function enrichExternal(rows: readonly EcoRow[]): Promise<EcoRow[]> {
+  const unknown = rows.filter((r) => r.decimals === null).slice(0, 40);
+  if (unknown.length === 0) return [...rows];
+
+  const client = arcPublicClient();
+  const meta = new Map<string, { symbol: string | null; name: string | null; decimals: number | null }>();
+
+  await Promise.all(
+    unknown.map(async (r) => {
+      const [symbol, name, decimals] = await Promise.all([
+        client.readContract({ address: r.token as Hex, abi: erc20InfoAbi, functionName: "symbol" }).catch(() => null),
+        client.readContract({ address: r.token as Hex, abi: erc20InfoAbi, functionName: "name" }).catch(() => null),
+        client.readContract({ address: r.token as Hex, abi: erc20InfoAbi, functionName: "decimals" }).catch(() => null),
+      ]);
+      meta.set(r.token, {
+        symbol: typeof symbol === "string" ? symbol : null,
+        name: typeof name === "string" ? name : null,
+        decimals: typeof decimals === "number" ? decimals : null,
+      });
+    }),
+  );
+
+  return rows.map((r) => {
+    const m = meta.get(r.token);
+    if (m === undefined) return r;
+    return { ...r, symbol: r.symbol ?? m.symbol, name: r.name ?? m.name, decimals: r.decimals ?? m.decimals };
+  });
+}
+
+const erc20InfoAbi = [
+  { type: "function", name: "symbol", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
+  { type: "function", name: "name", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
+  { type: "function", name: "decimals", stateMutability: "view", inputs: [], outputs: [{ type: "uint8" }] },
+] as const;
 
 function Stat({ label, value }: { readonly label: string; readonly value: string }) {
   return (
