@@ -132,6 +132,10 @@ const Q192 = 2n ** 192n;
 const HIDDEN_DEFAULTS: readonly string[] = [
   "0xCA7a7c18122996980baD41062b269f25c0F881DE", // SASHIMI — "sashimi"
   "0x10667F1aF42927cae3C4E41d95B009A1a3140bC6", // RDCK    — "Redirect Check"
+  // V4TEST — the first Uniswap v4 launch, made to prove the path worked end to
+  // end before anyone else used it. It is a real token with real liquidity and
+  // it still trades; it is just not something to put in front of visitors.
+  "0xACAfEe0D2A0B89A25DFB88530B43A156a74F32a1",
 ];
 
 const HIDDEN_TOKENS = new Set(
