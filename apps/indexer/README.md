@@ -122,9 +122,15 @@ nine-day outage turned into a site serving no volume at all.
 cd /opt/arcanium
 git pull
 pnpm install --frozen-lockfile
-pnpm --filter @arch/indexer build
+pnpm --filter @arch/indexer... build
 chown -R arcanium:arcanium /opt/arcanium
 ```
+
+The `...` after the filter is load-bearing: it builds the workspace packages the
+indexer depends on. Without it `@arch/database` has no `dist/index.d.ts`, its
+`Sql` type silently degrades to `any`, and the build fails on a clean checkout
+with an implicit-any error that never appears on a machine where those packages
+happen to be built already.
 
 Point it at the RPC we actually rely on (older deployments say arc-scan only):
 
@@ -185,7 +191,7 @@ Ship the code and build:
 git clone <repo> /opt/arcanium
 cd /opt/arcanium
 pnpm install --frozen-lockfile
-pnpm --filter @arch/indexer build
+pnpm --filter @arch/indexer... build
 chown -R arcanium:arcanium /opt/arcanium
 ```
 
@@ -223,7 +229,7 @@ path, because `indexer_health` says the indexer is not caught up yet.
 
 ```bash
 cd /opt/arcanium && git pull
-pnpm install --frozen-lockfile && pnpm --filter @arch/indexer build
+pnpm install --frozen-lockfile && pnpm --filter @arch/indexer... build
 systemctl restart arcanium-indexer
 ```
 
