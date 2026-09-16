@@ -7,6 +7,7 @@ import {
   formatUnits,
   http,
   type Hex,
+  type Chain,
   type PublicClient,
   type WalletClient,
 } from "viem";
@@ -144,7 +145,13 @@ async function collectable(arc: PublicClient, tokens: readonly Hex[], caller: He
   return out;
 }
 
-async function sweep(arc: PublicClient, wallet: WalletClient, caller: Hex, factories: readonly Hex[]): Promise<void> {
+async function sweep(
+  arc: PublicClient,
+  wallet: WalletClient,
+  chain: Chain,
+  caller: Hex,
+  factories: readonly Hex[],
+): Promise<void> {
   const balance = await arc.getBalance({ address: caller });
   if (balance < LOW_BALANCE) {
     log.warn(
@@ -164,12 +171,16 @@ async function sweep(arc: PublicClient, wallet: WalletClient, caller: Hex, facto
   let done = 0;
   for (const c of ready) {
     try {
+      // The real chain, not null. Passing null tells viem to skip its chain-id
+      // check, which is exactly the check worth keeping on a process that signs
+      // unattended — a wallet pointed at the wrong network should fail loudly
+      // rather than broadcast somewhere unintended.
       const hash = await wallet.writeContract({
         address: c.distributor,
         abi: distributorAbi,
         functionName: "distribute",
         args: [c.token],
-        chain: null,
+        chain,
         account: wallet.account ?? null,
       });
       const receipt = await arc.waitForTransactionReceipt({ hash, timeout: 120_000 });
@@ -218,7 +229,7 @@ async function main(): Promise<void> {
 
   for (;;) {
     try {
-      await sweep(arc, wallet, account.address, factories);
+      await sweep(arc, wallet, chain, account.address, factories);
     } catch (err) {
       // Never exit. A sweep that fails wholesale is almost always the RPC
       // having a moment, and the next cycle will pick up everything missed.
