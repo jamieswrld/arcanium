@@ -1,7 +1,7 @@
 import type { NextResponse } from "next/server";
 import { getChainTokens } from "@/lib/tokensServer";
 import { getChain } from "@/lib/chains";
-import { indexedMarketStats } from "@/lib/indexed";
+import { fetchMarketStats } from "@/lib/marketStats";
 import { marketJson } from "@/lib/apiShapes";
 import { fail, handle, ok, parseEnum, parseLimit, parseOffset, preflight } from "@/lib/apiV1";
 import type { LaunchpadToken } from "@/lib/launchpad";
@@ -48,7 +48,24 @@ export async function GET(request: Request): Promise<NextResponse> {
       );
     }
 
-    const stats = (await indexedMarketStats().catch(() => null)) ?? {};
+    // The same source the website uses, which is the point: this endpoint used
+    // to read the indexer directly with no fallback, so an indexer outage made
+    // every volume, change and trade count null here while the site itself
+    // carried on from chain. Two ways of computing the same truth, disagreeing
+    // exactly when it mattered.
+    const market = await fetchMarketStats(result.tokens, "24h").catch(
+      () => new Map<string, { volumeUnits: bigint; trades: number; changePct: number | null }>(),
+    );
+    const stats: Record<string, { volume24hUnits: bigint; changePct: number | null; buys: number; sells: number }> =
+      {};
+    for (const [key, m] of market) {
+      // fetchMarketStats reports a combined trade count rather than a buy/sell
+      // split; the wire shape only ever sums them again.
+      stats[key] = { volume24hUnits: m.volumeUnits, changePct: m.changePct, buys: m.trades, sells: 0 };
+    }
+    // Honest staleness: any token with no stat at all means the window could
+    // not be read, not that nothing traded.
+    const statsKnown = market.size > 0;
 
     let list: LaunchpadToken[] = [...result.tokens];
     if (q !== "") {
@@ -95,9 +112,12 @@ export async function GET(request: Request): Promise<NextResponse> {
         offset,
         sort,
         chainId: arc.id,
-        // Honest about provenance: `stale` means Arc could not be reached and
-        // these are the last confirmed figures.
-        stale: result.stale,
+        // Honest about provenance. `stale` used to mean only "Arc was
+        // unreachable", so it reported false while every volume, change and
+        // trade count came back null because the market window could not be
+        // read. A consumer cannot tell a quiet market from an unreadable one
+        // unless this says which it is.
+        stale: result.stale || !statsKnown,
       },
       15,
     );
