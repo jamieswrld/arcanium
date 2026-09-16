@@ -1,4 +1,7 @@
 import type { ReactNode } from "react";
+import { LOCK_DOCS } from "./docs-locks";
+import { REWARD_DOCS } from "./docs-rewards";
+import { LOCKS_API_DOCS } from "./docs-locks-api";
 
 /** Deployed mainnet contract addresses (Arc chain 5042). */
 /**
@@ -26,7 +29,13 @@ function Callout({ children }: { readonly children: ReactNode }) {
 }
 
 /** Content keyed by slug. "" is the overview. */
-export const DOCS: Record<string, ReactNode> = {
+/**
+ * Pages defined in their own modules, merged in below. Splitting them keeps
+ * this file from growing without bound as sections are added.
+ */
+const EXTRA_DOCS: Record<string, ReactNode> = { ...LOCK_DOCS, ...REWARD_DOCS, ...LOCKS_API_DOCS };
+
+const CORE_DOCS: Record<string, ReactNode> = {
   "": (
     <>
       <h1>Arcanium</h1>
@@ -207,3 +216,6 @@ export const DOCS: Record<string, ReactNode> = {
     </>
   ),
 };
+
+/** Every page, by slug. */
+export const DOCS: Record<string, ReactNode> = { ...CORE_DOCS, ...EXTRA_DOCS };

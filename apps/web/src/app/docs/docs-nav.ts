@@ -27,11 +27,27 @@ export const DOCS_NAV: readonly DocSection[] = [
     ],
   },
   {
+    title: "Token locks",
+    links: [
+      { slug: "locks", title: "What a lock is" },
+      { slug: "locks/creating", title: "Creating a lock" },
+      { slug: "locks/claiming", title: "Claiming" },
+    ],
+  },
+  {
+    title: "Creator rewards",
+    links: [
+      { slug: "rewards/modes", title: "Reward modes" },
+      { slug: "rewards/x", title: "Paying an X account" },
+    ],
+  },
+  {
     title: "Reference",
     links: [
       { slug: "reference/addresses", title: "Contract addresses" },
       { slug: "reference/integrators", title: "Terminals & integrators" },
       { slug: "reference/security", title: "Security and risks" },
+      { slug: "reference/locks-api", title: "Lock API and events" },
     ],
   },
 ];
