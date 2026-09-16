@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 import { fail, handle, ok, parseAddress, preflight } from "@/lib/apiV1";
-import { readSession, xVaultKey, xPayoutsConfigured } from "@/lib/xIdentity";
+import { readSession, xPayoutsConfigured } from "@/lib/xIdentity";
+import { githubConfigured, readSocialSession } from "@/lib/githubIdentity";
+import { identityKey, isPlatform } from "@/lib/socialIdentity";
 import { pinHandle } from "@/lib/xPins";
 import { signClaim } from "@/lib/xAttest";
 import { arcPublicClient } from "@/lib/launchpad";
@@ -37,14 +39,26 @@ const factoryAbi = [
 
 export async function POST(request: Request): Promise<Response> {
   return handle(request, 30, async () => {
-    if (!xPayoutsConfigured()) {
-      return fail("upstream_unavailable", "X payouts are not configured on this deployment.");
+    // Either provider being configured is enough; the session decides which
+    // one is actually used, and that is checked again below.
+    if (!xPayoutsConfigured() && !githubConfigured()) {
+      return fail("upstream_unavailable", "Social payouts are not configured on this deployment.");
     }
 
     const jar = await cookies();
-    const session = readSession(jar.get("x_session")?.value);
+    // Either provider's session is accepted; which one it is decides the
+    // vault. The X session predates the platform field, so it is read with the
+    // older reader and labelled explicitly rather than assumed.
+    const gh = readSocialSession(jar.get("gh_session")?.value);
+    const x = gh === null ? readSession(jar.get("x_session")?.value) : null;
+    const session =
+      gh !== null
+        ? gh
+        : x === null
+          ? null
+          : { platform: "x", id: x.id, username: x.username };
     if (session === null) {
-      return fail("bad_request", "Verify your X account first — the session is missing or expired.");
+      return fail("bad_request", "Verify your account first — the session is missing or expired.");
     }
 
     let body: { token?: unknown; recipient?: unknown };
@@ -59,21 +73,34 @@ export async function POST(request: Request): Promise<Response> {
     if (token === null) return fail("invalid_address", "token must be an address.");
     if (recipient === null) return fail("invalid_address", "recipient must be an address.");
 
-    // The vault is addressed by the handle the session actually holds, not by
-    // one the caller names — a request cannot point itself at somebody else's
-    // vault by asking nicely.
+    // The vault is addressed by the handle the session actually holds — and by
+    // the platform that session was earned on. A caller cannot name either, so
+    // a request cannot point itself at somebody else's vault by asking.
+    //
+    // The platform half matters as much as the handle. Without it, a session
+    // minted by signing in to GitHub would work against the X vault of the
+    // same name, which is precisely the collision the namespaced key exists to
+    // prevent — only reintroduced one layer up.
     const handle = session.username.toLowerCase();
-    const idHash = xVaultKey(handle);
+    if (!isPlatform(session.platform)) return fail("bad_request", "Unknown identity provider.");
+    const platform = session.platform;
+
+    const configured = platform === "x" ? xPayoutsConfigured() : githubConfigured();
+    if (!configured) {
+      return fail("upstream_unavailable", "That identity provider is not configured here.");
+    }
+
+    const idHash = identityKey(platform, handle);
 
     // The pin: whoever claims a handle first owns it from then on. A handle
     // that later changes hands is worth nothing to whoever takes it, because
-    // their numeric id will not match the one recorded here. This is the
-    // protection that replaces keying the vault on the numeric id directly.
-    const pin = await pinHandle(handle, session.id, recipient as Hex);
+    // their numeric id will not match the one recorded here. Scoped per
+    // platform, so the same name on each is two independent claims.
+    const pin = await pinHandle(`${platform}:${handle}`, session.id, recipient as Hex);
     if (!pin.ok) {
       return fail(
         "bad_request",
-        `@${session.username} is already claimed by a different X account. Handles can change hands, so the first account to claim one keeps it.`,
+        `${handle} is already claimed by a different account on that platform. Handles can change hands, so the first account to claim one keeps it.`,
       );
     }
 

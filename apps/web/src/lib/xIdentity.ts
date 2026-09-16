@@ -1,6 +1,7 @@
 import "server-only";
 import { createHmac, randomBytes, createHash, timingSafeEqual } from "node:crypto";
-import { keccak256, toBytes, type Hex } from "viem";
+import type { Hex } from "viem";
+import { identityKey, isValidHandle as validHandle } from "@/lib/socialIdentity";
 
 /**
  * X identity, server side only.
@@ -59,7 +60,7 @@ export function xLookupConfigured(): boolean {
 }
 
 /**
- * The identity a vault is bound to: the handle, lowercased.
+ * The identity a vault is bound to: the platform and handle, hashed together.
  *
  * This used to be a hash of X's permanent numeric id, which is the safer
  * choice on its own terms — handles change hands, numeric ids do not. It was
@@ -77,14 +78,15 @@ export function xLookupConfigured(): boolean {
  * vaults for one account would split its fees in half.
  */
 export function xVaultKey(username: string): Hex {
-  const handle = username.trim().replace(/^@/, "").toLowerCase();
-  if (!/^[a-z0-9_]{1,15}$/.test(handle)) throw new Error("not a valid x handle");
-  return keccak256(toBytes(handle));
+  // Namespaced via the shared derivation. Hashing the bare handle would make
+  // X's @alice and GitHub's alice the same vault, so the platform prefix is
+  // not cosmetic — see socialIdentity.ts.
+  return identityKey("x", username);
 }
 
 /** X's own rule: 1-15 characters, letters, digits and underscore. */
 export function isValidHandle(username: string): boolean {
-  return /^[A-Za-z0-9_]{1,15}$/.test(username.trim().replace(/^@/, ""));
+  return validHandle("x", username);
 }
 
 /**

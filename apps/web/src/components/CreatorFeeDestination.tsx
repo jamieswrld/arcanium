@@ -48,7 +48,8 @@ export function CreatorFeeDestination({
   readonly disabled: boolean;
   readonly onChange: (d: FeeDestination | null) => void;
 }) {
-  const [tab, setTab] = useState<"wallet" | "x">("wallet");
+  const [tab, setTab] = useState<"wallet" | "x" | "github">("wallet");
+  const [ghEnabled, setGhEnabled] = useState(false);
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [reason, setReason] = useState<string | null>(null);
   const [wallet, setWallet] = useState("");
@@ -64,9 +65,12 @@ export function CreatorFeeDestination({
     void (async () => {
       try {
         const res = await fetch("/api/x/config", { cache: "no-store" });
-        const body = (await res.json()) as { data?: { enabled?: boolean; reason?: string | null } };
+        const body = (await res.json()) as {
+          data?: { enabled?: boolean; github?: boolean; reason?: string | null };
+        };
         if (cancelled) return;
         setEnabled(body.data?.enabled === true);
+        setGhEnabled(body.data?.github === true);
         setReason(body.data?.reason ?? null);
       } catch {
         if (!cancelled) setEnabled(false);
@@ -87,32 +91,48 @@ export function CreatorFeeDestination({
     }
   }, [tab, wallet, resolved, onChange]);
 
+  // Re-resolving on a platform switch would be wrong in a quiet way: the vault
+  // address differs per platform, so a stale one from the other tab would name
+  // somebody else's vault as the fee recipient.
+  useEffect(() => {
+    setResolved(null);
+    setError(null);
+  }, [tab]);
+
   async function resolve(name: string): Promise<void> {
+    const platform = tab === "github" ? "github" : "x";
     const clean = name.trim().replace(/^@/, "");
     if (clean === "") return;
     setResolving(true);
     setError(null);
     setResolved(null);
     try {
-      const res = await fetch(`/api/x/resolve?username=${encodeURIComponent(clean)}`, { cache: "no-store" });
+      // One endpoint for both. It derives the vault from the platform and the
+      // handle together, which is what keeps X's @alice and GitHub's alice
+      // from sharing an address.
+      const res = await fetch(
+        `/api/x/vault?platform=${platform}&username=${encodeURIComponent(clean)}`,
+        { cache: "no-store" },
+      );
       const body = (await res.json()) as {
-        data?: Omit<ResolvedX, "vault">;
+        data?: { vault?: Hex; username?: string; xUserId?: string | null; identityKey?: Hex };
         error?: { message?: string };
       };
-      if (!res.ok || body.data === undefined) {
-        setError(body.error?.message ?? `Could not find @${clean} on X.`);
+      if (!res.ok || body.data?.vault === undefined) {
+        setError(body.error?.message ?? `Could not use ${clean}.`);
         return;
       }
-      // Where the fees will actually land, derived from the factory. One vault
-      // per X identity across every launch, so there is no token to pass — and
-      // that is precisely what makes it nameable before the token exists.
-      const vaultRes = await fetch(`/api/x/vault?username=${encodeURIComponent(clean)}`, {
-        cache: "no-store",
+      setResolved({
+        id: body.data.xUserId ?? "",
+        username: body.data.username ?? clean,
+        name: body.data.username ?? clean,
+        verified: false,
+        profileImageUrl: null,
+        xUserIdHash: body.data.identityKey ?? ("0x" as Hex),
+        vault: body.data.vault,
       });
-      const vaultBody = (await vaultRes.json()) as { data?: { vault?: Hex } };
-      setResolved({ ...body.data, vault: vaultBody.data?.vault ?? ("0x" as Hex) });
     } catch {
-      setError("Could not reach X right now.");
+      setError("Could not reach the network right now.");
     } finally {
       setResolving(false);
     }
@@ -144,6 +164,16 @@ export function CreatorFeeDestination({
         >
           X account
         </button>
+        <button
+          type="button"
+          className={tab === "github" ? "arch-pill arch-pill-active" : "arch-pill"}
+          style={{ border: "none", cursor: disabled || !ghEnabled ? "not-allowed" : "pointer" }}
+          onClick={() => ghEnabled && setTab("github")}
+          disabled={disabled || !ghEnabled}
+          title={ghEnabled ? undefined : "GitHub payouts are not configured here"}
+        >
+          GitHub
+        </button>
       </div>
 
       {tab === "wallet" ? (
@@ -172,7 +202,7 @@ export function CreatorFeeDestination({
                 setHandle(e.target.value);
                 setResolved(null);
               }}
-              placeholder="@username"
+              placeholder={tab === "github" ? "username" : "@username"}
               spellCheck={false}
               disabled={disabled || resolving}
               style={{ flex: "1 1 200px" }}

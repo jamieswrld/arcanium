@@ -19,6 +19,7 @@ import { formatAmount } from "@/components/LockTable";
 import { CreatorFees } from "@/components/CreatorFees";
 import { TokenMode } from "@/components/TokenMode";
 import { TokenTax } from "@/components/TokenTax";
+import { FlywheelPanel } from "@/components/FlywheelPanel";
 import { TokenSocials } from "@/components/TokenSocials";
 
 export const revalidate = 10;
@@ -272,6 +273,13 @@ export default async function TokenPage({ params }: TokenPageProps) {
               launch position, locked forever and owned by nobody; these are
               user locks with a recipient and an end date. */}
           <TokenLocks token={detail.token} symbol={detail.symbol} />
+
+          {/* ARCANIUM only: the buyback exists to buy this token specifically,
+              so showing it anywhere else would imply a mechanism that token
+              does not have. */}
+          {detail.token.toLowerCase() === "0xebb871bc394e83008120fab3c9ed5773642a29a1" ? (
+            <FlywheelPanel />
+          ) : null}
 
           <TokenMode token={detail.token} chainKey="arc" />
 

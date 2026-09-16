@@ -1,5 +1,6 @@
 import { fail, handle, ok, preflight } from "@/lib/apiV1";
 import { xPayoutsConfigured } from "@/lib/xIdentity";
+import { githubConfigured } from "@/lib/githubIdentity";
 import { attestationSignerAddress } from "@/lib/xAttest";
 import { ARC_XCREATOR } from "@arch/chain-config";
 
@@ -21,10 +22,12 @@ export async function GET(request: Request): Promise<Response> {
     const signer = attestationSignerAddress();
     const signerMatches =
       signer !== null && signer.toLowerCase() === ARC_XCREATOR.attestationSigner.toLowerCase();
-    if (!configured) {
+    const github = githubConfigured();
+    if (!configured && !github) {
       return ok({
         enabled: false,
-        reason: "X payouts are not configured on this deployment.",
+        github: false,
+        reason: "Social payouts are not configured on this deployment.",
         factory: ARC_XCREATOR.factory,
       });
     }
@@ -34,6 +37,6 @@ export async function GET(request: Request): Promise<Response> {
         "The configured attestation key is not the signer the deployed factory trusts.",
       );
     }
-    return ok({ enabled: true, reason: null, factory: ARC_XCREATOR.factory });
+    return ok({ enabled: configured, github, reason: null, factory: ARC_XCREATOR.factory });
   });
 }

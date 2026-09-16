@@ -1,5 +1,7 @@
 import { fail, handle, ok, parseAddress, preflight } from "@/lib/apiV1";
-import { resolveUsername, xVaultKey, xPayoutsConfigured } from "@/lib/xIdentity";
+import { resolveUsername, xPayoutsConfigured } from "@/lib/xIdentity";
+import { githubConfigured } from "@/lib/githubIdentity";
+import { identityKey, isPlatform, isValidHandle, normaliseHandle, platformLabel } from "@/lib/socialIdentity";
 import { arcPublicClient } from "@/lib/launchpad";
 import { ARC_XCREATOR, ARC_USDC } from "@arch/chain-config";
 import { erc20Abi, type Hex } from "viem";
@@ -31,15 +33,41 @@ const factoryAbi = [
 
 export async function GET(request: Request): Promise<Response> {
   return handle(request, 60, async () => {
-    if (!xPayoutsConfigured()) {
-      return fail("upstream_unavailable", "X payouts are not configured on this deployment.");
-    }
     const url = new URL(request.url);
-    const username = url.searchParams.get("username") ?? "";
-    const profile = await resolveUsername(username);
-    if (profile === null) return fail("not_found", `Could not resolve @${username.replace(/^@/, "")}.`);
 
-    const idHash = xVaultKey(profile.username);
+    // Defaults to X so every existing caller keeps working unchanged.
+    const raw = (url.searchParams.get("platform") ?? "x").toLowerCase();
+    if (!isPlatform(raw)) {
+      return fail("invalid_parameter", "`platform` must be x or github.");
+    }
+    const platform = raw;
+
+    const configured = platform === "x" ? xPayoutsConfigured() : githubConfigured();
+    if (!configured) {
+      return fail(
+        "upstream_unavailable",
+        `${platformLabel(platform)} payouts are not configured on this deployment.`,
+      );
+    }
+
+    const username = url.searchParams.get("username") ?? "";
+    if (!isValidHandle(platform, username)) {
+      return fail("invalid_parameter", `Not a valid ${platformLabel(platform)} handle.`);
+    }
+    const handleName = normaliseHandle(platform, username);
+
+    // X can additionally confirm the account exists when an app-only token is
+    // configured; GitHub needs no lookup because the vault is keyed on the
+    // handle either way. A handle that is well-formed but unverified is
+    // reported as such rather than dressed up as resolved.
+    let numericId: string | null = null;
+    if (platform === "x") {
+      const profile = await resolveUsername(handleName);
+      if (profile === null) return fail("not_found", `Could not resolve @${handleName}.`);
+      numericId = profile.id;
+    }
+
+    const idHash = identityKey(platform, handleName);
     const client = arcPublicClient();
     const vault = (await client
       .readContract({
@@ -59,11 +87,15 @@ export async function GET(request: Request): Promise<Response> {
     ]);
 
     return ok({
+      platform,
       vault,
       deployed: code !== undefined && code !== "0x",
+      // Kept under the original name so existing integrations do not break,
+      // even though it is no longer a hash of an X id specifically.
       xUserIdHash: idHash,
-      username: profile.username,
-      xUserId: profile.id,
+      identityKey: idHash,
+      username: handleName,
+      xUserId: numericId,
       claimable: { units: (balance as bigint).toString(), decimals: 6 },
     });
   });
