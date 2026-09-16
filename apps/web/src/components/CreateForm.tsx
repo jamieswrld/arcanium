@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { CreatorFeeDestination, type FeeDestination } from "@/components/CreatorFeeDestination";
 import { useRouter } from "next/navigation";
 import { useAccount, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
 import { decodeEventLog, parseAbiItem, type Hex } from "viem";
@@ -78,6 +79,8 @@ export function CreateForm() {
   const [imgError, setImgError] = useState<string | null>(null);
   const [creatorBuy, setCreatorBuy] = useState("");
   const [feeWallet, setFeeWallet] = useState("");
+  /** Set when the creator chooses to pay an X account instead of a wallet. */
+  const [feeDest, setFeeDest] = useState<FeeDestination | null>(null);
   const [mode, setMode] = useState<0 | 1 | 2>(0);
   const [state, setState] = useState<CreateState>({ step: "form" });
   const fileRef = useRef<HTMLInputElement>(null);
@@ -131,7 +134,15 @@ export function CreateForm() {
     if (!validUrl(website) || !validUrl(twitter) || !validUrl(telegram)) {
       return "Links must be https:// URLs";
     }
-    if (!feeWalletValid) return "Fee recipient must be a valid 0x address";
+    if (feeDest?.kind === "x") {
+      // Binding a fee stream to an identity we could not confirm is the one
+      // mistake here with no recovery — the recipient is immutable once
+      // launched — so an unresolved handle blocks the launch rather than
+      // falling back to a wallet.
+      if (feeDest.resolved.vault === "0x") return "Verify the X account before launching";
+    } else if (!feeWalletValid) {
+      return "Fee recipient must be a valid 0x address";
+    }
     return null;
   })();
 
@@ -195,7 +206,14 @@ export function CreateForm() {
         args: [{
           name: name.trim(), symbol: tickerNormalized, metadataUri, pairToken: quote,
           creatorBuyAmount: buyAmount, minTokensOut: 0n, deadline,
-          feeRecipient: (feeWalletValid && feeWalletTrimmed !== "" ? feeWalletTrimmed : "0x0000000000000000000000000000000000000000") as Hex,
+          // An X destination resolves to its vault address, which is a real
+          // address before the contract exists — that is what makes this
+          // possible without changing the deployed factory.
+          feeRecipient: (feeDest?.kind === "x"
+            ? feeDest.resolved.vault
+            : feeWalletValid && feeWalletTrimmed !== ""
+              ? feeWalletTrimmed
+              : "0x0000000000000000000000000000000000000000") as Hex,
           taxBps: 0n,
           mode,
         }],
@@ -332,16 +350,22 @@ export function CreateForm() {
 
       <details style={{ marginTop: "var(--s2)" }}>
         <summary className="arch-note" style={{ cursor: "pointer", marginBottom: "var(--s2)" }}>
-          Advanced: pay rewards to a different wallet
+          Advanced: where creator rewards go
         </summary>
-      <div className="arch-form-row">
-        <label htmlFor="cf-feewallet">Creator fee wallet</label>
-        <input id="cf-feewallet" value={feeWallet} onChange={(e) => setFeeWallet(e.target.value)} placeholder="0x… (defaults to your wallet)" spellCheck={false} disabled={busy} style={{ fontFamily: "monospace", fontSize: "0.85rem" }} />
-        <span className="arch-note">
-          {mode === 0 ? "Trading-fee rewards for this token are paid to this wallet, forever. Leave blank to use the wallet you launch with." : "In this mode fees go to holders or the burn — this wallet only owns the launch record."}
+        <CreatorFeeDestination
+          walletAddress={address ?? ""}
+          tokenXHandle={twitter}
+          disabled={busy}
+          onChange={(d) => {
+            setFeeDest(d);
+            if (d?.kind === "wallet") setFeeWallet(d.address);
+          }}
+        />
+        <span className="arch-note" style={{ display: "block", marginTop: "var(--s2)" }}>
+          {mode === 0
+            ? "Trading-fee rewards for this token are paid here, forever, and cannot be changed after launch."
+            : "In this mode fees go to holders or the burn — this only owns the launch record."}
         </span>
-      </div>
-
       </details>
 
       </div>

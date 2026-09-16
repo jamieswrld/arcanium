@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { PortfolioLocks } from "@/components/PortfolioLocks";
+import { XRewardClaim } from "@/components/XRewardClaim";
 import { useAccount, useBalance, usePublicClient, useWriteContract } from "wagmi";
 import { formatUnits, parseAbiItem, type Hex } from "viem";
 import { erc20Abi } from "@/lib/bridgeClient";
@@ -389,6 +390,8 @@ export function PortfolioDashboard({
       </section>
 
       <PortfolioLocks />
+
+      <XRewardClaim />
 
       <section>
         <Eyebrow>Creator center</Eyebrow>
