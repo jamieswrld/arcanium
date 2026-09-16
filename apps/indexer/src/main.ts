@@ -47,6 +47,13 @@ const transferEvent = parseAbiItem(
   "event Transfer(address indexed from, address indexed to, uint256 value)",
 );
 
+const lockCreatedEvent = parseAbiItem(
+  "event LockCreated(uint256 indexed lockId, address indexed token, address indexed beneficiary, address depositor, uint256 amount, uint64 unlockTime, uint64 createdAt)",
+);
+const lockClaimedEvent = parseAbiItem(
+  "event LockClaimed(uint256 indexed lockId, address indexed token, address indexed beneficiary, uint256 amount, uint64 claimedAt)",
+);
+
 const feesDistributedEvent = parseAbiItem(
   "event FeesDistributed(address indexed token, address indexed pairToken, uint256 tokenFeesBurned, uint256 creatorReward, uint256 protocolReward)",
 );
@@ -95,6 +102,10 @@ const DEFAULT_DISTRIBUTORS = [
   "0xbdc362f9ddea2ae9c39b108e0712f7d6e2f00e5f",
 ] as const;
 
+/** The token locker, and the block it was deployed in. */
+const DEFAULT_TOKEN_LOCKER = "0x0aB1fbD6c01f4908f509746393DE25849aE2a9E7";
+const DEFAULT_TOKEN_LOCKER_BLOCK = 21_170_030n;
+
 /** 9,000 USDC, at Arc USDC's 6 decimals. */
 const DEFAULT_GRADUATION_UNITS = 9_000_000_000n;
 
@@ -115,6 +126,10 @@ interface IndexerConfig {
   readonly startBlock: bigint;
   readonly modeDistributor: Hex;
   readonly distributors: readonly Hex[];
+  readonly tokenLocker: Hex;
+  /** Block the locker was deployed in — walking from the launchpad's start
+   *  block would be millions of chunks against a contract that did not exist. */
+  readonly tokenLockerBlock: bigint;
 }
 
 function requireEnv(name: string): string {
@@ -682,6 +697,99 @@ async function indexSwaps(cfg: IndexerConfig, blocks: BlockCache): Promise<void>
  * they have earned. fee_distributions has been in the schema since the start and
  * has never had a row in it.
  */
+/**
+ * Token locks, from ArcTokenLocker.
+ *
+ * Independent of launches in a way the other walks are not: a lock can hold any
+ * ERC-20 on Arc, not only something Arcanium launched, so this walk must not be
+ * clamped to the launch cursor and its rows carry no foreign key to `tokens`.
+ *
+ * Both events are read in the same chunk. LockClaimed only ever follows a
+ * LockCreated for the same id, but not necessarily in the same range, so the
+ * claim is applied as an UPDATE that no-ops when the row is not there yet —
+ * the next cycle's re-read of that range fixes it, and every write here is
+ * idempotent so re-reading is always safe.
+ */
+async function indexLocks(cfg: IndexerConfig, blocks: BlockCache): Promise<void> {
+  const { arc, sql, chainId } = cfg;
+  const stream = "locks:all";
+  const head = (await arc.getBlockNumber()) - CONFIRMATIONS;
+  const from = (await getCursor(sql, chainId, stream)) ?? cfg.tokenLockerBlock;
+  if (from > head) return;
+
+  let chunksDone = 0;
+  let skips = 0;
+  for (let start = from; start <= head; start += CHUNK) {
+    const end = start + CHUNK - 1n < head ? start + CHUNK - 1n : head;
+
+    const created = await chunk(() =>
+      arc.getLogs({ address: cfg.tokenLocker, event: lockCreatedEvent, fromBlock: start, toBlock: end }),
+    );
+    if (!created.ok) {
+      log.warn({ err: created.err, start: start.toString(), end: end.toString() }, "lock chunk failed");
+      if (skips < MAX_PRUNE_SKIPS && (await skipIfPruned(cfg, blocks, stream, end, head))) {
+        skips++;
+        continue;
+      }
+      break;
+    }
+    const claimed = await chunk(() =>
+      arc.getLogs({ address: cfg.tokenLocker, event: lockClaimedEvent, fromBlock: start, toBlock: end }),
+    );
+    if (!claimed.ok) {
+      log.warn({ err: claimed.err, start: start.toString(), end: end.toString() }, "lock claim chunk failed");
+      break;
+    }
+
+    if (created.logs.length > 0) {
+      await blocks.warm(created.logs.map((l) => l.blockNumber ?? end));
+      const rows: Record<string, unknown>[] = [];
+      for (const l of created.logs) {
+        const a = l.args;
+        if (a.lockId === undefined || a.token === undefined || l.transactionHash === null) continue;
+        const { time } = await blocks.get(l.blockNumber ?? end);
+        rows.push({
+          chain_id: chainId,
+          lock_id: a.lockId.toString(),
+          token_address: addr(a.token),
+          depositor: addr(a.depositor ?? "0x"),
+          beneficiary: addr(a.beneficiary ?? "0x"),
+          amount: (a.amount ?? 0n).toString(),
+          created_at: new Date(Number(a.createdAt ?? 0n) * 1000),
+          unlock_time: new Date(Number(a.unlockTime ?? 0n) * 1000),
+          created_block: (l.blockNumber ?? end).toString(),
+          created_tx: addr32(l.transactionHash),
+        });
+        void time;
+      }
+      if (rows.length > 0) {
+        await sql`
+          INSERT INTO token_locks ${sql(rows)}
+          ON CONFLICT (chain_id, lock_id) DO NOTHING
+        `;
+        log.info({ count: rows.length }, "indexed locks");
+      }
+    }
+
+    for (const l of claimed.logs) {
+      const a = l.args;
+      if (a.lockId === undefined || l.transactionHash === null) continue;
+      await sql`
+        UPDATE token_locks
+           SET claimed_at = ${new Date(Number(a.claimedAt ?? 0n) * 1000)},
+            claimed_block = ${(l.blockNumber ?? end).toString()},
+            claimed_tx = ${addr32(l.transactionHash)}
+        WHERE chain_id = ${chainId} AND lock_id = ${a.lockId.toString()} AND claimed_at IS NULL
+      `;
+    }
+
+    const endBlock = await blocks.get(end);
+    await setCursor(sql, chainId, stream, end, endBlock.hash);
+    if (++chunksDone % HEALTH_EVERY_CHUNKS === 0) await publishHealth(cfg, head + CONFIRMATIONS);
+    if (end < head) await sleep(CHUNK_DELAY_MS);
+  }
+}
+
 async function indexFees(cfg: IndexerConfig, blocks: BlockCache): Promise<void> {
   const { arc, sql, chainId } = cfg;
   const known = await sql<{ token_address: Buffer }[]>`
@@ -1134,6 +1242,10 @@ async function main(): Promise<void> {
     chainId: await arc.getChainId(),
     startBlock: BigInt(process.env["INDEXER_START_BLOCK"] ?? DEFAULT_START_BLOCK.toString()),
     modeDistributor: (process.env["ARCH_MODE_DISTRIBUTOR_ADDRESS"] ?? DEFAULT_MODE_DISTRIBUTOR) as Hex,
+    tokenLocker: (process.env["ARC_TOKEN_LOCKER_ADDRESS"] ?? DEFAULT_TOKEN_LOCKER) as Hex,
+    tokenLockerBlock: BigInt(
+      process.env["ARC_TOKEN_LOCKER_BLOCK"] ?? DEFAULT_TOKEN_LOCKER_BLOCK.toString(),
+    ),
     distributors: envList("ARCH_FEE_DISTRIBUTORS", DEFAULT_DISTRIBUTORS),
   };
 
@@ -1163,6 +1275,7 @@ async function main(): Promise<void> {
       await indexSwaps(cfg, blocks);
       await indexHolders(cfg, blocks);
       await indexFees(cfg, blocks);
+      await indexLocks(cfg, blocks);
       await refreshPools(cfg);
       await rollup(cfg);
       await mirrorMetadata(cfg);

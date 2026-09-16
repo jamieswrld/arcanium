@@ -91,6 +91,11 @@ export const ARC_GRADUATION_REGISTRY = "0xC73d4b6Bd63F0ee69514768870D74548F4d12b
  */
 export const ARC_TOKEN_LOCKER = "0x0aB1fbD6c01f4908f509746393DE25849aE2a9E7" as Address;
 
+/** Block the locker was deployed in. Indexing it from the launchpad's start
+ *  block would mean ~8.4M pointless chunks against a contract that did not
+ *  exist, most of them in ranges Arc's RPCs have already pruned. */
+export const ARC_TOKEN_LOCKER_BLOCK = 21_170_030n;
+
 /**
  * X creator vaults. The factory deploys minimal proxies at CREATE2 addresses,
  * so a vault address is usable as a launch's fee recipient before the vault
@@ -102,6 +107,8 @@ export const ARC_XCREATOR = {
   /** Whose EIP-712 attestations vaults accept. Rotatable by the factory owner;
    *  its private key lives only in server-side env. */
   attestationSigner: "0x74E6853252D79608054c71bb6c90BF1D381932E5" as Address,
+  /** Block the factory was deployed in. */
+  deployedBlock: 21_170_121n,
 } as const;
 
 /**
