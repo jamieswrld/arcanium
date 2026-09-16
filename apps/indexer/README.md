@@ -82,7 +82,7 @@ default in `src/main.ts`.
 | variable | default |
 | --- | --- |
 | `DATABASE_URL` | — (required) |
-| `ARC_RPC_URLS` | `https://rpc.arc-scan.org` (comma-separated; failover in order) |
+| `ARC_RPC_URLS` | `https://rpc.quicknode.mainnet.arc.io,https://rpc.arc-scan.org` (comma-separated; failover in order) |
 | `ARCH_LAUNCHPAD_FACTORIES` | the four known generations |
 | `ARCH_MODE_DISTRIBUTOR_ADDRESS` | `0x7c148B6a581E32CcB6ffF7Bd59AF4250d5ec1eBc` |
 | `ARCH_FEE_DISTRIBUTORS` | the three known distributor generations |
@@ -93,6 +93,73 @@ default in `src/main.ts`.
 The website reads the same `DATABASE_URL`, so the indexer must write to the
 database Vercel reads — for us, Neon. Do not point it at a Postgres on the VPS
 unless Vercel can reach that too.
+
+## Do not let it fall far behind
+
+Arc's public RPCs keep only a few days of logs — measured at roughly 500k blocks
+on arc-scan and somewhat more on QuickNode. An outage longer than that is not
+just a gap to catch up on: the swaps in that window are gone from every public
+endpoint and cannot be recovered.
+
+The walks skip a range they have retried and cannot read, so the indexer will
+recover on its own rather than wedging on the same chunk forever (it did exactly
+that after a nine-day outage, and served nothing until the chunk was skipped).
+But skipping is a loss, not a repair. Treat a stopped indexer as urgent.
+
+Launches are the exception: they can always be re-derived from the factories'
+`allTokens()` enumeration, which does not depend on log retention.
+
+## Restoring it after an outage
+
+If `https://arcanium.trade/api/indexer` reports `ok: false`, or the service is
+not running, this is the whole procedure. Run it as root on the VPS.
+
+**Pull first — this is not optional.** A build from before the pruning fix will
+wedge on the first unreadable chunk and never catch up, which is exactly how the
+nine-day outage turned into a site serving no volume at all.
+
+```bash
+cd /opt/arcanium
+git pull
+pnpm install --frozen-lockfile
+pnpm --filter @arch/indexer build
+chown -R arcanium:arcanium /opt/arcanium
+```
+
+Point it at the RPC we actually rely on (older deployments say arc-scan only):
+
+```bash
+# /etc/arcanium/indexer.env
+ARC_RPC_URLS=https://rpc.quicknode.mainnet.arc.io,https://rpc.arc-scan.org
+```
+
+Start it and watch the first cycle:
+
+```bash
+systemctl daemon-reload
+systemctl enable --now arcanium-indexer
+journalctl -u arcanium-indexer -f
+```
+
+A backfill of a few days logs `range pruned by the RPC; skipping it` a few dozen
+times per stream before it reaches readable history. That is the fix working,
+not a fault — but the count is worth reading, because each skipped chunk is
+trades that no longer exist anywhere public.
+
+Confirm from outside the box:
+
+```bash
+curl -s https://arcanium.trade/api/indexer
+# {"ok":true,"tip":"...","behind":"2","ageSeconds":3,"reason":null}
+```
+
+`behind` should fall to single digits and `ageSeconds` stay under ~15. Until
+then the site falls back to chain reads and shows no volume or 24h change.
+
+**Only one indexer at a time.** If a catch-up was being run from a workstation
+during the outage, stop it once the service is healthy. Two processes sharing
+the cursors will race each other; the writes are idempotent upserts so nothing
+corrupts, but they will fight over progress and waste the RPC's rate limit.
 
 ## Deploying to the VPS
 
@@ -129,7 +196,9 @@ them in the unit file** — unit files are world-readable.
 # as root
 cat > /etc/arcanium/indexer.env <<'EOF'
 DATABASE_URL=postgresql://...   # the same Neon URL Vercel uses
-ARC_RPC_URLS=https://rpc.arc-scan.org
+# QuickNode first: faster on a filtered getLogs, and it retains noticeably more
+# log history than arc-scan, which matters because Arc's public nodes prune.
+ARC_RPC_URLS=https://rpc.quicknode.mainnet.arc.io,https://rpc.arc-scan.org
 LOG_LEVEL=info
 EOF
 chown root:arcanium /etc/arcanium/indexer.env
