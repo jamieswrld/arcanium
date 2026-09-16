@@ -40,6 +40,23 @@ const log = pino({ level: process.env["LOG_LEVEL"] ?? "info", name: "arch-indexe
 const launchedEvent = parseAbiItem(
   "event Launched(address indexed token, address indexed creator, address pairToken, address pool, uint256 positionId, string metadataUri)",
 );
+/**
+ * The v4 launch, and the v4 swap.
+ *
+ * Both differ from their v3 counterparts in ways that matter to this file.
+ * A v4 launch names a 32-byte pool id rather than a pool address, because a v4
+ * pool has no contract of its own. And PoolManager emits the *swapper's*
+ * balance delta — negative for what they paid — where a v3 pool emits its own
+ * — positive for what it received. The two are inverted, so a v4 amount has to
+ * be negated before it is stored in the same column.
+ */
+const launchedV4Event = parseAbiItem(
+  "event Launched(address indexed token, address indexed creator, bytes32 indexed poolId, address feeRecipient, uint16 taxBps, uint8 mode)",
+);
+const poolManagerSwapEvent = parseAbiItem(
+  "event Swap(bytes32 indexed id, address indexed sender, int128 amount0, int128 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick, uint24 fee)",
+);
+
 const swapEvent = parseAbiItem(
   "event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)",
 );
@@ -110,6 +127,12 @@ const DEFAULT_DISTRIBUTORS = [
 const DEFAULT_TOKEN_LOCKER = "0x0aB1fbD6c01f4908f509746393DE25849aE2a9E7";
 const DEFAULT_TOKEN_LOCKER_BLOCK = 21_170_030n;
 
+/** Arc's native USDC: the quote every launch pairs with. */
+const ARC_USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
+
+/** Uniswap v4 on Arc, official since 2026-09-16. */
+const DEFAULT_POOL_MANAGER_V4 = "0x8366a39CC670B4001A1121B8F6A443A643e40951" as Hex;
+
 /** 9,000 USDC, at Arc USDC's 6 decimals. */
 const DEFAULT_GRADUATION_UNITS = 9_000_000_000n;
 
@@ -134,12 +157,25 @@ interface IndexerConfig {
   /** Block the locker was deployed in — walking from the launchpad's start
    *  block would be millions of chunks against a contract that did not exist. */
   readonly tokenLockerBlock: bigint;
+  /** The v4 launchpad, or undefined until it is deployed. */
+  readonly launchpadV4: Hex | undefined;
+  /** Uniswap v4's PoolManager: one contract emitting every market's swaps. */
+  readonly poolManagerV4: Hex | undefined;
+  /** Block the v4 launchpad was deployed in. */
+  readonly launchpadV4Block: bigint;
 }
 
 function requireEnv(name: string): string {
   const v = process.env[name];
   if (v === undefined || v.length === 0) throw new Error(`${name} is required`);
   return v;
+}
+
+/** An address from env, or undefined. Unset is a real state here, not an error:
+ *  the v4 walks are inert until the launchpad exists. */
+function optionalAddress(name: string): Hex | undefined {
+  const raw = (process.env[name] ?? "").trim();
+  return /^0x[0-9a-fA-F]{40}$/.test(raw) ? (raw as Hex) : undefined;
 }
 
 function envList(name: string, fallbackValue: readonly string[]): Hex[] {
@@ -166,6 +202,8 @@ interface SwapRow {
   tx_hash: Buffer;
   log_index: number;
   pool_address: Buffer;
+  /** The v4 pool id, or absent for a v3 row where the address is the pool. */
+  pool_id?: Buffer;
   token_address: Buffer;
   block_number: string;
   block_hash: Buffer;
@@ -563,6 +601,86 @@ async function indexLaunches(cfg: IndexerConfig, blocks: BlockCache): Promise<vo
   }
 }
 
+/**
+ * v4 launches.
+ *
+ * Its own walk and its own cursor rather than another address in the v3 one,
+ * because the two emit different events that happen to share a name: the v4
+ * Launched carries a 32-byte pool id where the v3 one carries a pool address.
+ * A single getLogs cannot ask for both.
+ */
+async function indexLaunchesV4(cfg: IndexerConfig, blocks: BlockCache): Promise<void> {
+  const { arc, sql, chainId, launchpadV4, poolManagerV4 } = cfg;
+  if (launchpadV4 === undefined || poolManagerV4 === undefined) return;
+
+  const tip = (await arc.getBlockNumber()) - CONFIRMATIONS;
+  const stream = "launches:v4";
+  const from = (await getCursor(sql, chainId, stream)) ?? cfg.launchpadV4Block;
+  if (from > tip) return;
+
+  let chunksDone = 0;
+  let skips = 0;
+  for (let start = from; start <= tip; start += CHUNK) {
+    const end = start + CHUNK - 1n < tip ? start + CHUNK - 1n : tip;
+    const res = await chunk(() =>
+      arc.getLogs({ address: launchpadV4, event: launchedV4Event, fromBlock: start, toBlock: end }),
+    );
+    if (!res.ok) {
+      log.warn({ err: res.err, start: start.toString(), end: end.toString() }, "v4 launch chunk failed");
+      if (skips < MAX_PRUNE_SKIPS && (await skipIfPruned(cfg, blocks, stream, end, tip))) {
+        skips++;
+        continue;
+      }
+      break;
+    }
+
+    if (res.logs.length > 0) {
+      await blocks.warm(res.logs.map((l) => l.blockNumber ?? end));
+
+      for (const l of res.logs) {
+        const token = l.args.token;
+        const poolId = l.args.poolId;
+        if (token === undefined || poolId === undefined || l.transactionHash === null) continue;
+        const { time } = await blocks.get(l.blockNumber ?? end);
+
+        const [name, symbol] = await Promise.all([
+          arc.readContract({ address: token, abi: ERC20_NAME, functionName: "name" }).catch(() => ""),
+          arc.readContract({ address: token, abi: ERC20_SYMBOL, functionName: "symbol" }).catch(() => ""),
+        ]);
+
+        const pairToken = ARC_USDC_ADDRESS;
+        await sql`
+          INSERT INTO tokens (
+            token_address, chain_id, name, symbol, decimals, creator, pair_token,
+            pool_address, pool_id, protocol, position_id, token_is_token0, metadata_uri,
+            launch_block, launch_tx_hash, launch_time, mode
+          ) VALUES (
+            ${addr(token)}, ${chainId}, ${name}, ${symbol}, 18,
+            ${addr(l.args.creator ?? "0x")}, ${addr(pairToken)},
+            ${addr(poolManagerV4)}, ${addr32(poolId)}, 'v4',
+            NULL,
+            ${token.toLowerCase() < pairToken.toLowerCase()}, '',
+            ${(l.blockNumber ?? end).toString()}, ${addr(l.transactionHash)}, ${time},
+            ${Number(l.args.mode ?? 0)}
+          )
+          ON CONFLICT (token_address) DO UPDATE SET
+            name = EXCLUDED.name, symbol = EXCLUDED.symbol, mode = EXCLUDED.mode
+        `;
+        await sql`
+          INSERT INTO token_stats (token_address) VALUES (${addr(token)})
+          ON CONFLICT (token_address) DO NOTHING
+        `;
+        log.info({ token, name, symbol, poolId }, "indexed v4 launch");
+      }
+    }
+
+    const endBlock = await blocks.get(end);
+    await setCursor(sql, chainId, stream, end, endBlock.hash);
+    if (++chunksDone % HEALTH_EVERY_CHUNKS === 0) await publishHealth(cfg, tip + CONFIRMATIONS);
+    if (end < tip) await sleep(CHUNK_DELAY_MS);
+  }
+}
+
 /* -------------------------------------------------------------------- swaps */
 
 interface PoolRow {
@@ -570,6 +688,10 @@ interface PoolRow {
   readonly pool_address: Buffer;
   readonly token_is_token0: boolean;
   readonly pair_token: Buffer;
+}
+
+interface V4PoolRow extends PoolRow {
+  readonly pool_id: Buffer;
 }
 
 /**
@@ -714,6 +836,127 @@ async function indexSwaps(cfg: IndexerConfig, blocks: BlockCache): Promise<void>
  * the next cycle's re-read of that range fixes it, and every write here is
  * idempotent so re-reading is always safe.
  */
+/**
+ * v4 swaps: every market, one contract.
+ *
+ * In v3 a pool is a contract and the walk filters on its address. In v4 there
+ * are no pool contracts — one PoolManager emits every swap on the chain, with
+ * the pool id in topic 1. So this reads a single address and discards the
+ * overwhelming majority of what comes back, because most of Arc's v4 traffic
+ * is not ours. Filtering by topic would be better; viem's typed getLogs will
+ * not take an array of indexed bytes32 values alongside an event, and the
+ * volumes involved do not yet justify hand-rolling the raw filter.
+ *
+ * The sign convention is inverted relative to v3. PoolManager emits the
+ * swapper's balance delta — negative for what they handed over — while a v3
+ * pool emits its own, positive for what it received. Both columns here mean
+ * "from the pool's side", so v4 amounts are negated on the way in. Getting
+ * this backwards would invert every price and label every buy a sell.
+ */
+async function indexSwapsV4(cfg: IndexerConfig, blocks: BlockCache): Promise<void> {
+  const { arc, sql, chainId, poolManagerV4 } = cfg;
+  if (poolManagerV4 === undefined) return;
+
+  const pools = await sql<V4PoolRow[]>`
+    SELECT token_address, pool_address, pool_id, token_is_token0, pair_token
+    FROM tokens WHERE chain_id = ${chainId} AND protocol = 'v4' AND pool_id IS NOT NULL
+  `;
+  if (pools.length === 0) return;
+
+  const byId = new Map(pools.map((p) => [`0x${p.pool_id.toString("hex")}`.toLowerCase(), p]));
+
+  const stream = "swaps:v4";
+  const head = (await arc.getBlockNumber()) - CONFIRMATIONS;
+
+  // Never run past the launch frontier, for the same reason the v3 walk does
+  // not: a pool discovered later would already be behind this cursor and its
+  // early trades would never be read.
+  const launchesAt = (await getCursor(sql, chainId, "launches:v4")) ?? cfg.launchpadV4Block;
+  const tip = launchesAt < head ? launchesAt : head;
+
+  const from = (await getCursor(sql, chainId, stream)) ?? cfg.launchpadV4Block;
+  if (from > tip) return;
+
+  let chunksDone = 0;
+  let skips = 0;
+  for (let start = from; start <= tip; start += CHUNK) {
+    const end = start + CHUNK - 1n < tip ? start + CHUNK - 1n : tip;
+    const res = await chunk(() =>
+      arc.getLogs({ address: poolManagerV4, event: poolManagerSwapEvent, fromBlock: start, toBlock: end }),
+    );
+    if (!res.ok) {
+      log.warn({ err: res.err, start: start.toString(), end: end.toString() }, "v4 swap chunk failed");
+      if (skips < MAX_PRUNE_SKIPS && (await skipIfPruned(cfg, blocks, stream, end, head))) {
+        skips++;
+        continue;
+      }
+      break;
+    }
+
+    const mine = res.logs.filter((l) => byId.has((l.args.id ?? "0x").toLowerCase()));
+    if (mine.length > 0) {
+      await blocks.warm(mine.map((l) => l.blockNumber ?? end));
+      log.info({ count: mine.length, of: res.logs.length }, "v4 swaps in range");
+    }
+
+    const rows: SwapRow[] = [];
+    for (const l of mine) {
+      const pool = byId.get((l.args.id ?? "0x").toLowerCase());
+      if (pool === undefined) continue;
+      if (l.transactionHash === null || l.logIndex === null || l.args.sqrtPriceX96 === undefined) continue;
+
+      const { time, hash } = await blocks.get(l.blockNumber ?? end);
+      // Negated: see the note above on whose delta this is.
+      const amount0 = -(l.args.amount0 ?? 0n);
+      const amount1 = -(l.args.amount1 ?? 0n);
+      const quoteDelta = pool.token_is_token0 ? amount1 : amount0;
+      const tokenDelta = pool.token_is_token0 ? amount0 : amount1;
+      const volumeUnits = quoteDelta < 0n ? -quoteDelta : quoteDelta;
+      const absToken = tokenDelta < 0n ? -tokenDelta : tokenDelta;
+
+      rows.push({
+        chain_id: chainId,
+        tx_hash: addr32(l.transactionHash),
+        log_index: l.logIndex,
+        pool_address: pool.pool_address,
+        pool_id: pool.pool_id,
+        token_address: pool.token_address,
+        block_number: (l.blockNumber ?? end).toString(),
+        block_hash: addr32(hash),
+        block_time: time,
+        sender: addr(l.args.sender ?? "0x"),
+        // v4's Swap carries no recipient. The sender is whoever called the
+        // manager, which for a routed trade is the router rather than the
+        // trader; recording it as the recipient too would be a guess, so the
+        // field is zeroed rather than filled with something untrue.
+        recipient: addr(ZERO_ADDRESS),
+        amount_token: absToken.toString(),
+        amount_quote: volumeUnits.toString(),
+        sqrt_price_x96: l.args.sqrtPriceX96.toString(),
+        liquidity: (l.args.liquidity ?? 0n).toString(),
+        tick: l.args.tick ?? 0,
+        is_buy: quoteDelta > 0n,
+        price_usd_e18: priceUsdE18(l.args.sqrtPriceX96, pool.token_is_token0).toString(),
+        volume_usd_e6: volumeUnits.toString(),
+      });
+    }
+
+    if (rows.length > 0) {
+      await sql`
+        INSERT INTO swaps ${sql(rows as unknown as Record<string, unknown>[])}
+        ON CONFLICT (tx_hash, log_index) DO NOTHING
+      `;
+      const earliest = rows.reduce((a, r) => (r.block_time < a ? r.block_time : a), rows[0]!.block_time);
+      await refreshCandles(sql, earliest);
+    }
+
+    const endBlock = await blocks.get(end);
+    await setCursor(sql, chainId, stream, end, endBlock.hash);
+    if (++chunksDone % HEALTH_EVERY_CHUNKS === 0) await publishHealth(cfg, head + CONFIRMATIONS);
+    if (end < tip) await sleep(CHUNK_DELAY_MS);
+  }
+}
+
 async function indexLocks(cfg: IndexerConfig, blocks: BlockCache): Promise<void> {
   const { arc, sql, chainId } = cfg;
   const stream = "locks:all";
@@ -1251,6 +1494,11 @@ async function main(): Promise<void> {
       process.env["ARC_TOKEN_LOCKER_BLOCK"] ?? DEFAULT_TOKEN_LOCKER_BLOCK.toString(),
     ),
     distributors: envList("ARCH_FEE_DISTRIBUTORS", DEFAULT_DISTRIBUTORS),
+    // Undefined until the v4 launchpad is deployed. Both walks return
+    // immediately in that state rather than guessing an address.
+    launchpadV4: optionalAddress("ARC_LAUNCHPAD_V4"),
+    poolManagerV4: optionalAddress("ARC_POOL_MANAGER_V4") ?? DEFAULT_POOL_MANAGER_V4,
+    launchpadV4Block: BigInt(process.env["ARC_LAUNCHPAD_V4_BLOCK"] ?? "0"),
   };
 
   const applied = await runMigrations(databaseUrl);
@@ -1276,7 +1524,9 @@ async function main(): Promise<void> {
       await rewindIfReorged(cfg, "holders:all");
       await rewindIfReorged(cfg, "fees:all");
       await indexLaunches(cfg, blocks);
+      await indexLaunchesV4(cfg, blocks);
       await indexSwaps(cfg, blocks);
+      await indexSwapsV4(cfg, blocks);
       await indexHolders(cfg, blocks);
       await indexFees(cfg, blocks);
       await indexLocks(cfg, blocks);
