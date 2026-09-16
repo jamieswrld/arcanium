@@ -1128,3 +1128,37 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
   .koth-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .koth-cta { justify-self: stretch; text-align: center; }
 }
+
+/* ---------------------------------------------------------------- bars ---
+   Daily volume and swap counts on the stats page. Plain elements rather than
+   a charting library: two dozen bars do not justify a canvas renderer.     */
+
+.bars-figure { margin: 0; display: grid; gap: var(--s2); }
+
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 160px;
+  padding: var(--s2);
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.bar {
+  flex: 1 1 0;
+  min-width: 0;
+  background: var(--accent);
+  border-radius: 3px 3px 1px 1px;
+  transition: background var(--t-fast) var(--ease);
+}
+.bar:hover { background: var(--accent-hover); }
+
+/* Today, still filling. Outlined rather than solid so a half-finished day is
+   never read as a collapse in volume. */
+.bar-partial {
+  background: transparent;
+  border: 1px dashed var(--accent);
+}
+.bar-partial:hover { background: var(--accent-quiet); }

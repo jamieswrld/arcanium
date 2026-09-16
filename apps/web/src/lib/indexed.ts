@@ -132,12 +132,7 @@ export async function indexedTokens(): Promise<LaunchpadToken[] | null> {
       SELECT
         t.token_address, t.name, t.symbol, t.creator, t.pair_token, t.pool_address,
         t.position_id, t.graduated, t.mode, t.launch_time,
-        s.price_usd_e18, s.market_cap_usd_e6, s.quote_balance,
-        -- Counted per row rather than joined-and-grouped: with launches in the
-        -- dozens this is trivial, and it keeps the stats LEFT JOIN above from
-        -- fanning out across every holder.
-        (SELECT COUNT(*)::int FROM holders h
-          WHERE h.token_address = t.token_address AND h.balance > 0) AS holder_count
+        s.price_usd_e18, s.market_cap_usd_e6, s.quote_balance, s.holder_count
       FROM tokens t
       LEFT JOIN token_stats s ON s.token_address = t.token_address
       WHERE t.chain_id = ${CHAIN_ID}
@@ -186,12 +181,7 @@ export async function indexedToken(address: string): Promise<LaunchpadToken | nu
       SELECT
         t.token_address, t.name, t.symbol, t.creator, t.pair_token, t.pool_address,
         t.position_id, t.graduated, t.mode, t.launch_time,
-        s.price_usd_e18, s.market_cap_usd_e6, s.quote_balance,
-        -- Counted per row rather than joined-and-grouped: with launches in the
-        -- dozens this is trivial, and it keeps the stats LEFT JOIN above from
-        -- fanning out across every holder.
-        (SELECT COUNT(*)::int FROM holders h
-          WHERE h.token_address = t.token_address AND h.balance > 0) AS holder_count
+        s.price_usd_e18, s.market_cap_usd_e6, s.quote_balance, s.holder_count
       FROM tokens t
       LEFT JOIN token_stats s ON s.token_address = t.token_address
       WHERE t.token_address = ${Buffer.from(address.slice(2), "hex")} AND t.chain_id = ${CHAIN_ID}
@@ -425,6 +415,108 @@ export async function indexedProtocolStats(): Promise<IndexedProtocolStats | nul
       totalTrades: Number(r.trades),
       launches: Number(r.launches),
       graduated: Number(r.grad),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export interface DailyPoint {
+  /** UTC midnight that starts the day. */
+  readonly day: Date;
+  readonly volumeUnits: bigint;
+  readonly swaps: number;
+  /** False for today, which is still filling and must not be read as a drop. */
+  readonly complete: boolean;
+}
+
+/**
+ * Daily volume and swap count, oldest first, with no gaps.
+ *
+ * Days with no trading are emitted as zeroes rather than omitted: a bar chart
+ * that silently drops empty days compresses the time axis and makes a quiet
+ * week look continuously busy.
+ *
+ * Today is included but marked incomplete. A partial day plotted like a whole
+ * one reads as a collapse in volume every single morning.
+ */
+export async function indexedDaily(days: number): Promise<DailyPoint[] | null> {
+  if (!(await healthy())) return null;
+  const sql = getDb();
+  if (sql === null) return null;
+  const span = Math.max(1, Math.min(Math.floor(days), 365));
+  try {
+    const rows = await sql<{ day: Date; vol: string | null; n: string }[]>`
+      SELECT date_trunc('day', block_time) AS day,
+             COALESCE(SUM(volume_usd_e6), 0)::text AS vol,
+             COUNT(*)::text AS n
+      FROM swaps
+      WHERE chain_id = ${CHAIN_ID}
+        AND block_time >= date_trunc('day', now() at time zone 'utc') - make_interval(days => ${span - 1})
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `;
+    const byDay = new Map<number, { vol: bigint; n: number }>();
+    for (const r of rows) {
+      byDay.set(new Date(r.day).setUTCHours(0, 0, 0, 0), { vol: BigInt(r.vol ?? "0"), n: Number(r.n) });
+    }
+    const todayUtc = new Date().setUTCHours(0, 0, 0, 0);
+    const out: DailyPoint[] = [];
+    for (let i = span - 1; i >= 0; i--) {
+      const key = todayUtc - i * 86_400_000;
+      const hit = byDay.get(key);
+      out.push({
+        day: new Date(key),
+        volumeUnits: hit?.vol ?? 0n,
+        swaps: hit?.n ?? 0,
+        complete: key !== todayUtc,
+      });
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+export interface BurnedTotals {
+  /** Protocol tokens bought back and burned, summed across Arcane launches. */
+  readonly tokensBurned: bigint;
+  /** Value of those tokens at each launch's current price, in USD micro-units. */
+  readonly valueUnits: bigint;
+  readonly launches: number;
+}
+
+/**
+ * What Arcane mode has taken out of circulation.
+ *
+ * Valued at the current price, which is a snapshot rather than what the burns
+ * cost at the time. Burned tokens are still counted in total supply and in the
+ * market caps shown elsewhere, so this is not netted off them.
+ */
+export async function indexedBurned(): Promise<BurnedTotals | null> {
+  if (!(await healthy())) return null;
+  const sql = getDb();
+  if (sql === null) return null;
+  try {
+    const rows = await sql<{ burned: string | null; value: string | null; n: string }[]>`
+      SELECT COALESCE(SUM(s.tokens_burned), 0)::text AS burned,
+             -- tokens_burned is 1e18-scaled and price_usd_e18 is USD per whole
+             -- token, also 1e18. Their product is 1e36; 1e30 brings it to the
+             -- 6-decimal micro-units every USD figure here uses.
+             -- trunc, because NUMERIC division leaves a fractional part and
+             -- BigInt() throws on a string carrying a decimal point.
+             trunc(COALESCE(SUM(s.tokens_burned * s.price_usd_e18 / 1000000000000000000000000000000), 0))::text AS value,
+             COUNT(*) FILTER (WHERE s.tokens_burned > 0)::text AS n
+      FROM token_stats s
+      JOIN tokens t ON t.token_address = s.token_address
+      WHERE t.chain_id = ${CHAIN_ID}
+    `;
+    const r = rows[0];
+    if (r === undefined) return null;
+    return {
+      tokensBurned: BigInt(r.burned ?? "0"),
+      valueUnits: BigInt(r.value ?? "0"),
+      launches: Number(r.n),
     };
   } catch {
     return null;

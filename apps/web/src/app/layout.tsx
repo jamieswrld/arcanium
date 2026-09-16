@@ -97,6 +97,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 <Link href="/create">Launch</Link>
                 <Link href="/portfolio">Portfolio</Link>
                 <Link href="/activity">Activity</Link>
+                <Link href="/stats">Stats</Link>
                 <Link href="/bridge">Bridge</Link>
                 <Link href="/docs">Docs</Link>
                 <a href="https://x.com/arcaniumtrade" target="_blank" rel="noreferrer">
