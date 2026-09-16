@@ -111,9 +111,16 @@ const ARC: LaunchChain = {
     ...envUrls(process.env["NEXT_PUBLIC_ARC_RPC_URLS"]),
     ...envUrls(process.env["NEXT_PUBLIC_ARC_RPC_URL"]),
     // QuickNode is the preferred primary: measured ~2.4x faster than arc-scan on
-    // a filtered getLogs (287ms vs ~700ms), and it does not rate-limit eth_call,
-    // which arc-scan does under load. Same ~10k-block getLogs ceiling, so the
-    // chunked walk in swapLogs.ts stays correct either way.
+    // a filtered getLogs (287ms vs ~700ms), and it retains noticeably more log
+    // history — it still served ranges arc-scan had already pruned. Same
+    // ~10k-block getLogs ceiling, so the chunked walk in swapLogs.ts stays
+    // correct either way.
+    //
+    // It does rate-limit, despite what an earlier version of this comment said:
+    // sustained bursts come back as -32005, and pruned ranges usually come back
+    // as a bare -32603 "internal error" rather than anything that names pruning.
+    // Both are why the indexer retries a chunk before drawing any conclusion
+    // from a failure.
     "https://rpc.quicknode.mainnet.arc.io",
     // Kept as a fallback. It has been observed both capacity-limited and briefly
     // unreachable, which is precisely why the transport ranks rather than pins.

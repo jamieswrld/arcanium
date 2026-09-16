@@ -321,6 +321,139 @@ async function readMode(arc: PublicClient, distributor: Hex, token: Hex): Promis
   return m === null ? null : Number(m);
 }
 
+/* ----------------------------------------------------------- pruned history */
+
+/**
+ * Arc's public RPCs keep only a few days of logs.
+ *
+ * arc-scan answers 4444 "pruned history unavailable"; QuickNode answers -32014
+ * "requested data not available". Both mean the same thing: that range is gone,
+ * and no amount of retrying brings it back.
+ *
+ * This matters because every walk below deliberately stops on a failed chunk
+ * rather than skipping it. That is right for a transient error and fatal for a
+ * pruned one — an indexer that has fallen further behind than the nodes retain
+ * would stall on the same unreadable chunk forever and never serve anything
+ * again. Which is exactly what a nine-day outage produced.
+ *
+ * These two codes are only a fast path: a node that names pruning outright
+ * saves the retries. The decision itself is made by age, in rangeIsUnreadable.
+ */
+const PRUNED_RPC_CODES = new Set([4444, -32014]);
+
+/**
+ * Attempts per chunk before the range is judged unreadable.
+ *
+ * QuickNode reports a pruned range as -32603 "internal error", which is exactly
+ * what it also returns for a transient fault, so the two cannot be told apart
+ * by code. Retrying separates them by behaviour instead: a transient error
+ * clears within a few attempts, pruned history fails every single time.
+ */
+const CHUNK_ATTEMPTS = 4;
+
+/** First backoff step between attempts; doubles each time. */
+const CHUNK_BACKOFF_MS = 1_000;
+
+/**
+ * Most chunks a single walk may skip before it gives up and stops.
+ *
+ * Without this, an RPC that is wholly down would look like an endlessly pruned
+ * chain and the walk would skip straight past the entire backfill, losing it
+ * for good. The real pruned window is a few hundred thousand blocks, so this
+ * covers it several times over while still bounding the damage.
+ */
+const MAX_PRUNE_SKIPS = 150;
+
+/**
+ * How far behind the head a range must sit before it may be written off.
+ *
+ * Arc's nodes retain a few days, so anything this close to the head must still
+ * be servable: repeated failure there means the node is unwell, and the walk
+ * should stop and retry later rather than skip live data. It also guards
+ * against QuickNode reusing -32014 for "toBlock is past the head".
+ */
+const PRUNE_MARGIN = 50_000n;
+
+/** Every error code on the cause chain — viem wraps the RPC error a few deep. */
+function errorCodes(err: unknown): number[] {
+  const codes: number[] = [];
+  let cur: unknown = err;
+  for (let depth = 0; depth < 8 && typeof cur === "object" && cur !== null; depth++) {
+    const code = (cur as { code?: unknown }).code;
+    if (typeof code === "number") codes.push(code);
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return codes;
+}
+
+/**
+ * Whether an already-retried chunk should be written off as unreadable.
+ *
+ * Age is the only reliable signal. Neither node names pruning dependably —
+ * arc-scan answers 4444, but QuickNode usually just says "internal error", the
+ * same thing it says for a transient fault — so there is nothing in the error
+ * worth branching on once the retries in chunk() have been spent. What is left
+ * is how far back the range sits.
+ */
+function rangeIsUnreadable(end: bigint, head: bigint): boolean {
+  return head - end >= PRUNE_MARGIN;
+}
+
+type Chunk<T> = { readonly ok: true; readonly logs: T } | { readonly ok: false; readonly err: unknown };
+
+/**
+ * Run a chunk request, retrying transient failures and keeping the last error.
+ *
+ * The request is a thunk rather than a promise so it can actually be reissued.
+ * Rate limiting and the node's intermittent internal errors both clear on a
+ * second or third attempt; only a range the node does not have fails all four.
+ */
+async function chunk<T>(request: () => Promise<T>): Promise<Chunk<T>> {
+  let last: unknown = null;
+  for (let attempt = 0; attempt < CHUNK_ATTEMPTS; attempt++) {
+    try {
+      return { ok: true, logs: await request() };
+    } catch (err) {
+      last = err;
+      // A node that names pruning outright will never serve this range, so
+      // there is nothing to wait for and no point spending the retries.
+      if (errorCodes(err).some((code) => PRUNED_RPC_CODES.has(code))) break;
+      if (attempt < CHUNK_ATTEMPTS - 1) await sleep(CHUNK_BACKOFF_MS * 2 ** attempt);
+    }
+  }
+  return { ok: false, err: last };
+}
+
+/**
+ * Decide what a failed chunk means for the walk.
+ *
+ * True carries on to the next chunk, because the range is pruned and stopping
+ * would wedge the stream permanently. False stops the walk, which is still the
+ * right answer for a transient failure that a retry will clear.
+ */
+async function skipIfPruned(
+  cfg: IndexerConfig,
+  blocks: BlockCache,
+  stream: string,
+  end: bigint,
+  head: bigint,
+): Promise<boolean> {
+  if (!rangeIsUnreadable(end, head)) return false;
+  log.warn(
+    { stream, end: end.toString() },
+    "range pruned by the RPC; skipping it — those logs are gone for good",
+  );
+  // Persist the skip when the node can still serve the header, so a restart
+  // does not re-walk the whole gap. Headers outlive logs on some nodes; where
+  // they do not, the cursor simply stays put and the gap is skipped again.
+  const hash = await blocks
+    .get(end)
+    .then((b) => b.hash)
+    .catch(() => null);
+  if (hash !== null) await setCursor(cfg.sql, cfg.chainId, stream, end, hash);
+  return true;
+}
+
 /**
  * All factory generations, one walk.
  *
@@ -336,18 +469,25 @@ async function indexLaunches(cfg: IndexerConfig, blocks: BlockCache): Promise<vo
   if (from > tip) return;
 
   let chunksDone = 0;
+  let skips = 0;
   for (let start = from; start <= tip; start += CHUNK) {
     const end = start + CHUNK - 1n < tip ? start + CHUNK - 1n : tip;
-    const logs = await arc
-      .getLogs({ address: [...cfg.factories], event: launchedEvent, fromBlock: start, toBlock: end })
-      .catch((err: unknown) => {
-        log.warn({ err, start: start.toString(), end: end.toString() }, "launch chunk failed");
-        return null;
-      });
+    const res = await chunk(() =>
+      arc.getLogs({ address: [...cfg.factories], event: launchedEvent, fromBlock: start, toBlock: end }),
+    );
     // Stop the walk rather than skipping the range. Advancing the cursor over a
     // failed chunk loses those launches permanently — the cursor never comes
-    // back, so nothing would ever re-read them.
-    if (logs === null) break;
+    // back, so nothing would ever re-read them. A pruned range is the one
+    // exception: it will never become readable, so stopping there is forever.
+    if (!res.ok) {
+      log.warn({ err: res.err, start: start.toString(), end: end.toString() }, "launch chunk failed");
+      if (skips < MAX_PRUNE_SKIPS && (await skipIfPruned(cfg, blocks, stream, end, tip))) {
+        skips++;
+        continue;
+      }
+      break;
+    }
+    const logs = res.logs;
 
     if (logs.length > 0) {
       await blocks.warm(logs.map((l) => l.blockNumber ?? end));
@@ -450,16 +590,23 @@ async function indexSwaps(cfg: IndexerConfig, blocks: BlockCache): Promise<void>
   if (from > tip) return;
 
   let chunksDone = 0;
+  let skips = 0;
   for (let start = from; start <= tip; start += CHUNK) {
     const end = start + CHUNK - 1n < tip ? start + CHUNK - 1n : tip;
-    const logs = await arc
-      .getLogs({ address: addresses, event: swapEvent, fromBlock: start, toBlock: end })
-      .catch((err: unknown) => {
-        log.warn({ err, start: start.toString(), end: end.toString() }, "swap chunk failed");
-        return null;
-      });
-    // As above: a skipped range is a permanent hole in the trade history.
-    if (logs === null) break;
+    const res = await chunk(() =>
+      arc.getLogs({ address: addresses, event: swapEvent, fromBlock: start, toBlock: end }),
+    );
+    // As above: a skipped range is a permanent hole in the trade history, so
+    // only a pruned one — already permanently lost — is walked past.
+    if (!res.ok) {
+      log.warn({ err: res.err, start: start.toString(), end: end.toString() }, "swap chunk failed");
+      if (skips < MAX_PRUNE_SKIPS && (await skipIfPruned(cfg, blocks, stream, end, head))) {
+        skips++;
+        continue;
+      }
+      break;
+    }
+    const logs = res.logs;
 
     if (logs.length > 0) {
       await blocks.warm(logs.map((l) => l.blockNumber ?? end));
@@ -551,15 +698,21 @@ async function indexFees(cfg: IndexerConfig, blocks: BlockCache): Promise<void> 
   if (from > tip) return;
 
   let chunksDone = 0;
+  let skips = 0;
   for (let start = from; start <= tip; start += CHUNK) {
     const end = start + CHUNK - 1n < tip ? start + CHUNK - 1n : tip;
-    const logs = await arc
-      .getLogs({ address: [...cfg.distributors], event: feesDistributedEvent, fromBlock: start, toBlock: end })
-      .catch((err: unknown) => {
-        log.warn({ err, start: start.toString(), end: end.toString() }, "fee chunk failed");
-        return null;
-      });
-    if (logs === null) break;
+    const res = await chunk(() =>
+      arc.getLogs({ address: [...cfg.distributors], event: feesDistributedEvent, fromBlock: start, toBlock: end }),
+    );
+    if (!res.ok) {
+      log.warn({ err: res.err, start: start.toString(), end: end.toString() }, "fee chunk failed");
+      if (skips < MAX_PRUNE_SKIPS && (await skipIfPruned(cfg, blocks, stream, end, head))) {
+        skips++;
+        continue;
+      }
+      break;
+    }
+    const logs = res.logs;
 
     if (logs.length > 0) {
       await blocks.warm(logs.map((l) => l.blockNumber ?? end));
@@ -637,15 +790,21 @@ async function indexHolders(cfg: IndexerConfig, blocks: BlockCache): Promise<voi
   if (from > tip) return;
 
   let chunksDone = 0;
+  let skips = 0;
   for (let start = from; start <= tip; start += CHUNK) {
     const end = start + CHUNK - 1n < tip ? start + CHUNK - 1n : tip;
-    const logs = await arc
-      .getLogs({ address: addresses, event: transferEvent, fromBlock: start, toBlock: end })
-      .catch((err: unknown) => {
-        log.warn({ err, start: start.toString(), end: end.toString() }, "transfer chunk failed");
-        return null;
-      });
-    if (logs === null) break;
+    const res = await chunk(() =>
+      arc.getLogs({ address: addresses, event: transferEvent, fromBlock: start, toBlock: end }),
+    );
+    if (!res.ok) {
+      log.warn({ err: res.err, start: start.toString(), end: end.toString() }, "transfer chunk failed");
+      if (skips < MAX_PRUNE_SKIPS && (await skipIfPruned(cfg, blocks, stream, end, head))) {
+        skips++;
+        continue;
+      }
+      break;
+    }
+    const logs = res.logs;
 
     if (logs.length > 0) {
       // Net the chunk in memory first: a busy range touches the same wallet many
