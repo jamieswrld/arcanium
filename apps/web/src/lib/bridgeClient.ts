@@ -5,7 +5,7 @@ import {
   type Hex,
 } from "viem";
 import { base, baseSepolia } from "viem/chains";
-import { ARC_PRIMARY_RPCS } from "./chains";
+import { ARC_EXPLORER_NAME, ARC_EXPLORER_URL, ARC_PRIMARY_RPCS } from "./chains";
 
 /**
  * Client-side bridge constants and helpers. All financial math is bigint.
@@ -43,7 +43,7 @@ export const arcTestnet = defineChain({
     },
   },
   blockExplorers: {
-    default: { name: "Arc Explorer", url: process.env["NEXT_PUBLIC_ARC_EXPLORER_URL"] ?? "https://arc-mainnet.cloud.blockscout.com" },
+    default: { name: ARC_EXPLORER_NAME, url: process.env["NEXT_PUBLIC_ARC_EXPLORER_URL"] ?? ARC_EXPLORER_URL },
   },
   // Multicall3 is deployed on Arc mainnet at the canonical address (verified
   // on-chain: 7,618 bytes of code). Declaring it is what lets viem fold a burst

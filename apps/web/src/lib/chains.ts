@@ -118,6 +118,23 @@ function graduationUnits(decimals: number): bigint {
  * briefly unreachable — which is precisely why the transport ranks rather than
  * pins.
  */
+/**
+ * Arc's block explorer.
+ *
+ * Previously arc-mainnet.cloud.blockscout.com, which is a dead vhost — it
+ * answers "default backend - 404" at every path, so every explorer link on the
+ * site and in the public API was broken. arc-scan.org is the only public Arc
+ * explorer: explorer.arc.io sits behind Circle's Cloudflare Access, and no
+ * other host answers at all.
+ *
+ * It is not especially reliable — it has been seen erroring on token pages, and
+ * its RPC arm with it — but an explorer that is sometimes down beats one that is
+ * permanently gone. Declared once here because this URL had drifted into four
+ * separate copies, which is how it went stale unnoticed.
+ */
+export const ARC_EXPLORER_URL = "https://arc-scan.org";
+export const ARC_EXPLORER_NAME = "Arc Scan";
+
 export const ARC_PRIMARY_RPCS: readonly string[] = [
   "https://rpc.quicknode.mainnet.arc.io",
   "https://rpc.arc-scan.org",
@@ -150,7 +167,7 @@ const ARC: LaunchChain = {
     ...ARC_PRIMARY_RPCS,
     ...ARC_FALLBACK_RPCS,
   ],
-  explorer: { name: "Blockscout", url: "https://arc-mainnet.cloud.blockscout.com" },
+  explorer: { name: ARC_EXPLORER_NAME, url: ARC_EXPLORER_URL },
   quote: {
     // Arc's native USDC: a 6-decimal ERC-20 view of the 18-decimal gas token.
     address: "0x3600000000000000000000000000000000000000",

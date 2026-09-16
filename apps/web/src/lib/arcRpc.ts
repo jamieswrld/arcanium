@@ -1,5 +1,5 @@
 import { defineChain, fallback, http, type Chain, type Transport } from "viem";
-import { getChain } from "@/lib/chains";
+import { ARC_EXPLORER_NAME, ARC_EXPLORER_URL, getChain } from "@/lib/chains";
 
 /**
  * Arc RPC endpoints, in preference order. A single provider going down (or
@@ -88,7 +88,7 @@ export const arcChain: Chain = defineChain({
   name: "Arc",
   nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
   rpcUrls: { default: { http: [...DEFAULTS] } },
-  blockExplorers: { default: { name: "Blockscout", url: "https://arc-mainnet.cloud.blockscout.com" } },
+  blockExplorers: { default: { name: ARC_EXPLORER_NAME, url: ARC_EXPLORER_URL } },
   contracts: {
     multicall3: { address: "0xcA11bde05977b3631167028862bE2a173976CA11" },
   },

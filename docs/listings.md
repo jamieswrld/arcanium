@@ -47,10 +47,13 @@ Everything any of these will ask for. All verified on-chain.
 | Launchpad v1 deployed at block | 12,775,070 |
 | Launchpad v4 deployed at block | 12,954,132 |
 
-**Block explorer is an open question.** `arc-mainnet.cloud.blockscout.com` is a
-dead vhost (404 at every path) and `explorer.arc.io` sits behind Circle's
-Cloudflare Access. Every form below asks for an explorer URL, so settle this
-first — see the note at the bottom.
+| Block explorer | `https://arc-scan.org` |
+
+The explorer is the weak link. arc-scan is the only public Arc explorer —
+`arc-mainnet.cloud.blockscout.com` is a dead vhost and `explorer.arc.io` is
+behind Circle's Cloudflare Access — and it has been seen failing to render token
+pages, with its RPC arm erroring at the same time. Submit it anyway; it is what
+exists.
 
 ## Priority order
 
@@ -173,18 +176,18 @@ single-sided v3 position rather than reading quote-side TVL only, and point at
 `pool.liquidity()` being non-zero as the check that distinguishes a locked
 single-sided launch from an actual rug.
 
-## Settle the explorer first
+## The explorer, resolved
 
-Every form asks for one, and ours is broken:
+Settled: `chains.ts` now points at `https://arc-scan.org`, declared once as
+`ARC_EXPLORER_URL` because the old value had drifted into four separate copies
+and went stale in all of them unnoticed.
 
-- `arc-mainnet.cloud.blockscout.com` — dead vhost, 404 at every path. This is
-  what `chains.ts` still points at, so every "view on explorer" link on the site
-  is also broken.
-- `explorer.arc.io` — behind Circle's Cloudflare Access, so not public.
-- `arc-scan.org` — serves a real app at the root but bot-blocks automated
-  requests, so it could not be verified from here. Most likely the right answer;
-  worth confirming in a browser.
+It is not a good explorer. It bot-blocks automated requests, it has been
+observed returning "The explorer could not render this page" on a token page,
+and its RPC arm was erroring at the same moment. But the previous value answered
+`default backend - 404` at every path, permanently, so every explorer link on
+the site and every `links.explorer` in the public API pointed at nothing.
+Sometimes-down beats always-gone.
 
-Whichever it is, update `explorer.url` in `apps/web/src/lib/chains.ts` at the
-same time — the same value feeds the site's links and the `links.explorer` field
-in the public API.
+If a better Arc explorer appears, that one constant is the only thing to
+change.

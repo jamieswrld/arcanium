@@ -76,7 +76,7 @@ export const DOCS: Record<string, ReactNode> = {
         <li>RPC URL: <Mono>https://rpc.blockdaemon.mainnet.arc.io</Mono></li>
         <li>Chain ID: <Mono>5042</Mono></li>
         <li>Currency symbol: <Mono>USDC</Mono></li>
-        <li>Block explorer: <Mono>https://arc-mainnet.cloud.blockscout.com</Mono></li>
+        <li>Block explorer: <Mono>https://arc-scan.org</Mono></li>
       </ul>
       <Callout>On Arc, USDC <em>is</em> the gas token — the same balance pays for gas and for launching or trading. Keep a little on hand.</Callout>
     </>
