@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { formatUnits, type Hex } from "viem";
 import { arcPublicClient, fetchToken, formatAgeLong, formatPriceE18, formatUsdCompact, isHidden } from "@/lib/launchpad";
 import { fetchMarketStats, EMPTY_MARKET } from "@/lib/marketStats";
@@ -57,6 +58,10 @@ export async function generateMetadata({ params }: TokenPageProps): Promise<Meta
   return {
     title: label,
     description: desc,
+    // An address that is not an Arcanium market still renders (cached routes
+    // commit a 200 before notFound() resolves), so keep it out of the index
+    // rather than leaving every 40-hex string a crawlable page.
+    ...(token === null ? { robots: { index: false, follow: false } } : {}),
     openGraph: { title: `${label} — Arcanium`, description: desc },
     twitter: { card: "summary_large_image", title: `${label} — Arcanium`, description: desc },
   };
@@ -67,7 +72,7 @@ export default async function TokenPage({ params }: TokenPageProps) {
   const chain = getChain("arc");
 
   if (!/^0x[0-9a-fA-F]{40}$/.test(address) || isHidden(address)) {
-    return <NotFound />;
+    notFound();
   }
 
   // The indexer knows which factory minted this token, so the lookup is a
@@ -76,7 +81,7 @@ export default async function TokenPage({ params }: TokenPageProps) {
   const detail =
     (await indexedToken(address).catch(() => null)) ??
     (await withTimeout(fetchToken(arcPublicClient(), address as Hex), null, 10_000, "token detail"));
-  if (detail === null) return <NotFound />;
+  if (detail === null) notFound();
 
   const [meta, marketMap] = await Promise.all([
     withTimeout(
@@ -104,7 +109,7 @@ export default async function TokenPage({ params }: TokenPageProps) {
       {/* ---------------------------------------------------------- identity */}
       <section className="panel">
         <div className="tk-head">
-          <Link href="/" className="btn btn-ghost" style={{ padding: "0 8px" }} aria-label="Back to markets">
+          <Link href="/" className="btn btn-ghost" style={{ padding: "0 8px" }} aria-label="Back to tokens">
             ‹
           </Link>
 
@@ -307,23 +312,6 @@ function Change({ pct }: { readonly pct: number | null }) {
     <div className="num" style={{ color: up ? "var(--positive)" : "var(--negative)", fontSize: "0.8rem", fontWeight: 600 }}>
       {up ? "+" : ""}
       {pct.toFixed(2)}% 24h
-    </div>
-  );
-}
-
-function NotFound() {
-  return (
-    <div className="panel">
-      <div className="empty">
-        <h3>Not an Arcanium market</h3>
-        <p className="arch-note" style={{ maxWidth: 360 }}>
-          That address was not launched through Arcanium, so there is no locked-liquidity market
-          for it here.
-        </p>
-        <Link href="/" className="btn btn-primary" style={{ marginTop: "var(--s2)" }}>
-          Browse markets
-        </Link>
-      </div>
     </div>
   );
 }

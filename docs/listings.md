@@ -16,9 +16,55 @@ Two symptoms, one cause each, and neither is a defect in our tokens:
   ~1B tokens and a few dollars of USDC, which reads as an empty pool. Verified
   on-chain: `pool.liquidity()` is non-zero and identical across launches, and
   the position is locked.
+- **fomo: "Unsellable token — cannot be sold after buying and is likely a
+  scam."** Also a false positive, and the most damaging one, because it accuses
+  the token of being a honeypot rather than merely being thin.
 
 Neither is fixable by changing our contracts. Both are fixed by the platforms
 having Arc's addresses.
+
+## Disproving the honeypot claim
+
+The claim is testable, and it fails. A sell can be simulated against live
+mainnet state with no funds and no transaction — override a balance and an
+allowance, then ask the router to sell:
+
+```sh
+TOKEN=0xEbB871bc394E83008120Fab3c9ed5773642A29A1   # ARCANIUM
+ROUTER=0x4C91c54E60B59b1F949Af57064EA70bD73434720  # SwapRouter02
+USDC=0x3600000000000000000000000000000000000000
+TESTER=0x000000000000000000000000000000000000bEEF
+
+BAL=$(cast index address $TESTER 0)                      # ERC20 _balances
+ALLOW=$(cast index address $ROUTER $(cast index address $TESTER 1))
+
+cast call $ROUTER \
+  "exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))(uint256)" \
+  "($TOKEN,$USDC,10000,$TESTER,1000000000000000000000,0,0)" \
+  --from $TESTER \
+  --override-state-diff "$TOKEN:$BAL:$(cast to-uint256 1000000000000000000000),$TOKEN:$ALLOW:$(cast to-uint256 $(cast max-uint))" \
+  --rpc-url https://rpc.quicknode.mainnet.arc.io
+```
+
+Selling 1,000 ARCANIUM returns `98896` — 0.098896 USDC — so the sell path
+executes end to end. A direct `transfer` to the pool also succeeds, which is the
+specific leg a honeypot blocks.
+
+Why the scanners get it wrong: a honeypot detector buys and then sells inside
+one simulated transaction. If it cannot build the *sell* route it reports
+"unsellable" rather than "unsupported", so an unknown DEX deployment and a real
+honeypot produce the same verdict. Arc's Uniswap sits at non-canonical
+addresses, so that is exactly what happens here — the same root cause as gmgn's
+"No Available Router", wearing a much worse label.
+
+What actually helps:
+
+- Get Arc's Uniswap addresses into their router tables (the data pack below).
+- For the launch tokens specifically, point out that they are plain OpenZeppelin
+  ERC-20s with no owner, no mint, no blacklist and no pause. On a v3 launch the
+  only non-standard code in `_update` is a swap tax that is **zero on every
+  token launched to date** and is capped at 9% by the compiler where it is set.
+- Nothing in the token can prevent a sale. There is no address that can.
 
 ## The data pack
 

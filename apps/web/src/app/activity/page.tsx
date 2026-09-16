@@ -78,7 +78,7 @@ export default async function ActivityPage({ searchParams }: ActivityProps) {
                 : "No events of that type in this window."}
             </p>
             <Link href="/" className="btn btn-secondary" style={{ marginTop: "var(--s2)" }}>
-              Browse markets
+              Browse tokens
             </Link>
           </div>
         </div>
