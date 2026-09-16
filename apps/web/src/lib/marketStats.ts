@@ -126,3 +126,16 @@ export async function fetchMarketStats(
 
   return out;
 }
+
+/**
+ * Re-scale a quote-asset amount to 6-decimal USD micro-units.
+ *
+ * Every USD figure in the UI is carried as micro-units so it stays an exact
+ * integer; a quote asset with different decimals has to be brought onto that
+ * scale before it can be compared or formatted.
+ */
+export function scaleToUsdMicro(raw: bigint, decimals: number): bigint {
+  if (decimals === 6) return raw;
+  if (decimals > 6) return raw / 10n ** BigInt(decimals - 6);
+  return raw * 10n ** BigInt(6 - decimals);
+}

@@ -265,6 +265,17 @@ table { border-collapse: separate; border-spacing: 0; }
   transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
 }
 .topnav a:hover { background: var(--surface-1); color: var(--text-primary); }
+
+/* The launch button is the one nav item that is an action, not a place, so it
+   sits with the wallet rather than in the link row. Below 860px the bottom bar
+   carries Launch as a peer destination and this is hidden, rather than
+   competing with the wallet for a phone's topbar. */
+.nav-launch {
+  height: var(--h-sm);
+  padding: 0 14px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .topnav a[aria-current="page"] { background: var(--surface-2); color: var(--text-primary); font-weight: 600; }
 
 .main {
@@ -665,6 +676,7 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
   :root { --gutter: 14px; --topbar-h: 52px; }
 
   .topnav { display: none; }
+  .nav-launch { display: none; }
 
   .botnav {
     position: fixed;
@@ -1065,4 +1077,54 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
     border-bottom: 0;
     padding-bottom: env(safe-area-inset-bottom);
   }
+}
+
+/* -------------------------------------------------------- king of the hill ---
+   The market closest to graduating, given room above the table. Sized as a
+   wide strip rather than a hero slab: it should read as the top of the list,
+   not as an advert standing between the visitor and the markets.            */
+
+.koth { padding: var(--s3) var(--s4); }
+
+.koth-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  margin-bottom: var(--s3);
+}
+
+.koth-body {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(0, 2fr) minmax(160px, 1fr) auto;
+  align-items: center;
+  gap: var(--s4);
+}
+
+.koth-ident { min-width: 0; }
+.koth-symbol { font-size: 1.05rem; }
+
+.koth-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s3);
+  margin: 0;
+}
+
+.koth-figure { min-width: 0; }
+.koth-figure dt { margin-bottom: 2px; }
+
+.koth-grad { display: grid; gap: 5px; min-width: 0; }
+.koth-cta { white-space: nowrap; }
+
+@media (max-width: 1080px) {
+  .koth-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .koth-grad { grid-column: 1 / -1; }
+  .koth-cta { grid-column: 1 / -1; justify-self: start; }
+}
+
+@media (max-width: 620px) {
+  .koth-body { grid-template-columns: minmax(0, 1fr); }
+  .koth-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .koth-cta { justify-self: stretch; text-align: center; }
 }

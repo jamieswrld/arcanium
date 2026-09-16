@@ -90,7 +90,6 @@ export function WalletButton() {
     return (
       <>
         <button type="button" className="btn btn-primary wallet-connect" onClick={() => setPickerOpen(true)}>
-          <PlugIcon />
           <span className="wallet-connect-label">Connect wallet</span>
         </button>
         <ConnectModal open={pickerOpen} onClose={() => setPickerOpen(false)} />
@@ -213,15 +212,6 @@ const I = {
   "aria-hidden": true as const,
 };
 
-function PlugIcon() {
-  return (
-    <svg {...I}>
-      <path d="M9 3v6M15 3v6" />
-      <path d="M6 9h12v3a6 6 0 0 1-12 0z" />
-      <path d="M12 18v3" />
-    </svg>
-  );
-}
 function CopyIcon() {
   return (
     <svg {...I}>

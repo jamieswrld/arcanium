@@ -13,13 +13,20 @@ import { usePathname } from "next/navigation";
  * trading surface the primary destinations must stay one thumb-tap away.
  *
  * Bridge is deliberately absent from both. It is a funding utility, not part of
- * the launch/trade loop, so it lives in the footer and on Create where a user
- * actually discovers they need USDC.
+ * the launch/trade loop, so it lives in the footer and on the launch form where
+ * a user actually discovers they need USDC.
+ *
+ * Launching is the one destination that is not a peer of the others: it is the
+ * thing the product exists for, and it is what a visitor with an idea came to
+ * do. So it leaves the link row and becomes a button — see LaunchButton. It is
+ * labelled "Launch" rather than "Create" to match the form's own CTA, and
+ * because a launchpad launches.
  */
+
+const LAUNCH = { href: "/create", label: "Launch", icon: LaunchIcon } as const;
 
 const DESTINATIONS = [
   { href: "/", label: "Explore", icon: ExploreIcon },
-  { href: "/create", label: "Create", icon: CreateIcon },
   { href: "/portfolio", label: "Portfolio", icon: PortfolioIcon },
   { href: "/activity", label: "Activity", icon: ActivityIcon },
   { href: "/docs", label: "Docs", icon: DocsIcon },
@@ -47,11 +54,26 @@ export function TopNav() {
   );
 }
 
+/**
+ * The primary action, as a button rather than a link.
+ *
+ * Sits in the topbar beside the wallet, where the eye already goes for the
+ * things you *do* rather than the places you go.
+ */
+export function LaunchButton() {
+  return (
+    <Link href={LAUNCH.href} className="btn btn-primary nav-launch">
+      {LAUNCH.label}
+    </Link>
+  );
+}
+
 /** Mobile only (CSS-gated). Docs is dropped here — five targets is too many for
- *  a thumb bar, and Docs is the least urgent on a phone. */
+ *  a thumb bar, and Docs is the least urgent on a phone. Launch is folded back
+ *  in as a peer, since a phone has no room for a separate button. */
 export function BottomNav() {
   const isCurrent = useIsCurrent();
-  const items = DESTINATIONS.filter((d) => d.href !== "/docs");
+  const items = [...DESTINATIONS.filter((d) => d.href !== "/docs"), LAUNCH];
   return (
     <nav className="botnav" aria-label="Primary (mobile)">
       {items.map((d) => {
@@ -87,7 +109,7 @@ function ExploreIcon() {
     </svg>
   );
 }
-function CreateIcon() {
+function LaunchIcon() {
   return (
     <svg {...S}>
       <path d="M12 5v14M5 12h14" />

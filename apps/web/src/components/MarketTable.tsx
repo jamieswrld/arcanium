@@ -2,7 +2,7 @@ import Link from "next/link";
 import { TokenAvatar } from "@/components/TokenAvatar";
 import { formatAge, formatPriceE18, formatUsdCompact, type LaunchpadToken } from "@/lib/launchpad";
 import { getChain } from "@/lib/chains";
-import { EMPTY_MARKET, type MarketWindow, type TokenMarket } from "@/lib/marketStats";
+import { EMPTY_MARKET, scaleToUsdMicro, type MarketWindow, type TokenMarket } from "@/lib/marketStats";
 import { ArcaneWandIcon, DiviumBillsIcon } from "@/components/ModeIcons";
 
 /**
@@ -156,8 +156,3 @@ function Dash() {
   );
 }
 
-function scaleToUsdMicro(raw: bigint, decimals: number): bigint {
-  if (decimals === 6) return raw;
-  if (decimals > 6) return raw / 10n ** BigInt(decimals - 6);
-  return raw * 10n ** BigInt(6 - decimals);
-}

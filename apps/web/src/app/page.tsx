@@ -9,6 +9,7 @@ import { getChain } from "@/lib/chains";
 import { NetworkStatusNotice } from "@/components/NetworkStatusNotice";
 import { fetchTokenImages } from "@/lib/tokenImages";
 import { MarketTable } from "@/components/MarketTable";
+import { KingOfTheHill } from "@/components/KingOfTheHill";
 import { ArcPulse } from "@/components/ArcPulse";
 import { Sk } from "@/components/Skeletons";
 import { withTimeout } from "@/lib/withTimeout";
@@ -224,6 +225,12 @@ async function Markets({
         <p className="arch-note" style={{ marginBottom: "var(--s2)", color: "var(--warning)" }}>
           Arc is not responding — showing the last confirmed data. Nothing has been lost.
         </p>
+      ) : null}
+      {/* Only on the default view. Under an explicit sort or a search the user
+          has said what they want to see, and a featured market would be the one
+          thing on the page nobody asked for. */}
+      {q === "" && sort === "trending" ? (
+        <KingOfTheHill tokens={tokens} market={market} images={images} />
       ) : null}
       <div className="panel">
         <MarketTable tokens={tokens} images={images} market={market} window={window} />

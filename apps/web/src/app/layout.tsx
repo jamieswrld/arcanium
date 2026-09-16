@@ -8,7 +8,7 @@ import { Providers } from "./providers";
 import { WalletButton } from "@/components/WalletButton";
 import { VersionGuard } from "@/components/VersionGuard";
 import { SearchCommand } from "@/components/SearchCommand";
-import { TopNav, BottomNav } from "@/components/Nav";
+import { TopNav, BottomNav, LaunchButton } from "@/components/Nav";
 import { NetworkBadge } from "@/components/NetworkBadge";
 
 /**
@@ -76,6 +76,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                   <SearchCommand />
                 </Suspense>
                 <NetworkBadge />
+                <LaunchButton />
                 <WalletButton />
               </div>
             </header>
@@ -93,7 +94,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 }}
               >
                 <Link href="/">Explore</Link>
-                <Link href="/create">Create</Link>
+                <Link href="/create">Launch</Link>
                 <Link href="/portfolio">Portfolio</Link>
                 <Link href="/activity">Activity</Link>
                 <Link href="/bridge">Bridge</Link>
