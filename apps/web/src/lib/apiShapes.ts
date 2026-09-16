@@ -32,6 +32,8 @@ export interface MarketJson {
   readonly volume24h: { readonly units: string; readonly decimals: number } | null;
   readonly change24hPct: number | null;
   readonly trades24h: number | null;
+  readonly holders: number | null;
+  readonly launchedAt: string | null;
   readonly rewardMode: "standard" | "divium" | "arcane" | null;
   readonly graduated: boolean;
   readonly graduation: {
@@ -76,6 +78,12 @@ export function marketJson(t: LaunchpadToken, stat?: IndexedMarketStat | undefin
     volume24h: stat === undefined ? null : usd(stat.volume24hUnits),
     change24hPct: stat?.changePct ?? null,
     trades24h: trades,
+    // Wallets holding a non-zero balance. Null means not counted, which is not
+    // the same claim as zero holders.
+    holders: t.holderCount,
+    // ISO 8601, UTC. Clients derive age themselves rather than trusting a
+    // server-rendered "3 days ago" that is wrong the moment it is cached.
+    launchedAt: t.launchTime === null ? null : t.launchTime.toISOString(),
     rewardMode: t.mode === null ? null : (MODES[t.mode] ?? null),
     graduated: t.graduated,
     graduation: { target: usd(toUsdMicro(target, chain.quote.decimals)), progressPct: progress },

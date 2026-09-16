@@ -118,6 +118,9 @@ async function fetchTokenFrom(
     // only. It never unlocks liquidity or changes the market.
     graduated: quoteBalance >= chain.graduationUnits,
     mode: null,
+    // Not available from a chain read; see the note in launchpad.ts.
+    launchTime: null,
+    holderCount: null,
   };
 }
 

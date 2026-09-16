@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { TokenAvatar } from "@/components/TokenAvatar";
-import { formatPriceE18, formatUsdCompact, type LaunchpadToken } from "@/lib/launchpad";
+import { formatAge, formatPriceE18, formatUsdCompact, type LaunchpadToken } from "@/lib/launchpad";
 import { getChain } from "@/lib/chains";
 import { EMPTY_MARKET, type MarketWindow, type TokenMarket } from "@/lib/marketStats";
 import { ArcaneWandIcon, DiviumBillsIcon } from "@/components/ModeIcons";
@@ -46,6 +46,7 @@ export function MarketTable({ tokens, images, market, window }: MarketTableProps
             <th scope="col">Market cap</th>
             <th scope="col">{wl} volume</th>
             <th scope="col">Liquidity</th>
+            <th scope="col">Holders</th>
             <th scope="col">Graduation</th>
           </tr>
         </thead>
@@ -55,6 +56,7 @@ export function MarketTable({ tokens, images, market, window }: MarketTableProps
             const target = chain.graduationUnits;
             const pct = t.quoteBalance >= target ? 100 : Number((t.quoteBalance * 100n) / target);
             const liq = scaleToUsdMicro(t.quoteBalance, chain.quote.decimals);
+            const age = formatAge(t.launchTime);
 
             return (
               <tr key={t.token}>
@@ -68,6 +70,7 @@ export function MarketTable({ tokens, images, market, window }: MarketTableProps
                       <span className="ident-name">{t.symbol}</span>
                       <span className="ident-sub" style={{ display: "block" }}>
                         {t.name}
+                        {age === null ? null : <span style={{ color: "var(--text-muted)" }}> · {age}</span>}
                       </span>
                     </span>
                     {t.mode === 1 || t.mode === 2 ? (
@@ -104,6 +107,10 @@ export function MarketTable({ tokens, images, market, window }: MarketTableProps
 
                 <td data-label="Liquidity" className="num" style={{ color: "var(--text-secondary)" }}>
                   {formatUsdCompact(liq)}
+                </td>
+
+                <td data-label="Holders" className="num" style={{ color: "var(--text-secondary)" }}>
+                  {t.holderCount === null ? <Dash /> : t.holderCount.toLocaleString("en-US")}
                 </td>
 
                 <td data-label="Graduation">

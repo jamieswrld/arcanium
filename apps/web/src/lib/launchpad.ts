@@ -235,6 +235,37 @@ export function marketCapUsdUnits(priceE18: bigint): bigint {
 }
 
 /** Compact USD from 6-decimal units: $3,032 · $18.4K · $1.2M — display only. */
+/**
+ * Compact age since a launch, e.g. "42s", "9m", "5h", "13d".
+ *
+ * Terse on purpose: it sits beside a token name in a dense row, where
+ * "13 days ago" would crowd out the name. Returns null when the launch time is
+ * unknown, so callers render a dash rather than inventing an age.
+ *
+ * Rendered on the server, so it is only as fresh as the page's revalidation —
+ * which is why the unit is never finer than seconds.
+ */
+export function formatAge(from: Date | null, now: number = Date.now()): string | null {
+  if (from === null) return null;
+  const sec = Math.max(0, (now - from.getTime()) / 1000);
+  if (sec < 60) return `${Math.floor(sec)}s`;
+  if (sec < 3_600) return `${Math.floor(sec / 60)}m`;
+  if (sec < 86_400) return `${Math.floor(sec / 3_600)}h`;
+  return `${Math.floor(sec / 86_400)}d`;
+}
+
+/** Long-form age for prose, e.g. "13 days ago". Null when unknown. */
+export function formatAgeLong(from: Date | null, now: number = Date.now()): string | null {
+  if (from === null) return null;
+  const sec = Math.max(0, (now - from.getTime()) / 1000);
+  const [n, unit] =
+    sec < 60 ? [Math.floor(sec), "second"]
+    : sec < 3_600 ? [Math.floor(sec / 60), "minute"]
+    : sec < 86_400 ? [Math.floor(sec / 3_600), "hour"]
+    : [Math.floor(sec / 86_400), "day"];
+  return `${n} ${unit}${n === 1 ? "" : "s"} ago`;
+}
+
 export function formatUsdCompact(units: bigint): string {
   const cents = Number(units) / 1e6; // display-only float
   if (cents >= 1e9) return `$${(cents / 1e9).toFixed(2)}B`;
@@ -274,6 +305,22 @@ export interface LaunchpadToken {
   readonly graduated: boolean;
   /** 0 standard · 1 divium · 2 arcane · null when not a mode-aware launch. */
   readonly mode: number | null;
+  /**
+   * When the token launched, or null when only the chain was asked.
+   *
+   * Age is a risk signal on a launchpad — a market minutes old is a different
+   * proposition from one that has traded for a month — so it belongs next to
+   * the price rather than buried on a detail page. The chain path leaves it
+   * null because recovering it means reading the launch log.
+   */
+  readonly launchTime: Date | null;
+  /**
+   * Wallets holding a non-zero balance, or null when not known.
+   *
+   * Null is deliberately not zero: "the indexer has not counted" and "nobody
+   * holds this" mean opposite things to someone deciding whether to buy.
+   */
+  readonly holderCount: number | null;
 }
 
 /** Mode lookups are cached separately and never block a listing: a token's
@@ -419,5 +466,10 @@ async function fetchTokenFrom(client: PublicClient, factory: Hex, token: Hex): P
     quoteBalance,
     graduated,
     mode: null,
+    // Chain reads do not carry these: launch time lives in the launch log and
+    // a holder count needs the transfer history. Null, not zero — the caller
+    // renders "—" rather than claiming nobody holds it.
+    launchTime: null,
+    holderCount: null,
   };
 }

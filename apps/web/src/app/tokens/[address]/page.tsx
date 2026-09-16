@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { formatUnits, type Hex } from "viem";
-import { arcPublicClient, fetchToken, formatPriceE18, formatUsdCompact, isHidden } from "@/lib/launchpad";
+import { arcPublicClient, fetchToken, formatAgeLong, formatPriceE18, formatUsdCompact, isHidden } from "@/lib/launchpad";
 import { fetchMarketStats, EMPTY_MARKET } from "@/lib/marketStats";
 import { explorerAddress, getChain } from "@/lib/chains";
 import { fetchTokenMeta } from "@/lib/tokenImages";
@@ -63,6 +63,7 @@ export default async function TokenPage({ params }: TokenPageProps) {
   const tokenIsToken0 = detail.token.toLowerCase() < detail.pairToken.toLowerCase();
   const target = chain.graduationUnits;
   const pct = detail.quoteBalance >= target ? 100 : Number((detail.quoteBalance * 100n) / target);
+  const launched = formatAgeLong(detail.launchTime);
   const liqUnits =
     chain.quote.decimals >= 6
       ? detail.quoteBalance / 10n ** BigInt(chain.quote.decimals - 6)
@@ -99,6 +100,18 @@ export default async function TokenPage({ params }: TokenPageProps) {
               <span style={{ color: "var(--text-muted)" }}>
                 dev {detail.creator.slice(0, 6)}…{detail.creator.slice(-4)}
               </span>
+              {/* Age and holder count are the two facts that most change how a
+                  market reads, and both were previously only discoverable by
+                  digging. A launch minutes old with four holders is a very
+                  different proposition from one that has traded for a month. */}
+              {launched === null ? null : (
+                <span style={{ color: "var(--text-muted)" }}>launched {launched}</span>
+              )}
+              {detail.holderCount === null ? null : (
+                <span style={{ color: "var(--text-muted)" }}>
+                  {detail.holderCount.toLocaleString("en-US")} holder{detail.holderCount === 1 ? "" : "s"}
+                </span>
+              )}
             </div>
 
             <TokenSocials meta={meta} />

@@ -59,12 +59,46 @@ const CHUNK = 9_000n;
 const MAX_CHUNKS = 40;
 const POLL_MS = 2_000; // fast: new trades and price land within ~a block or two
 
+/**
+ * Chart timeframes.
+ *
+ * Every `sec` here is an interval the indexer actually buckets, so each one can
+ * be served from stored candles instead of re-derived in the browser. 6h is
+ * absent because the candles table constrains interval_seconds to a fixed set
+ * and 21600 is not in it; 4h covers the same ground without a migration.
+ *
+ * "All" has no fixed bucket. It picks the coarsest interval that still shows
+ * the token's whole life in a readable number of bars, which is the view that
+ * actually answers "what has this thing done since launch".
+ */
 const INTERVALS = [
   { key: "1m", sec: 60 },
   { key: "5m", sec: 300 },
   { key: "15m", sec: 900 },
   { key: "1h", sec: 3600 },
+  { key: "4h", sec: 14_400 },
+  { key: "1D", sec: 86_400 },
+  { key: "All", sec: 0 },
 ] as const;
+
+/** Interval keys the market route accepts, by bucket length. */
+const INTERVAL_PARAM: Record<number, string> = {
+  60: "1m",
+  300: "5m",
+  900: "15m",
+  3600: "1h",
+  14_400: "4h",
+  86_400: "1d",
+};
+
+/** Bucket length for "All": the coarsest that keeps the whole span under ~250
+ *  bars, so an hour-old token and a year-old one both read clearly. */
+function allInterval(spanSec: number): number {
+  for (const sec of [60, 300, 900, 3600, 14_400]) {
+    if (spanSec / sec <= 250) return sec;
+  }
+  return 86_400;
+}
 
 /** Bucket swap points into OHLC candles; the live spot extends the last bar so
  *  the chart ticks between trades. Floats are display-only. */
@@ -142,6 +176,72 @@ async function fetchIndexedHistory(token: Hex): Promise<SwapPoint[] | null> {
   }
 }
 
+interface IndexedCandleJson {
+  readonly time: string;
+  readonly open: string;
+  readonly high: string;
+  readonly low: string;
+  readonly close: string;
+  readonly volumeUsdE6: string;
+}
+
+/**
+ * Stored candles for one interval, or null when the indexer cannot answer.
+ *
+ * This is what makes the long timeframes honest. Bucketing in the browser can
+ * only ever see the trades that were fetched, so a busy token's daily view
+ * would quietly stop at the 2,000-trade cap and show a partial history as if
+ * it were the whole one. The indexer keeps every bucket from launch.
+ */
+async function fetchIndexedCandles(token: Hex, intervalSec: number): Promise<Candle[] | null> {
+  const key = INTERVAL_PARAM[intervalSec];
+  if (key === undefined) return null;
+  try {
+    // trades=1 because only the candles are wanted here; the trade feed is
+    // already loaded once and does not need refetching per timeframe.
+    const res = await fetch(`/api/tokens/${token}/market?interval=${key}&trades=1`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { candles?: IndexedCandleJson[] };
+    if (body.candles === undefined) return null;
+    return body.candles.map((c) => ({
+      time: Math.floor(new Date(c.time).getTime() / 1000),
+      open: Number(BigInt(c.open)) / 1e18,
+      high: Number(BigInt(c.high)) / 1e18,
+      low: Number(BigInt(c.low)) / 1e18,
+      close: Number(BigInt(c.close)) / 1e18,
+      volume: Number(BigInt(c.volumeUsdE6)) / 1e6,
+    }));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Extend the newest bar with the live spot price.
+ *
+ * Stored candles stop at whatever the indexer has written, which is a few
+ * seconds behind at best. Without this the chart would sit frozen between
+ * trades even while the price ticks, which reads as a broken chart.
+ */
+function withSpot(bars: readonly Candle[], spotE18: bigint | null, intervalSec: number): Candle[] {
+  const out = [...bars];
+  if (spotE18 === null) return out;
+  const price = Number(spotE18) / 1e18;
+  const now = Math.floor(Date.now() / 1000 / intervalSec) * intervalSec;
+  const last = out[out.length - 1];
+  if (last !== undefined && last.time === now) {
+    out[out.length - 1] = {
+      ...last,
+      high: Math.max(last.high, price),
+      low: Math.min(last.low, price),
+      close: price,
+    };
+  } else if (last === undefined || now > last.time) {
+    out.push({ time: now, open: last?.close ?? price, high: price, low: price, close: price, volume: 0 });
+  }
+  return out;
+}
+
 /** Top holders from the indexer, or null when it cannot answer. */
 async function fetchIndexedHolders(token: Hex): Promise<Array<{ wallet: Hex; balance: bigint }> | null> {
   try {
@@ -170,6 +270,9 @@ export function MarketPanels({ pool, token, pairToken, symbol, creator, chainKey
   const [interval, setIntervalKey] = useState<(typeof INTERVALS)[number]>(INTERVALS[1]);
   const [holders, setHolders] = useState<Array<{ wallet: Hex; balance: bigint }> | null>(null);
   const [failed, setFailed] = useState(false);
+  // Stored candles per bucket length. A null value means "asked, nothing there",
+  // which is different from "not asked yet" and stops the fetch retrying.
+  const [barsBySec, setBarsBySec] = useState<Record<number, Candle[] | null>>({});
 
   const tokenIsToken0 = token.toLowerCase() < pairToken.toLowerCase();
 
@@ -332,7 +435,43 @@ export function MarketPanels({ pool, token, pairToken, symbol, creator, chainKey
   }, [arcPublic, tab, holders, token, pool, creator]);
 
   const s = swaps ?? [];
-  const candles = useMemo(() => toCandles(s, spotE18, interval.sec), [s, spotE18, interval.sec]);
+
+  // "All" sizes its buckets from how long the token has actually been trading.
+  const spanSec = useMemo(() => {
+    if (s.length === 0) return 0;
+    let lo = Number.POSITIVE_INFINITY;
+    let hi = 0;
+    for (const p of s) {
+      if (p.timeMs < lo) lo = p.timeMs;
+      if (p.timeMs > hi) hi = p.timeMs;
+    }
+    return Math.max(0, (hi - lo) / 1000);
+  }, [s]);
+  const effectiveSec = interval.sec === 0 ? allInterval(spanSec) : interval.sec;
+
+  // Pull stored candles for whichever timeframe is showing. Each bucket length
+  // is fetched once; the client-side bucketing below stays as the fallback for
+  // tokens the indexer has nothing for.
+  useEffect(() => {
+    if (tab !== "chart" || effectiveSec in barsBySec) return undefined;
+    let cancelled = false;
+    void (async () => {
+      const bars = await fetchIndexedCandles(token, effectiveSec);
+      if (!cancelled) setBarsBySec((m) => ({ ...m, [effectiveSec]: bars }));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, effectiveSec, token, barsBySec]);
+
+  const stored = barsBySec[effectiveSec] ?? null;
+  const candles = useMemo(
+    () =>
+      stored !== null && stored.length > 0
+        ? withSpot(stored, spotE18, effectiveSec)
+        : toCandles(s, spotE18, effectiveSec),
+    [stored, s, spotE18, effectiveSec],
+  );
 
   if (swaps === null && spotE18 === null && !failed) {
     return <div className="arch-skeleton" style={{ height: 380 }} />;

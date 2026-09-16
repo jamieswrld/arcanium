@@ -112,6 +112,8 @@ interface TokenRow {
   readonly price_usd_e18: string | null;
   readonly market_cap_usd_e6: string | null;
   readonly quote_balance: string | null;
+  readonly launch_time: Date;
+  readonly holder_count: number | null;
 }
 
 /**
@@ -129,8 +131,13 @@ export async function indexedTokens(): Promise<LaunchpadToken[] | null> {
     const rows = await sql<TokenRow[]>`
       SELECT
         t.token_address, t.name, t.symbol, t.creator, t.pair_token, t.pool_address,
-        t.position_id, t.graduated, t.mode,
-        s.price_usd_e18, s.market_cap_usd_e6, s.quote_balance
+        t.position_id, t.graduated, t.mode, t.launch_time,
+        s.price_usd_e18, s.market_cap_usd_e6, s.quote_balance,
+        -- Counted per row rather than joined-and-grouped: with launches in the
+        -- dozens this is trivial, and it keeps the stats LEFT JOIN above from
+        -- fanning out across every holder.
+        (SELECT COUNT(*)::int FROM holders h
+          WHERE h.token_address = t.token_address AND h.balance > 0) AS holder_count
       FROM tokens t
       LEFT JOIN token_stats s ON s.token_address = t.token_address
       WHERE t.chain_id = ${CHAIN_ID}
@@ -155,6 +162,8 @@ export async function indexedTokens(): Promise<LaunchpadToken[] | null> {
         quoteBalance: BigInt(r.quote_balance ?? "0"),
         graduated: r.graduated,
         mode: r.mode,
+        launchTime: r.launch_time,
+        holderCount: r.holder_count,
       }));
   } catch {
     return null;
@@ -176,8 +185,13 @@ export async function indexedToken(address: string): Promise<LaunchpadToken | nu
     const rows = await sql<TokenRow[]>`
       SELECT
         t.token_address, t.name, t.symbol, t.creator, t.pair_token, t.pool_address,
-        t.position_id, t.graduated, t.mode,
-        s.price_usd_e18, s.market_cap_usd_e6, s.quote_balance
+        t.position_id, t.graduated, t.mode, t.launch_time,
+        s.price_usd_e18, s.market_cap_usd_e6, s.quote_balance,
+        -- Counted per row rather than joined-and-grouped: with launches in the
+        -- dozens this is trivial, and it keeps the stats LEFT JOIN above from
+        -- fanning out across every holder.
+        (SELECT COUNT(*)::int FROM holders h
+          WHERE h.token_address = t.token_address AND h.balance > 0) AS holder_count
       FROM tokens t
       LEFT JOIN token_stats s ON s.token_address = t.token_address
       WHERE t.token_address = ${Buffer.from(address.slice(2), "hex")} AND t.chain_id = ${CHAIN_ID}
@@ -197,6 +211,8 @@ export async function indexedToken(address: string): Promise<LaunchpadToken | nu
       quoteBalance: BigInt(r.quote_balance ?? "0"),
       graduated: r.graduated,
       mode: r.mode,
+      launchTime: r.launch_time,
+      holderCount: r.holder_count,
     };
   } catch {
     return null;
