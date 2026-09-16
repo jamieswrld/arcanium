@@ -1343,3 +1343,16 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
   .docs-nav-section { margin-bottom: 0; min-width: max-content; }
   .docs-content { max-width: none; }
 }
+
+/* ------------------------------------------------------------ position ---
+   The connected wallet's stake in the token being viewed. Sits in the right
+   rail under the trade panel, so it is sized to that column, not the page. */
+
+.pos { padding: var(--s3) var(--s4); }
+
+.pos-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s3) var(--s4);
+  margin-top: var(--s3);
+}

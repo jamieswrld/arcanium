@@ -11,6 +11,7 @@ import { MarketPanels } from "@/components/MarketPanels";
 import { TokenAvatar } from "@/components/TokenAvatar";
 import { LivePrice } from "@/components/LivePrice";
 import { CopyButton } from "@/components/CopyButton";
+import { TokenPosition } from "@/components/TokenPosition";
 import { CreatorFees } from "@/components/CreatorFees";
 import { TokenMode } from "@/components/TokenMode";
 import { TokenSocials } from "@/components/TokenSocials";
@@ -221,6 +222,11 @@ export default async function TokenPage({ params }: TokenPageProps) {
               />
             </div>
           </section>
+
+          {/* Directly under the trade panel: the question "how am I doing here"
+              is asked while deciding whether to trade again, not later. Renders
+              nothing at all for a wallet with no stake in this market. */}
+          <TokenPosition token={detail.token} symbol={detail.symbol} priceE18={detail.priceE18} />
 
           <TokenMode token={detail.token} chainKey="arc" />
 
