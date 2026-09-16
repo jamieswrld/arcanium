@@ -1,10 +1,18 @@
 import type { ReactNode } from "react";
 
 /** Deployed mainnet contract addresses (Arc chain 5042). */
+/**
+ * Deployed mainnet addresses (Arc chain 5042), read back from chain.
+ *
+ * These had drifted: the factory named here was the v3 generation and the
+ * distributor an older one still, long after launches moved to v4. Published
+ * documentation is the worst place for a stale address — anyone integrating
+ * against it would wire themselves to a superseded contract.
+ */
 const A = {
-  factory: "0xe2aa88806872c2a02a4ab439584d457002983600",
+  factory: "0x8e5732b520a318251a702a680aa7f123fb92af52",
   liquidityVault: "0x94e8335bed5585f3f43899505b5e5968fa11185e",
-  distributor: "0xafeb72b52159a95375ac271053ee2be9e8c0cbee",
+  distributor: "0x7c148b6a581e32ccb6fff7bd59af4250d5ec1ebc",
   graduation: "0xc73d4b6bd63f0ee69514768870d74548f4d12bc6",
   arcUsdc: "0x3600000000000000000000000000000000000000",
 } as const;
