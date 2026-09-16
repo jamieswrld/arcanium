@@ -65,6 +65,26 @@ const CHUNKS_24H = 18;
 const CONCURRENCY = 6;
 const TTL_MS = 60_000;
 
+/** Long enough for 18 chunks on a healthy RPC, short enough to leave the
+ *  caller room to fall back before its own deadline. */
+const BUILD_DEADLINE_MS = 8_000;
+
+function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("swap window timed out")), ms);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e: unknown) => {
+        clearTimeout(timer);
+        reject(e instanceof Error ? e : new Error(String(e)));
+      },
+    );
+  });
+}
+
 export interface SwapWindow {
   readonly tip: bigint;
   readonly logs: readonly SwapLog[];
@@ -113,9 +133,17 @@ export async function fetchSwapWindow(tokens: readonly LaunchpadToken[]): Promis
   // Cached across instances, not just in-process. On serverless each request
   // can land on a fresh instance, so a purely in-memory memo never gets a second
   // hit and every visitor pays the whole 18-chunk walk.
-  return cached(`arc:swapwindow:${tokens.length}`, TTL_MS, async () =>
-    build(tokens).catch(
-      (): SwapWindow => ({ tip: 0n, logs: [], fromBlock: 0n, secondsPerBlock: SECONDS_PER_BLOCK }),
-    ),
-  );
+  return cached(`arc:swapwindow:${tokens.length}`, TTL_MS, async () => {
+    // Deliberately no catch-to-empty here. Swallowing a failed walk and
+    // returning zero logs is indistinguishable, downstream, from "nothing
+    // traded" — which is how an RPC hiccup turned into every 24h volume
+    // reading 0.00, trending reordering itself and real markets dropping off
+    // the front page. Letting it throw lets the cache serve the last good
+    // window instead, which is stale but true.
+    //
+    // Bounded so it fails fast: the caller has its own deadline, and a walk
+    // that is going to miss it should hand over to the stale path early rather
+    // than burn the whole budget first.
+    return withDeadline(build(tokens), BUILD_DEADLINE_MS);
+  });
 }

@@ -34,6 +34,10 @@ function decode<T>(payload: string): T {
   ) as T;
 }
 
+/** After serving a stale value, wait this long before trying again rather than
+ *  hammering a failing upstream on every request. */
+const STALE_RETRY_MS = 15_000;
+
 /** Per-instance layer, so a warm instance skips the database round trip too. */
 const memo = new Map<string, { at: number; value: unknown }>();
 const inFlight = new Map<string, Promise<unknown>>();
@@ -86,7 +90,22 @@ export async function cached<T>(key: string, ttlMs: number, compute: () => Promi
       }
     }
 
-    const value = await compute();
+    let value: T;
+    try {
+      value = await compute();
+    } catch (err) {
+      // Serve the last good value rather than propagating. A stale figure is a
+      // worse answer than a fresh one; it is a far better answer than none,
+      // because callers turn "none" into zero and a zero volume is not a
+      // degraded reading — it reorders the market table and drops real markets
+      // off the front page.
+      const stale = await readStale<T>(key);
+      if (stale !== null) {
+        memo.set(key, { at: Date.now() - ttlMs + STALE_RETRY_MS, value: stale });
+        return stale;
+      }
+      throw err;
+    }
     memo.set(key, { at: Date.now(), value });
 
     if (sql !== null) {
@@ -108,5 +127,27 @@ export async function cached<T>(key: string, ttlMs: number, compute: () => Promi
     return await run;
   } finally {
     inFlight.delete(key);
+  }
+}
+
+/**
+ * The last stored value for a key, however old.
+ *
+ * Deliberately ignores the TTL: this is only reached when the fresh path has
+ * already failed, and at that point age is the least of the caller's problems.
+ */
+export async function readStale<T>(key: string): Promise<T | null> {
+  const hit = memo.get(key);
+  if (hit !== undefined) return hit.value as T;
+
+  const sql = getDb();
+  if (sql === null) return null;
+  try {
+    await ensureTable(sql);
+    const rows = await sql<Row[]>`SELECT payload, saved_at FROM kv_cache WHERE k = ${key} LIMIT 1`;
+    const row = rows[0];
+    return row === undefined ? null : decode<T>(row.payload);
+  } catch {
+    return null;
   }
 }
