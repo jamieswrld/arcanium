@@ -95,7 +95,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               >
                 <Link href="/">Explore</Link>
                 <Link href="/create">Launch</Link>
-                <Link href="/locked">Locked</Link>
+                <Link href="/locked">Lock</Link>
                 <Link href="/portfolio">Portfolio</Link>
                 <Link href="/activity">Activity</Link>
                 <Link href="/stats">Stats</Link>

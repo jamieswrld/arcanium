@@ -49,7 +49,7 @@ export default async function LockedPage({ searchParams }: Props) {
     <div className="stack">
       <header className="spread" style={{ alignItems: "flex-end", flexWrap: "wrap", gap: "var(--s4)" }}>
         <div>
-          <h1>Locked</h1>
+          <h1>Lock</h1>
           <p className="arch-note" style={{ maxWidth: 520 }}>
             Lock any Arc token until a date you choose. The contract has no owner and no admin
             unlock, so nobody can shorten a lock once it exists — not the depositor, not the

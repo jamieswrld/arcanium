@@ -27,7 +27,7 @@ const LAUNCH = { href: "/create", label: "Launch", icon: LaunchIcon } as const;
 
 const DESTINATIONS = [
   { href: "/", label: "Explore", icon: ExploreIcon },
-  { href: "/locked", label: "Locked", icon: LockedIcon },
+  { href: "/locked", label: "Lock", icon: LockedIcon },
   { href: "/portfolio", label: "Portfolio", icon: PortfolioIcon },
   { href: "/activity", label: "Activity", icon: ActivityIcon },
   { href: "/docs", label: "Docs", icon: DocsIcon },
