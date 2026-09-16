@@ -103,11 +103,12 @@ export function CreatorFeeDestination({
         setError(body.error?.message ?? `Could not find @${clean} on X.`);
         return;
       }
-      // Where the fees will actually land, derived from the factory.
-      const vaultRes = await fetch(
-        `/api/x/vault?username=${encodeURIComponent(clean)}&token=0x0000000000000000000000000000000000000000`,
-        { cache: "no-store" },
-      );
+      // Where the fees will actually land, derived from the factory. One vault
+      // per X identity across every launch, so there is no token to pass — and
+      // that is precisely what makes it nameable before the token exists.
+      const vaultRes = await fetch(`/api/x/vault?username=${encodeURIComponent(clean)}`, {
+        cache: "no-store",
+      });
       const vaultBody = (await vaultRes.json()) as { data?: { vault?: Hex } };
       setResolved({ ...body.data, vault: vaultBody.data?.vault ?? ("0x" as Hex) });
     } catch {

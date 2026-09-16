@@ -5,10 +5,11 @@ import { ARC_XCREATOR, ARC_USDC } from "@arch/chain-config";
 import { erc20Abi, type Hex } from "viem";
 
 /**
- * GET /api/x/vault?username=alice&token=0x…
+ * GET /api/x/vault?username=alice
  *
- * Where a given X account's fees for a given token live, whether that vault has
- * been deployed, and what is sitting in it.
+ * Where a given X account's creator fees live, whether that vault has been
+ * deployed, and what is sitting in it. One vault per identity, across every
+ * launch that names it — so no token parameter.
  *
  * The address is real before the contract exists — it is a CREATE2 address, so
  * a launch can name it as its fee recipient immediately and the vault is only
@@ -23,7 +24,7 @@ const factoryAbi = [
     type: "function",
     name: "vaultFor",
     stateMutability: "view",
-    inputs: [{ type: "bytes32" }, { type: "address" }],
+    inputs: [{ type: "bytes32" }],
     outputs: [{ type: "address" }],
   },
 ] as const;
@@ -35,9 +36,6 @@ export async function GET(request: Request): Promise<Response> {
     }
     const url = new URL(request.url);
     const username = url.searchParams.get("username") ?? "";
-    const token = parseAddress(url.searchParams.get("token"));
-    if (token === null) return fail("invalid_address", "token must be an address.");
-
     const profile = await resolveUsername(username);
     if (profile === null) return fail("not_found", `Could not resolve @${username.replace(/^@/, "")}.`);
 
@@ -48,7 +46,7 @@ export async function GET(request: Request): Promise<Response> {
         address: ARC_XCREATOR.factory,
         abi: factoryAbi,
         functionName: "vaultFor",
-        args: [idHash, token as Hex],
+        args: [idHash],
       })
       .catch(() => null)) as Hex | null;
     if (vault === null) return fail("upstream_unavailable", "Could not reach Arc.");

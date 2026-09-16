@@ -17,12 +17,19 @@ interface IXCreatorVaultFactory {
 ///         that X account.
 ///
 /// @dev    Deployed as a minimal proxy at a CREATE2 address derived from the X
-///         identity and the token. That matters: the address can be computed
-///         before the contract exists, so a launch can route creator fees to it
-///         immediately and the vault itself is only deployed when somebody
-///         actually claims. An ERC-20 balance at an address with no code is
-///         perfectly ordinary, and the existing fee distributor needs no
-///         changes — it sees a normal EVM recipient.
+///         identity alone. That matters twice over. The address can be computed
+///         before the contract exists, so a launch routes creator fees to it
+///         immediately and the vault is only deployed when somebody claims — an
+///         ERC-20 balance at an address with no code is perfectly ordinary, and
+///         the fee distributor needs no changes because it sees a normal EVM
+///         recipient.
+///
+///         And keying on the identity *alone* is what makes it usable at all. A
+///         vault keyed on the identity and the launch token cannot be derived
+///         before launch, because the token's address does not exist until the
+///         factory mints it — so there would be nothing to name as the fee
+///         recipient. One vault per X account also means one claim collects
+///         every launch's fees rather than one claim per token.
 ///
 ///         The identity is a hash of X's stable *numeric* user ID, never the
 ///         username. Usernames are mutable and reusable; funds keyed off one
@@ -50,7 +57,7 @@ contract XCreatorVault is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     bytes32 private constant CLAIM_TYPEHASH = keccak256(
-        "Claim(bytes32 xUserIdHash,address vault,address token,address recipient,uint256 nonce,uint256 deadline)"
+        "Claim(bytes32 xUserIdHash,address vault,address asset,address recipient,uint256 nonce,uint256 deadline)"
     );
     bytes32 private constant DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
@@ -59,8 +66,6 @@ contract XCreatorVault is ReentrancyGuard {
 
     /// @notice keccak256 of the X account's stable numeric user ID, as ASCII.
     bytes32 public xUserIdHash;
-    /// @notice The launch whose creator fees this vault receives.
-    address public token;
     /// @notice The factory, which is where the current attestation signer lives.
     address public factory;
 
@@ -91,12 +96,11 @@ contract XCreatorVault is ReentrancyGuard {
     /// @dev Called once by the factory immediately after cloning. The
     ///      implementation copy is left uninitialised on purpose — it holds no
     ///      funds and every real vault is a proxy.
-    function initialize(bytes32 xUserIdHash_, address token_, address factory_) external {
+    function initialize(bytes32 xUserIdHash_, address factory_) external {
         if (factory != address(0)) revert AlreadyInitialised();
         if (xUserIdHash_ == bytes32(0)) revert ZeroIdentity();
-        if (token_ == address(0) || factory_ == address(0)) revert ZeroAddressArg();
+        if (factory_ == address(0)) revert ZeroAddressArg();
         xUserIdHash = xUserIdHash_;
-        token = token_;
         factory = factory_;
     }
 

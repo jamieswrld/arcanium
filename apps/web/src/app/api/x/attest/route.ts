@@ -29,7 +29,7 @@ const factoryAbi = [
     type: "function",
     name: "vaultFor",
     stateMutability: "view",
-    inputs: [{ type: "bytes32" }, { type: "address" }],
+    inputs: [{ type: "bytes32" }],
     outputs: [{ type: "address" }],
   },
 ] as const;
@@ -68,7 +68,7 @@ export async function POST(request: Request): Promise<Response> {
         address: ARC_XCREATOR.factory,
         abi: factoryAbi,
         functionName: "vaultFor",
-        args: [idHash, token as Hex],
+        args: [idHash],
       })
       .catch(() => null)) as Hex | null;
     if (vault === null) return fail("upstream_unavailable", "Could not reach Arc to derive the vault.");

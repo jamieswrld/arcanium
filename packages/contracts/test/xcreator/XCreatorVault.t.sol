@@ -62,7 +62,7 @@ contract XCreatorVaultTest is Test {
     }
 
     function _vault() internal returns (XCreatorVault) {
-        return XCreatorVault(factory.deployVault(X_ID, token));
+        return XCreatorVault(factory.deployVault(X_ID));
     }
 
     function _sign(
@@ -78,7 +78,7 @@ contract XCreatorVaultTest is Test {
         bytes32 structHash = keccak256(
             abi.encode(
                 keccak256(
-                    "Claim(bytes32 xUserIdHash,address vault,address token,address recipient,uint256 nonce,uint256 deadline)"
+                    "Claim(bytes32 xUserIdHash,address vault,address asset,address recipient,uint256 nonce,uint256 deadline)"
                 ),
                 idHash,
                 vaultAddr,
@@ -133,7 +133,7 @@ contract XCreatorVaultTest is Test {
         bytes32 structHash = keccak256(
             abi.encode(
                 keccak256(
-                    "Claim(bytes32 xUserIdHash,address vault,address token,address recipient,uint256 nonce,uint256 deadline)"
+                    "Claim(bytes32 xUserIdHash,address vault,address asset,address recipient,uint256 nonce,uint256 deadline)"
                 ),
                 idHash,
                 vaultAddr,
@@ -151,41 +151,46 @@ contract XCreatorVaultTest is Test {
     /* ------------------------------------------------ deterministic address */
 
     function test_vaultAddressIsKnownBeforeDeployment() public view {
-        address predicted = factory.vaultFor(X_ID, token);
+        address predicted = factory.vaultFor(X_ID);
         assertTrue(predicted != address(0), "an address exists for it");
         assertEq(predicted.code.length, 0, "but nothing is deployed there yet");
     }
 
     function test_addressPredictedMatchesDeployed() public {
-        address predicted = factory.vaultFor(X_ID, token);
+        address predicted = factory.vaultFor(X_ID);
         assertEq(predicted.code.length, 0, "not deployed yet");
-        assertFalse(factory.isDeployed(X_ID, token));
+        assertFalse(factory.isDeployed(X_ID));
 
         // Fees can arrive before any contract exists there.
         usdc.mint(predicted, 1_000e6);
         assertEq(usdc.balanceOf(predicted), 1_000e6);
 
-        address deployed = factory.deployVault(X_ID, token);
+        address deployed = factory.deployVault(X_ID);
         assertEq(deployed, predicted, "CREATE2 address held");
-        assertTrue(factory.isDeployed(X_ID, token));
+        assertTrue(factory.isDeployed(X_ID));
         assertEq(usdc.balanceOf(deployed), 1_000e6, "balance survived deployment");
     }
 
     function test_deployVaultIsIdempotent() public {
-        address a = factory.deployVault(X_ID, token);
-        address b = factory.deployVault(X_ID, token);
+        address a = factory.deployVault(X_ID);
+        address b = factory.deployVault(X_ID);
         assertEq(a, b);
     }
 
-    function test_differentIdentityAndTokenGiveDifferentVaults() public view {
-        assertTrue(factory.vaultFor(X_ID, token) != factory.vaultFor(OTHER_X_ID, token));
-        assertTrue(factory.vaultFor(X_ID, token) != factory.vaultFor(X_ID, address(0xBEEF)));
+    function test_differentIdentitiesGetDifferentVaults() public view {
+        assertTrue(factory.vaultFor(X_ID) != factory.vaultFor(OTHER_X_ID));
+    }
+
+    /// The property that makes the whole design work: the address is derivable
+    /// before any token exists, so a launch can name it as its fee recipient.
+    function test_oneVaultPerIdentityAcrossEveryLaunch() public view {
+        assertEq(factory.vaultFor(X_ID), factory.vaultFor(X_ID), "stable for the identity");
     }
 
     function test_initializeCannotBeCalledTwice() public {
         XCreatorVault vault = _vault();
         vm.expectRevert(XCreatorVault.AlreadyInitialised.selector);
-        vault.initialize(X_ID, token, address(factory));
+        vault.initialize(X_ID, address(factory));
     }
 
     /* ------------------------------------------------------------- claiming */
@@ -275,7 +280,7 @@ contract XCreatorVaultTest is Test {
     /// A proof for one vault must not work on another, even same identity.
     function test_attack_proofFromAnotherVault() public {
         XCreatorVault mine = _vault();
-        XCreatorVault other = XCreatorVault(factory.deployVault(X_ID, address(0xBEEF)));
+        XCreatorVault other = XCreatorVault(factory.deployVault(OTHER_X_ID));
         usdc.mint(address(other), 100e6);
         uint256 deadline = block.timestamp + 1 hours;
 

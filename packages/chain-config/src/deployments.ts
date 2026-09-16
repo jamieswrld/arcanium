@@ -97,18 +97,24 @@ export const ARC_TOKEN_LOCKER = "0x0aB1fbD6c01f4908f509746393DE25849aE2a9E7" as 
 export const ARC_TOKEN_LOCKER_BLOCK = 21_170_030n;
 
 /**
- * X creator vaults. The factory deploys minimal proxies at CREATE2 addresses,
- * so a vault address is usable as a launch's fee recipient before the vault
- * itself exists. Deployed 2026-09-17.
+ * X creator vaults. The factory deploys minimal proxies at CREATE2 addresses
+ * derived from the X identity alone, so a vault address is usable as a launch's
+ * fee recipient before the vault itself exists.
+ *
+ * An earlier deployment keyed vaults on (identity, token). That could not work:
+ * a launch needs a fee recipient at creation time, and the token's address does
+ * not exist until the factory mints it, so the address was underivable exactly
+ * when it was needed. Replaced before anything used it — zero vaults had been
+ * deployed and no launch referenced one.
  */
 export const ARC_XCREATOR = {
-  factory: "0x3E145c4b855Ee71AdDC3F34AD0A2fa0C279d79f5" as Address,
-  implementation: "0x5e01010a5E1dF710d8C6E7c9D7167F033F9f72B1" as Address,
+  factory: "0xae74c38757558C63BD1489056e436dc06F74DFd6" as Address,
+  implementation: "0x416F3dc785e0B6715e1629630c6F99f57de1FAb6" as Address,
   /** Whose EIP-712 attestations vaults accept. Rotatable by the factory owner;
    *  its private key lives only in server-side env. */
   attestationSigner: "0x74E6853252D79608054c71bb6c90BF1D381932E5" as Address,
   /** Block the factory was deployed in. */
-  deployedBlock: 21_170_121n,
+  deployedBlock: 21_190_000n,
 } as const;
 
 /**

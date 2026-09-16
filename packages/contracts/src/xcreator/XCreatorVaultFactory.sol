@@ -10,11 +10,15 @@ import {XCreatorVault} from "./XCreatorVault.sol";
 /// @notice Computes and deploys the vault that receives a token's creator fees
 ///         on behalf of an X account.
 ///
-/// @dev    Addresses are deterministic (CREATE2 over the identity and token),
-///         which is the point: a launch needs a fee recipient at creation time,
-///         and the vault can be named then and deployed much later — only when
-///         somebody claims. Until then it is an address with a balance and no
-///         code, which every ERC-20 handles fine.
+/// @dev    Addresses are deterministic (CREATE2 over the X identity), which is
+///         the point: a launch needs a fee recipient at creation time, and the
+///         vault can be named then and deployed much later — only when somebody
+///         claims. Until then it is an address with a balance and no code,
+///         which every ERC-20 handles fine.
+///
+///         The salt is the identity and nothing else. Including the launch
+///         token would make the address underivable at launch, since the token
+///         does not exist until the factory mints it.
 ///
 ///         The owner's only power is rotating the attestation signer. It cannot
 ///         touch a vault's funds, cannot re-point an existing vault at a
@@ -30,7 +34,7 @@ contract XCreatorVaultFactory is Ownable2Step {
     address public attestationSigner;
 
     event AttestationSignerUpdated(address indexed previous, address indexed current);
-    event VaultDeployed(bytes32 indexed xUserIdHash, address indexed token, address vault);
+    event VaultDeployed(bytes32 indexed xUserIdHash, address vault);
 
     error ZeroAddress();
     error ZeroIdentity();
@@ -50,35 +54,27 @@ contract XCreatorVaultFactory is Ownable2Step {
         attestationSigner = signer;
     }
 
-    /// @notice Where the vault for this identity and token lives, deployed or not.
+    /// @notice Where this X account's creator fees live, deployed or not.
     /// @dev    Safe to use as a launch's fee recipient before deployment.
-    function vaultFor(bytes32 xUserIdHash, address token) public view returns (address) {
-        return Clones.predictDeterministicAddress(implementation, _salt(xUserIdHash, token), address(this));
+    function vaultFor(bytes32 xUserIdHash) public view returns (address) {
+        return Clones.predictDeterministicAddress(implementation, xUserIdHash, address(this));
     }
 
     /// @notice Whether that vault has been deployed yet.
-    function isDeployed(bytes32 xUserIdHash, address token) external view returns (bool) {
-        return vaultFor(xUserIdHash, token).code.length > 0;
+    function isDeployed(bytes32 xUserIdHash) external view returns (bool) {
+        return vaultFor(xUserIdHash).code.length > 0;
     }
 
     /// @notice Deploy the vault. Idempotent: returns the existing one if it is
     ///         already there, so a claim flow can call this unconditionally.
-    function deployVault(bytes32 xUserIdHash, address token) external returns (address vault) {
+    function deployVault(bytes32 xUserIdHash) external returns (address vault) {
         if (xUserIdHash == bytes32(0)) revert ZeroIdentity();
-        if (token == address(0)) revert ZeroAddress();
 
-        vault = vaultFor(xUserIdHash, token);
+        vault = vaultFor(xUserIdHash);
         if (vault.code.length > 0) return vault;
 
-        vault = Clones.cloneDeterministic(implementation, _salt(xUserIdHash, token));
-        XCreatorVault(vault).initialize(xUserIdHash, token, address(this));
-        emit VaultDeployed(xUserIdHash, token, vault);
-    }
-
-    /// @dev Both inputs in the salt, so one X identity gets a separate vault per
-    ///      launch. Mixing every token into one vault would make a single
-    ///      attestation sweep unrelated launches' fees together.
-    function _salt(bytes32 xUserIdHash, address token) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(xUserIdHash, token));
+        vault = Clones.cloneDeterministic(implementation, xUserIdHash);
+        XCreatorVault(vault).initialize(xUserIdHash, address(this));
+        emit VaultDeployed(xUserIdHash, vault);
     }
 }
