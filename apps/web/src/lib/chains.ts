@@ -5,6 +5,8 @@ import {
   ARC_DISTRIBUTORS,
   ARC_UNISWAP,
   ARC_USDC,
+  ARC_ARCANIUM_V4,
+  ARC_UNISWAP_V4,
 } from "@arch/chain-config";
 
 /**
@@ -60,6 +62,21 @@ export interface LaunchChain {
   readonly factories: readonly Hex[];
   readonly liquidityVault?: Hex | undefined;
   readonly modeDistributor?: Hex | undefined;
+  /**
+   * The Uniswap v4 launch path. `hook` and `launchpad` are undefined until
+   * they are deployed, and that is the signal to keep launching on v3 — not a
+   * reason to substitute an address.
+   */
+  readonly v4?: {
+    readonly hook: Hex | undefined;
+    readonly launchpad: Hex | undefined;
+    readonly poolManager: Hex;
+    readonly quoter: Hex;
+    readonly universalRouter: Hex;
+    readonly stateView: Hex;
+    readonly poolFee: number;
+    readonly tickSpacing: number;
+  } | undefined;
   /** Quote units that mark a token graduated (9,000 of the quote asset). */
   readonly graduationUnits: bigint;
   /** Native-gas floor for a full launch, so the form can fail fast with a clear
@@ -205,6 +222,25 @@ const ARC: LaunchChain = {
   modeDistributor:
     addr(process.env["NEXT_PUBLIC_ARCH_MODE_DISTRIBUTOR_ADDRESS"]) ?? ARC_DISTRIBUTORS.current,
   graduationUnits: graduationUnits(6),
+  /**
+   * The v4 launch path, when it exists.
+   *
+   * Undefined means v4 is not deployed on this deployment, and every consumer
+   * treats that as "launch on v3" rather than falling back to an address. The
+   * hook is CREATE2 at a mined address whose low bits carry its permissions;
+   * the launchpad is plain CREATE, so its address depends on a nonce and can
+   * only be recorded, never derived.
+   */
+  v4: {
+    hook: addr(process.env["NEXT_PUBLIC_ARC_HOOK_V4"]) ?? ARC_ARCANIUM_V4.hook,
+    launchpad: addr(process.env["NEXT_PUBLIC_ARC_LAUNCHPAD_V4"]) ?? ARC_ARCANIUM_V4.launchpad,
+    poolManager: ARC_UNISWAP_V4.poolManager,
+    quoter: ARC_UNISWAP_V4.quoter,
+    universalRouter: ARC_UNISWAP_V4.universalRouter,
+    stateView: ARC_UNISWAP_V4.stateView,
+    poolFee: ARC_ARCANIUM_V4.poolFee,
+    tickSpacing: ARC_ARCANIUM_V4.tickSpacing,
+  },
   launchGasFloor: 40_000_000_000_000_000n, // ~0.04 native USDC
   live: true,
   accent: "#8b7dff",

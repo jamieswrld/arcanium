@@ -7,7 +7,7 @@ import { useAccount, usePublicClient, useReadContract, useSwitchChain, useWriteC
 import { decodeEventLog, parseAbiItem, type Hex } from "viem";
 import { formatUnits, parseUnits } from "viem";
 import { erc20Abi } from "@/lib/bridgeClient";
-import { factoryAbi, LAUNCH_MODES } from "@/lib/launchpad";
+import { factoryAbi, launchpadV4Abi, LAUNCH_MODES } from "@/lib/launchpad";
 import { getChain } from "@/lib/chains";
 import { ArcaneWandIcon, DiviumBillsIcon, StandardWalletIcon } from "@/components/ModeIcons";
 import { ensureChain } from "@/lib/wagmi";
@@ -60,7 +60,17 @@ export function CreateForm() {
   // component into a search-params bailout, so the whole form rendered as a
   // skeleton on the server for no benefit.
   const chain = getChain("arc");
-  const factory = chain.factories[0];
+  /**
+   * New launches go to v4 once it is deployed, and to v3 until then.
+   *
+   * Undefined is the honest default: a missing address means the v4 path does
+   * not exist on this deployment, not that we should guess one. Existing v3
+   * tokens are untouched either way — their pools, liquidity and fee streams
+   * are immutable and no longer involve the launchpad at all.
+   */
+  const v4 = chain.v4?.launchpad;
+  const useV4 = v4 !== undefined;
+  const factory = v4 ?? chain.factories[0];
   const quote = chain.quote.address;
   const quoteSymbol = chain.quote.symbol;
   const quoteDecimals = chain.quote.decimals;
@@ -205,37 +215,59 @@ export function CreateForm() {
       };
       const metadataUri = `data:application/json;base64,${btoa(JSON.stringify(metadata))}`;
 
-      const allowance = await chainPublic.readContract({
-        address: quote, abi: erc20Abi, functionName: "allowance", args: [address, factory],
-      });
-      if (needed > 0n && allowance < needed) {
-        setState({ step: "approving" });
-        const approveTx = await writeContractAsync({
-          address: quote, abi: erc20Abi, functionName: "approve", args: [factory, needed], chainId: chain.id,
+      // v4 takes payment as value, because Arc's USDC is a view of the native
+      // balance — so there is nothing to approve and a launch with a first buy
+      // is one signature rather than two. v3 has to pull it, and does need one.
+      if (!useV4) {
+        const allowance = await chainPublic.readContract({
+          address: quote, abi: erc20Abi, functionName: "allowance", args: [address, factory],
         });
-        await chainPublic.waitForTransactionReceipt({ hash: approveTx });
+        if (needed > 0n && allowance < needed) {
+          setState({ step: "approving" });
+          const approveTx = await writeContractAsync({
+            address: quote, abi: erc20Abi, functionName: "approve", args: [factory, needed], chainId: chain.id,
+          });
+          await chainPublic.waitForTransactionReceipt({ hash: approveTx });
+        }
       }
 
       setState({ step: "launching" });
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 600);
-      const txHash = await writeContractAsync({
-        address: factory, abi: factoryAbi, functionName: "launch",
-        args: [{
-          name: name.trim(), symbol: tickerNormalized, metadataUri, pairToken: quote,
-          creatorBuyAmount: buyAmount, minTokensOut: 0n, deadline,
-          // An X destination resolves to its vault address, which is a real
-          // address before the contract exists — that is what makes this
-          // possible without changing the deployed factory.
-          feeRecipient: (feeDest?.kind === "x"
-            ? feeDest.resolved.vault
-            : feeWalletValid && feeWalletTrimmed !== ""
-              ? feeWalletTrimmed
-              : "0x0000000000000000000000000000000000000000") as Hex,
-          taxBps,
-          mode,
-        }],
-        chainId: chain.id,
-      });
+      // An X destination resolves to its vault address, which is a real
+      // address before the contract exists — that is what makes this possible
+      // without changing the deployed factory.
+      const feeRecipient = (feeDest?.kind === "x"
+        ? feeDest.resolved.vault
+        : feeWalletValid && feeWalletTrimmed !== ""
+          ? feeWalletTrimmed
+          : "0x0000000000000000000000000000000000000000") as Hex;
+
+      const txHash = useV4
+        ? await writeContractAsync({
+            address: factory,
+            abi: launchpadV4Abi,
+            functionName: "launch",
+            args: [{
+              name: name.trim(), symbol: tickerNormalized, metadataUri,
+              creatorBuyAmount: buyAmount, minTokensOut: 0n, deadline,
+              feeRecipient, taxBps: Number(taxBps), mode,
+            }],
+            // The fee and the opening buy ride along as value. Arc's native
+            // balance is 18-decimal where the ERC-20 view is 6, so the amount
+            // is scaled up by 1e12; the launchpad refunds any remainder in the
+            // same call rather than keeping it.
+            value: needed * 10n ** 12n,
+            chainId: chain.id,
+          })
+        : await writeContractAsync({
+            address: factory, abi: factoryAbi, functionName: "launch",
+            args: [{
+              name: name.trim(), symbol: tickerNormalized, metadataUri, pairToken: quote,
+              creatorBuyAmount: buyAmount, minTokensOut: 0n, deadline,
+              feeRecipient, taxBps, mode,
+            }],
+            chainId: chain.id,
+          });
       const receipt = await chainPublic.waitForTransactionReceipt({ hash: txHash });
       if (receipt.status !== "success") { setState({ step: "error", message: "Launch transaction reverted" }); return; }
       let newToken: string | null = null;

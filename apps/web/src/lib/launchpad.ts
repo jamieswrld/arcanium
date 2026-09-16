@@ -47,6 +47,63 @@ export const LAUNCH_MODES = [
   { id: 2, key: "arcane", label: "Arcane Mode", blurb: "Creator fees buy the token on the market and burn it forever." },
 ] as const;
 
+/**
+ * The v4 launchpad's launch(), which differs from v3's in three ways that
+ * matter to a caller.
+ *
+ * It is payable: on Arc the quote asset is a view of the native balance, so an
+ * opening buy is sent as value and needs no approval. That is what makes a
+ * launch with a first buy one signature instead of two.
+ *
+ * It takes no pairToken — a v4 launchpad is bound to one quote asset at
+ * deployment — and it returns a 32-byte pool id rather than a pool address,
+ * because a v4 pool is a key, not a contract.
+ */
+export const launchpadV4Abi = [
+  {
+    type: "function",
+    name: "launch",
+    stateMutability: "payable",
+    inputs: [
+      {
+        name: "params",
+        type: "tuple",
+        components: [
+          { name: "name", type: "string" },
+          { name: "symbol", type: "string" },
+          { name: "metadataUri", type: "string" },
+          { name: "creatorBuyAmount", type: "uint256" },
+          { name: "minTokensOut", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+          { name: "feeRecipient", type: "address" },
+          { name: "taxBps", type: "uint16" },
+          { name: "mode", type: "uint8" },
+        ],
+      },
+    ],
+    outputs: [
+      { name: "token", type: "address" },
+      { name: "poolId", type: "bytes32" },
+    ],
+  },
+  { type: "function", name: "launchFee", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "launchesPaused", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
+  { type: "function", name: "allTokensLength", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+] as const;
+
+export const launchedV4Event = {
+  type: "event",
+  name: "Launched",
+  inputs: [
+    { name: "token", type: "address", indexed: true },
+    { name: "creator", type: "address", indexed: true },
+    { name: "poolId", type: "bytes32", indexed: true },
+    { name: "feeRecipient", type: "address", indexed: false },
+    { name: "taxBps", type: "uint16", indexed: false },
+    { name: "mode", type: "uint8", indexed: false },
+  ],
+} as const;
+
 export const modeDistributorAbi = [
   { type: "function", name: "modeOf", stateMutability: "view", inputs: [{ type: "address" }], outputs: [{ type: "uint8" }] },
   { type: "function", name: "modeSet", stateMutability: "view", inputs: [{ type: "address" }], outputs: [{ type: "bool" }] },

@@ -142,6 +142,35 @@ export const ARC_UNISWAP = {
  * that is locked forever and cannot be moved. Recorded because any question
  * about routing, aggregator coverage or a future launch venue starts here.
  */
+/**
+ * Arcanium's own v4 contracts.
+ *
+ * The hook's address is not arbitrary and not chosen: v4 reads a hook's
+ * permissions out of the low 14 bits of its address, so the salt is mined
+ * until CREATE2 lands on one carrying exactly the flags the contract declares.
+ * 0x…2044 is beforeInitialize | afterSwap | afterSwapReturnsDelta. Because it
+ * is CREATE2 through the canonical proxy, the address is fixed by the bytecode
+ * and the constructor arguments — redeploying the same contract with the same
+ * arguments lands on the same address anywhere.
+ *
+ * The launchpad is plain CREATE, so its address depends on the deployer's
+ * nonce and has to be recorded rather than derived. Both are `undefined` until
+ * deployed, and every consumer treats that as "v4 is not available yet" rather
+ * than falling back to something.
+ */
+export const ARC_ARCANIUM_V4: {
+  readonly hook: Address | undefined;
+  readonly launchpad: Address | undefined;
+  readonly poolFee: number;
+  readonly tickSpacing: number;
+} = {
+  hook: undefined,
+  launchpad: undefined,
+  /** Pools open with no LP fee; the hook takes 1% inside the swap instead. */
+  poolFee: 0,
+  tickSpacing: 200,
+};
+
 export const ARC_UNISWAP_V4 = {
   poolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951" as Address,
   positionManager: "0x6049c9a0e26405C0985f9E3685C87d0aE917f82B" as Address,
