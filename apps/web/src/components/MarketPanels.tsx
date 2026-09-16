@@ -564,34 +564,72 @@ function TradesTable({ swaps, symbol, chain }: { readonly swaps: SwapPoint[]; re
 function HoldersTable({ holders, pool, symbol, chain }: { readonly holders: Array<{ wallet: Hex; balance: bigint }> | null; readonly pool: Hex; readonly symbol: string; readonly chain: LaunchChain }) {
   if (holders === null) return <p className="arch-note">Reading holders…</p>;
   if (holders.length === 0) return <p className="arch-note">No holders yet.</p>;
+
   const SUPPLY = 1_000_000_000n * 10n ** 18n;
   const BURN = "0x000000000000000000000000000000000000dead";
+  const poolLower = pool.toLowerCase();
+
+  // Sorted here as well as in SQL. The list is small, and a table whose whole
+  // job is ranking should not depend on an upstream ORDER BY staying correct —
+  // it silently sorted as text for a while and produced a scrambled list.
+  const ranked = [...holders].sort((a, b) => (a.balance < b.balance ? 1 : a.balance > b.balance ? -1 : 0));
+
+  const liquidity = ranked.find((h) => h.wallet.toLowerCase() === poolLower) ?? null;
+  const burned = ranked.find((h) => h.wallet.toLowerCase() === BURN) ?? null;
+  const pct = (b: bigint): string => (Number((b * 10_000n) / SUPPLY) / 100).toFixed(2);
+  const whole = (b: bigint): string => (b / 10n ** 18n).toLocaleString("en-US");
+
   return (
-    <div style={{ display: "grid", gap: "0.25rem" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 140px 70px", gap: "0.5rem" }} className="arch-note">
-        <span>#</span><span>Wallet</span><span>Amount</span><span>Supply</span>
+    <div style={{ display: "grid", gap: "0.55rem" }}>
+      {/* Liquidity leads, because on a launchpad it is the number that decides
+          whether a market is real. It is a holder like any other in the table
+          below, but burying it at whatever rank it happens to occupy means
+          nobody finds it. */}
+      {liquidity === null ? null : (
+        <div className="hold-liq">
+          <div>
+            <span className="arch-stat-label">Liquidity pool</span>
+            <div className="arch-note" style={{ marginTop: 2 }}>
+              Locked permanently · cannot be withdrawn by anyone
+            </div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div className="num" style={{ fontWeight: 650 }}>{pct(liquidity.balance)}% of supply</div>
+            <div className="arch-note num">{whole(liquidity.balance)} {symbol}</div>
+          </div>
+        </div>
+      )}
+
+      {burned === null ? null : (
+        <div className="arch-note">
+          Burned: {whole(burned.balance)} {symbol} ({pct(burned.balance)}% of supply) — held at the
+          burn address and unrecoverable, so it is not anyone&apos;s holding.
+        </div>
+      )}
+
+      <div style={{ display: "grid", gap: "0.25rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 140px 70px", gap: "0.5rem" }} className="arch-note">
+          <span>#</span><span>Wallet</span><span>Amount</span><span>Supply</span>
+        </div>
+        {ranked.map((h, i) => {
+          const lower = h.wallet.toLowerCase();
+          const isPool = lower === poolLower;
+          const isBurn = lower === BURN;
+          return (
+            <a key={h.wallet} href={explorerAddress(chain, h.wallet)} target="_blank" rel="noreferrer"
+              style={{ display: "grid", gridTemplateColumns: "32px 1fr 140px 70px", gap: "0.5rem", fontSize: "0.85rem", padding: "0.25rem 0", borderBottom: "1px solid var(--arch-border)" }}>
+              <span className="arch-note">{i + 1}</span>
+              <span style={{ fontFamily: "monospace" }}>
+                {h.wallet.slice(0, 6)}…{h.wallet.slice(-4)}
+                {isPool ? <span className="arch-note"> · liquidity (locked)</span> : null}
+                {isBurn ? <span className="arch-note"> · burned</span> : null}
+              </span>
+              <span className="num">{whole(h.balance)} {symbol}</span>
+              <span className="num">{pct(h.balance)}%</span>
+            </a>
+          );
+        })}
       </div>
-      {holders.map((h, i) => {
-        const lower = h.wallet.toLowerCase();
-        const isPool = lower === pool.toLowerCase();
-        // Burned supply is a real balance at a real address, but it is nobody's
-        // holding — say so rather than listing it as the third largest holder.
-        const isBurn = lower === BURN;
-        const pctBps = Number((h.balance * 10_000n) / SUPPLY);
-        return (
-          <a key={h.wallet} href={explorerAddress(chain, h.wallet)} target="_blank" rel="noreferrer"
-            style={{ display: "grid", gridTemplateColumns: "32px 1fr 140px 70px", gap: "0.5rem", fontSize: "0.85rem", padding: "0.25rem 0", borderBottom: "1px solid var(--arch-border)" }}>
-            <span className="arch-note">{i + 1}</span>
-            <span style={{ fontFamily: "monospace" }}>
-              {h.wallet.slice(0, 6)}…{h.wallet.slice(-4)}
-              {isPool ? <span className="arch-note"> · LP (locked)</span> : null}
-              {isBurn ? <span className="arch-note"> · burned</span> : null}
-            </span>
-            <span>{(h.balance / 10n ** 18n).toLocaleString("en-US")} {symbol}</span>
-            <span>{(pctBps / 100).toFixed(2)}%</span>
-          </a>
-        );
-      })}
     </div>
   );
 }

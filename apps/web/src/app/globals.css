@@ -1356,3 +1356,21 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
   gap: var(--s3) var(--s4);
   margin-top: var(--s3);
 }
+
+/* ------------------------------------------------------------- holders ---
+   Liquidity gets its own row above the holder list. On a launchpad it is the
+   number that decides whether a market is real, and at whatever rank it
+   happens to occupy in the list nobody finds it.                          */
+
+.hold-liq {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  padding: var(--s3);
+  background: var(--accent-quiet);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--r-md);
+}
