@@ -58,7 +58,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en" className={`${display.variable} ${body.variable} ${mono.variable}`}>
       <head>
-        <link rel="preconnect" href="https://rpc.arc-scan.org" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://rpc.quicknode.mainnet.arc.io" crossOrigin="anonymous" />
       </head>
       <body>
         <Providers>

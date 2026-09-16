@@ -110,8 +110,13 @@ const ARC: LaunchChain = {
   rpcUrls: [
     ...envUrls(process.env["NEXT_PUBLIC_ARC_RPC_URLS"]),
     ...envUrls(process.env["NEXT_PUBLIC_ARC_RPC_URL"]),
-    // Public Arc RPC. Verified live: chain 5042, and all four factory
-    // generations readable, after months of the network being gated.
+    // QuickNode is the preferred primary: measured ~2.4x faster than arc-scan on
+    // a filtered getLogs (287ms vs ~700ms), and it does not rate-limit eth_call,
+    // which arc-scan does under load. Same ~10k-block getLogs ceiling, so the
+    // chunked walk in swapLogs.ts stays correct either way.
+    "https://rpc.quicknode.mainnet.arc.io",
+    // Kept as a fallback. It has been observed both capacity-limited and briefly
+    // unreachable, which is precisely why the transport ranks rather than pins.
     "https://rpc.arc-scan.org",
     // Kept as fallbacks. Both required auth during the outage; if they open
     // up again the ranked transport will start using them on its own.
