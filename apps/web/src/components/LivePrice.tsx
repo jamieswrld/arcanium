@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { usePublicClient } from "wagmi";
 import { getChain, type ChainKey } from "@/lib/chains";
 import { poolAbi, priceUsdE18, formatPriceE18 } from "@/lib/launchpad";
+import { readV4Slot0 } from "@/lib/v4";
 import type { Hex } from "viem";
 
 /**
@@ -13,11 +14,14 @@ import type { Hex } from "viem";
  */
 export function LivePrice({
   pool,
+  poolId,
   tokenIsToken0,
   initial,
   chainKey = "arc",
 }: {
   readonly pool: Hex;
+  /** Set for a v4 market, where the pool is an id rather than a contract. */
+  readonly poolId?: Hex | undefined;
   readonly tokenIsToken0: boolean;
   readonly initial: string;
   readonly chainKey?: ChainKey;
@@ -32,14 +36,21 @@ export function LivePrice({
     let timer: ReturnType<typeof setTimeout> | undefined;
     const tick = async (): Promise<void> => {
       try {
-        const slot0 = await arc.readContract({ address: pool, abi: poolAbi, functionName: "slot0" });
-        if (!cancelled) setText(formatPriceE18(priceUsdE18(slot0[0], tokenIsToken0, chain.quote.decimals)));
+        // A v4 pool has no contract to call slot0 on: the price lives in the
+        // PoolManager under the pool's id, read here through StateView. Same
+        // sqrtPriceX96, same maths, different door.
+        const sqrtPriceX96 =
+          poolId === undefined
+            ? (await arc.readContract({ address: pool, abi: poolAbi, functionName: "slot0" }))[0]
+            : (await readV4Slot0(arc, poolId))?.sqrtPriceX96;
+        if (sqrtPriceX96 === undefined) return;
+        if (!cancelled) setText(formatPriceE18(priceUsdE18(sqrtPriceX96, tokenIsToken0, chain.quote.decimals)));
       } catch { /* transient */ }
       if (!cancelled) timer = setTimeout(() => void tick(), 3_000);
     };
     timer = setTimeout(() => void tick(), 3_000);
     return () => { cancelled = true; if (timer !== undefined) clearTimeout(timer); };
-  }, [arc, pool, tokenIsToken0]);
+  }, [arc, pool, poolId, tokenIsToken0]);
 
   return <>{text}</>;
 }

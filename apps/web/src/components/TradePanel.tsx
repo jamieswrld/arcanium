@@ -6,6 +6,17 @@ import { formatUnits, parseUnits, type Hex } from "viem";
 import { erc20Abi } from "@/lib/bridgeClient";
 import { explorerTx, getChain, type ChainKey } from "@/lib/chains";
 import { ensureChain } from "@/lib/wagmi";
+import {
+  buyIsZeroForOne,
+  encodeV4Swap,
+  permit2Abi,
+  PERMIT2,
+  poolIdFor,
+  poolKeyFor,
+  quoteV4,
+  readV4Slot0,
+  universalRouterAbi,
+} from "@/lib/v4";
 import { useToast } from "@/components/ui/Toast";
 import { ConnectButton } from "@/components/ConnectButton";
 import { routerAbi } from "@/lib/launchpad";
@@ -106,6 +117,32 @@ export function TradePanel({ token, pairToken, symbol, chainKey = "arc" }: Trade
   const [slippagePct, setSlippagePct] = useState("5");
   const [state, setState] = useState<TradeState>({ step: "idle" });
 
+  /**
+   * Which Uniswap this market lives on.
+   *
+   * Probed rather than assumed. A v4 pool is a key, so its existence is a
+   * question you can ask directly — does this id have liquidity — and that
+   * answer does not depend on the indexer being current. Null means "not
+   * determined yet", and trading stays disabled until it is: sending a v3
+   * swap at a v4 market would revert, and sending a v4 swap at a v3 market
+   * would address a pool that does not exist.
+   */
+  const [isV4, setIsV4] = useState<boolean | null>(null);
+  const v4cfg = chain.v4;
+
+  useEffect(() => {
+    if (arcPublic === undefined) return undefined;
+    const hook = v4cfg?.hook;
+    if (hook === undefined) { setIsV4(false); return undefined; }
+    let cancelled = false;
+    void (async () => {
+      const key = poolKeyFor(token, pairToken, hook, v4cfg!.poolFee, v4cfg!.tickSpacing);
+      const slot = await readV4Slot0(arcPublic, poolIdFor(key));
+      if (!cancelled) setIsV4(slot !== null && slot.sqrtPriceX96 > 0n);
+    })();
+    return () => { cancelled = true; };
+  }, [arcPublic, token, pairToken, v4cfg]);
+
   const quoteBalance = useReadContract({
     address: pairToken,
     abi: erc20Abi,
@@ -134,12 +171,93 @@ export function TradePanel({ token, pairToken, symbol, chainKey = "arc" }: Trade
 
   const busy = state.step === "approving" || state.step === "swapping";
 
+  /**
+   * A v4 swap.
+   *
+   * Two approvals the first time, then none. The UniversalRouter pulls the
+   * input through Permit2 rather than holding an allowance itself, so the
+   * token is approved to Permit2 once (unbounded, to Permit2 only) and Permit2
+   * is then told the router may spend it until an expiry. Both are checked
+   * before being sent, so a returning trader signs neither.
+   */
+  async function submitV4(tokenIn: Hex): Promise<void> {
+    if (address === undefined || parsedAmount === null || arcPublic === undefined) return;
+    const hook = v4cfg?.hook;
+    const router = v4cfg?.universalRouter;
+    if (hook === undefined || router === undefined) return;
+
+    if (v4cfg === undefined) return;
+    const key = poolKeyFor(token, pairToken, hook, v4cfg.poolFee, v4cfg.tickSpacing);
+    const zeroForOne = side === "buy" ? buyIsZeroForOne(token, pairToken) : !buyIsZeroForOne(token, pairToken);
+
+    // 1. The token must let Permit2 move it.
+    const erc20Allowance = await arcPublic.readContract({
+      address: tokenIn, abi: erc20Abi, functionName: "allowance", args: [address, PERMIT2],
+    });
+    if (erc20Allowance < parsedAmount) {
+      setState({ step: "approving" });
+      const tx = await writeContractAsync({
+        address: tokenIn, abi: erc20Abi, functionName: "approve",
+        args: [PERMIT2, 2n ** 256n - 1n], chainId: chain.id,
+      });
+      await arcPublic.waitForTransactionReceipt({ hash: tx });
+    }
+
+    // 2. Permit2 must let the router spend it.
+    const [permitAmount, permitExpiry] = await arcPublic.readContract({
+      address: PERMIT2, abi: permit2Abi, functionName: "allowance",
+      args: [address, tokenIn, router],
+    });
+    const nowSec = BigInt(Math.floor(Date.now() / 1000));
+    if (permitAmount < parsedAmount || BigInt(permitExpiry) <= nowSec) {
+      setState({ step: "approving" });
+      const tx = await writeContractAsync({
+        address: PERMIT2, abi: permit2Abi, functionName: "approve",
+        args: [tokenIn, router, 2n ** 160n - 1n, Number(nowSec + 30n * 24n * 60n * 60n)],
+        chainId: chain.id,
+      });
+      await arcPublic.waitForTransactionReceipt({ hash: tx });
+    }
+
+    // 3. Quote, bound it, swap. A quote that cannot be obtained stops the
+    //    trade rather than defaulting to zero, which would accept any price.
+    setState({ step: "swapping" });
+    const expectedOut = await quoteV4(arcPublic, key, zeroForOne, parsedAmount);
+    if (expectedOut === null || expectedOut === 0n) {
+      setState({ step: "error", message: "Could not get a quote for this trade." });
+      return;
+    }
+    const slippageBps = BigInt(Math.round(Number.parseFloat(slippagePct || "5") * 100));
+    const minOut = expectedOut - (expectedOut * slippageBps) / 10_000n;
+
+    const { commands, inputs } = encodeV4Swap(key, zeroForOne, parsedAmount, minOut);
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + 600);
+    const txHash = await writeContractAsync({
+      address: router, abi: universalRouterAbi, functionName: "execute",
+      args: [commands, [...inputs], deadline], chainId: chain.id,
+    });
+    const receipt = await arcPublic.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status !== "success") {
+      setState({ step: "error", message: "Swap reverted" });
+      return;
+    }
+    setState({ step: "done", txHash });
+    setAmountText("");
+    void quoteBalance.refetch();
+    void tokenBalance.refetch();
+  }
+
   async function submit(): Promise<void> {
     if (address === undefined || parsedAmount === null || ROUTER_ADDRESS === undefined || arcPublic === undefined) return;
     try {
       await ensureChain(chain.key, chainId, switchChainAsync);
       const tokenIn = side === "buy" ? pairToken : token;
       const tokenOut = side === "buy" ? token : pairToken;
+
+      if (isV4 === true && v4cfg?.hook !== undefined && v4cfg.universalRouter !== undefined) {
+        await submitV4(tokenIn);
+        return;
+      }
 
       const allowance = await arcPublic.readContract({
         address: tokenIn,
