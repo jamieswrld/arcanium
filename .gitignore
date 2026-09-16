@@ -21,3 +21,8 @@ packages/contracts/broadcast/
 packages/contracts/lib/
 
 .env*
+
+# TypeScript incremental build cache. Machine-local, and actively harmful
+# in git: a stale one makes tsc skip rechecking files, which hid a real
+# implicit-any error until a clean build on the server caught it.
+*.tsbuildinfo
