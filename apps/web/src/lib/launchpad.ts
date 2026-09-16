@@ -208,6 +208,7 @@ export const distributorAbi = [
 export const launchTokenAbi = [
   { type: "function", name: "taxRecipient", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
   { type: "function", name: "rewardsEnabled", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
+  { type: "function", name: "taxBps", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
 ] as const;
 
 export const erc20MetaAbi = [

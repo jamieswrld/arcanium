@@ -17,6 +17,7 @@ import { lockedForToken } from "@/lib/locks";
 import { formatAmount } from "@/components/LockTable";
 import { CreatorFees } from "@/components/CreatorFees";
 import { TokenMode } from "@/components/TokenMode";
+import { TokenTax } from "@/components/TokenTax";
 import { TokenSocials } from "@/components/TokenSocials";
 
 export const revalidate = 10;
@@ -236,6 +237,11 @@ export default async function TokenPage({ params }: TokenPageProps) {
 
         {/* The terminal stays with you while the page scrolls. */}
         <aside className="tk-side">
+          {/* Above the trade panel, not below it: a tax is a cost you pay, and
+              a warning that arrives after the decision is not a warning.
+              Renders nothing for the untaxed tokens, which is nearly all. */}
+          <TokenTax token={detail.token} chainKey="arc" />
+
           <section className="panel">
             <div className="panel-head">
               <span className="eyebrow">Trade</span>

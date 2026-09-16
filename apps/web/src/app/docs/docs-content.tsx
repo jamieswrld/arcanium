@@ -139,6 +139,10 @@ const CORE_DOCS: Record<string, ReactNode> = {
         </tbody>
       </table>
       <p>Recipients are fixed for the life of the pool, so creator rewards keep accruing in USDC. Anyone can trigger a fee distribution.</p>
+      <h2>Trade tax</h2>
+      <p>A creator may also set a <strong>trade tax</strong> of up to 9% at launch. It is taken on every buy and sell of the token and <strong>burned</strong>, so it reduces supply rather than paying anybody — including the creator. Most tokens set it to zero.</p>
+      <p>Because the tax is applied inside the token&apos;s own transfer, quotes from the pool, the router and outside aggregators all show the pre-tax amount, and a taxed trade delivers slightly less than quoted. Token pages here display the rate above the trade panel whenever it is not zero. Ordinary transfers between wallets are never taxed — only trades against the launch pool.</p>
+      <p>Like the reward mode, the rate is fixed at launch and can never be changed afterwards.</p>
       <h2>Locked liquidity</h2>
       <p>The launch position is held in the Arcanium liquidity vault and can never be withdrawn — the liquidity cannot be pulled out from under the pool. As with any market, the token&apos;s price can still fall.</p>
     </>

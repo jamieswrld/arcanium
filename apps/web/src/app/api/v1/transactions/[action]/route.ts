@@ -201,6 +201,14 @@ function buildLaunch(
     return fail("invalid_parameter", "`initialBuy` must be an integer in pair-asset base units.");
   }
 
+  // Basis points, so an integrator names the tax exactly rather than through a
+  // float. The factory reverts above 900 and a reverted launch still costs
+  // gas, so the ceiling is checked here where the error can say why.
+  const taxRaw = String(body["taxBps"] ?? "0");
+  if (!/^\d+$/.test(taxRaw) || BigInt(taxRaw) > 900n) {
+    return fail("invalid_parameter", "`taxBps` must be an integer from 0 to 900 (0–9%).");
+  }
+
   const MODES: Record<string, number> = { standard: 0, divium: 1, arcane: 2 };
   const mode = MODES[modeRaw];
   if (mode === undefined) {
@@ -232,7 +240,7 @@ function buildLaunch(
           minTokensOut: 0n,
           deadline,
           feeRecipient: feeRecipient as Hex,
-          taxBps: 0n,
+          taxBps: BigInt(taxRaw),
           mode,
         },
       ],
@@ -267,6 +275,7 @@ function buildLaunch(
         name,
         symbol: ticker,
         rewardMode: modeRaw,
+        taxBps: Number(taxRaw),
         pair: chain.quote.symbol,
         supply: { units: (1_000_000_000n * 10n ** 18n).toString(), decimals: 18 },
         initialBuy: { units: creatorBuy.toString(), decimals: chain.quote.decimals },

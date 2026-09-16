@@ -82,6 +82,8 @@ export function CreateForm() {
   /** Set when the creator chooses to pay an X account instead of a wallet. */
   const [feeDest, setFeeDest] = useState<FeeDestination | null>(null);
   const [mode, setMode] = useState<0 | 1 | 2>(0);
+  /** Extra trade tax as a percentage string. The contract caps it at 9%. */
+  const [taxPct, setTaxPct] = useState("0");
   const [state, setState] = useState<CreateState>({ step: "form" });
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -127,6 +129,21 @@ export function CreateForm() {
   const feeWalletTrimmed = feeWallet.trim();
   const feeWalletValid = feeWalletTrimmed === "" || /^0x[0-9a-fA-F]{40}$/.test(feeWalletTrimmed);
 
+  /**
+   * Tax as basis points. Parsed in integer arithmetic rather than through a
+   * float, so 2.9% is 290 and not 289. The contract reverts above 900, and a
+   * launch that reverts costs gas and tells the creator nothing useful, so the
+   * same ceiling is enforced here.
+   */
+  const taxBps = useMemo<bigint | null>(() => {
+    const raw = taxPct.trim();
+    if (raw === "") return 0n;
+    if (!/^\d{0,2}(\.\d{1,2})?$/.test(raw)) return null;
+    const [whole = "0", frac = ""] = raw.split(".");
+    const bps = BigInt(whole) * 100n + BigInt((frac + "00").slice(0, 2));
+    return bps > 900n ? null : bps;
+  }, [taxPct]);
+
   const formError = ((): string | null => {
     if (name.trim().length === 0) return null;
     if (name.trim().length > 48) return "Name too long (max 48)";
@@ -143,6 +160,7 @@ export function CreateForm() {
     } else if (!feeWalletValid) {
       return "Fee recipient must be a valid 0x address";
     }
+    if (taxBps === null) return "Trade tax must be between 0% and 9%";
     return null;
   })();
 
@@ -214,7 +232,7 @@ export function CreateForm() {
             : feeWalletValid && feeWalletTrimmed !== ""
               ? feeWalletTrimmed
               : "0x0000000000000000000000000000000000000000") as Hex,
-          taxBps: 0n,
+          taxBps: taxBps ?? 0n,
           mode,
         }],
         chainId: chain.id,
@@ -348,6 +366,37 @@ export function CreateForm() {
         </span>
       </div>
 
+      <div className="arch-form-row">
+        <label htmlFor="cf-tax">Trade tax (optional)</label>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <input
+            id="cf-tax"
+            value={taxPct}
+            onChange={(e) => setTaxPct(e.target.value)}
+            placeholder="0"
+            inputMode="decimal"
+            disabled={busy}
+            style={{ maxWidth: 110 }}
+          />
+          <span className="arch-note" style={{ margin: 0 }}>% per trade, max 9%</span>
+        </div>
+        <span className="arch-note">
+          {/* The tax is not creator income — distribute() burns the whole token
+              balance it holds, tax proceeds included. Saying otherwise would
+              sell a revenue stream that does not exist. */}
+          An extra cut taken on every buy and sell of your token and{" "}
+          <strong>burned</strong>, permanently shrinking supply. It is not paid to you. Ordinary
+          transfers between wallets are untouched.
+          {taxBps !== null && taxBps > 0n ? (
+            <>
+              {" "}
+              Traders would pay {(Number(taxBps) / 100).toFixed(2)}% on top of the 1% pool fee, so{" "}
+              {(Number(taxBps) / 100 + 1).toFixed(2)}% in total.
+            </>
+          ) : null}
+        </span>
+      </div>
+
       <details style={{ marginTop: "var(--s2)" }}>
         <summary className="arch-note" style={{ cursor: "pointer", marginBottom: "var(--s2)" }}>
           Advanced: where creator rewards go
@@ -385,6 +434,16 @@ export function CreateForm() {
             <SummaryRow
               label="Creator rewards"
               value={mode === 1 ? "Divium — paid to holders" : mode === 2 ? "Arcane — buy and burn" : "Paid to your wallet"}
+            />
+            <SummaryRow
+              label="Trade tax"
+              value={
+                taxBps === null
+                  ? "—"
+                  : taxBps === 0n
+                    ? "None"
+                    : `${(Number(taxBps) / 100).toFixed(2)}% · burned`
+              }
             />
             <SummaryRow label="Initial buy" value={buyAmount > 0n ? `${fmtQuote(buyAmount)} ${quoteSymbol}` : "None"} />
             <SummaryRow
