@@ -1,5 +1,8 @@
+import { erc20Abi } from "viem";
 import { getDb } from "@/lib/db";
 import { getChain } from "@/lib/chains";
+import { arcPublicClient } from "@/lib/launchpad";
+import { ARC_TOKEN_LOCKER } from "@arch/chain-config";
 
 /**
  * Token locks, read from the indexer.
@@ -259,4 +262,194 @@ export async function lockedForToken(
   } catch {
     return null;
   }
+}
+
+/* ------------------------------------------------------------ chain fallback */
+
+const lockerAbi = [
+  {
+    type: "function",
+    name: "lockCount",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "getLock",
+    stateMutability: "view",
+    inputs: [{ type: "uint256" }],
+    outputs: [
+      {
+        components: [
+          { name: "token", type: "address" },
+          { name: "depositor", type: "address" },
+          { name: "beneficiary", type: "address" },
+          { name: "amount", type: "uint256" },
+          { name: "createdAt", type: "uint64" },
+          { name: "unlockTime", type: "uint64" },
+          { name: "claimed", type: "bool" },
+        ],
+        type: "tuple",
+      },
+    ],
+  },
+] as const;
+
+/**
+ * One lock, read straight from the contract.
+ *
+ * The indexer is a few seconds behind at best, and somebody who has just paid
+ * for a lock should not be told it does not exist. The chain is the authority
+ * here anyway — this is not a cache miss, it is asking the source.
+ *
+ * What the chain cannot supply is the transaction that created or claimed it,
+ * since that is only recoverable from logs; those come back null and the page
+ * omits them until the indexer catches up.
+ */
+export async function lockFromChain(lockId: string): Promise<LockRow | null> {
+  let id: bigint;
+  try {
+    id = BigInt(lockId);
+  } catch {
+    return null;
+  }
+  const client = arcPublicClient();
+  const lock = await client
+    .readContract({ address: ARC_TOKEN_LOCKER, abi: lockerAbi, functionName: "getLock", args: [id] })
+    .catch(() => null);
+  if (lock === null) return null;
+
+  const [symbol, name, decimals] = await Promise.all([
+    client.readContract({ address: lock.token, abi: erc20Abi, functionName: "symbol" }).catch(() => null),
+    client.readContract({ address: lock.token, abi: erc20Abi, functionName: "name" }).catch(() => null),
+    client.readContract({ address: lock.token, abi: erc20Abi, functionName: "decimals" }).catch(() => null),
+  ]);
+
+  const now = Date.now();
+  const unlockMs = Number(lock.unlockTime) * 1000;
+  const status: LockStatus = lock.claimed ? "claimed" : now >= unlockMs ? "claimable" : "locked";
+
+  return {
+    lockId,
+    token: lock.token,
+    depositor: lock.depositor,
+    beneficiary: lock.beneficiary,
+    amount: lock.amount.toString(),
+    createdAt: new Date(Number(lock.createdAt) * 1000).toISOString(),
+    unlockTime: new Date(unlockMs).toISOString(),
+    createdBlock: "",
+    createdTx: "",
+    claimedAt: null,
+    claimedTx: null,
+    status,
+    secondsRemaining: status === "locked" ? Math.ceil((unlockMs - now) / 1000) : 0,
+    symbol: symbol === null ? null : String(symbol),
+    name: name === null ? null : String(name),
+    decimals: decimals === null ? null : Number(decimals),
+  };
+}
+
+/** The indexer if it has the lock, otherwise the chain. */
+export async function lockByIdOrChain(lockId: string): Promise<LockRow | null> {
+  const indexed = await lockById(lockId);
+  if (indexed !== null) return indexed;
+  return lockFromChain(lockId);
+}
+
+/**
+ * Recent locks, read straight from the contract.
+ *
+ * The locker keeps a count and hands out locks by id, so the chain can answer
+ * "what locks exist" without help. That makes the indexer an optimisation here
+ * rather than a dependency — which matters, because an indexer that is behind
+ * would otherwise make a lock somebody just paid for appear not to exist.
+ *
+ * Bounded to the most recent `limit`, newest first. This is not a substitute
+ * for indexing at scale — it is one call per lock — but it keeps the page
+ * truthful when the indexer is unavailable, and at a few dozen locks it is
+ * indistinguishable.
+ */
+export async function locksFromChain(limit = 60): Promise<LockRow[] | null> {
+  const client = arcPublicClient();
+  const count = await client
+    .readContract({ address: ARC_TOKEN_LOCKER, abi: lockerAbi, functionName: "lockCount" })
+    .catch(() => null);
+  if (count === null) return null;
+
+  const total = Number(count);
+  if (total === 0) return [];
+  const ids: bigint[] = [];
+  for (let i = total; i > 0 && ids.length < limit; i--) ids.push(BigInt(i));
+
+  const rows = await Promise.all(ids.map((id) => lockFromChain(id.toString())));
+  return rows.filter((r): r is LockRow => r !== null);
+}
+
+/**
+ * Locks for a query, from the indexer when it can answer and the chain when it
+ * cannot.
+ *
+ * Filtering on the chain path happens in memory over the recent window, which
+ * is the honest trade: a correct answer over the last N locks beats a complete
+ * answer that is missing whatever the indexer has not read yet.
+ */
+export async function lockListResilient(
+  q: LockQuery,
+): Promise<{ locks: LockRow[]; total: number; source: "indexer" | "chain" } | null> {
+  const indexed = await lockList(q);
+  if (indexed !== null) {
+    // The indexer answered — but if it has not seen a lock the chain already
+    // has, it is behind and the chain is the better answer.
+    const onChainCount = await arcPublicClient()
+      .readContract({ address: ARC_TOKEN_LOCKER, abi: lockerAbi, functionName: "lockCount" })
+      .catch(() => null);
+    const behind =
+      onChainCount !== null && q.token === undefined && q.wallet === undefined && q.status === undefined
+        ? Number(onChainCount) > indexed.total
+        : false;
+    if (!behind) return { ...indexed, source: "indexer" };
+  }
+
+  const all = await locksFromChain();
+  if (all === null) return indexed === null ? null : { ...indexed, source: "indexer" };
+
+  const wallet = q.wallet?.toLowerCase();
+  const role = q.role ?? "any";
+  const filtered = all.filter((l) => {
+    if (q.token !== undefined && l.token.toLowerCase() !== q.token.toLowerCase()) return false;
+    if (wallet !== undefined) {
+      const isDep = l.depositor.toLowerCase() === wallet;
+      const isBen = l.beneficiary.toLowerCase() === wallet;
+      if (role === "depositor" && !isDep) return false;
+      if (role === "beneficiary" && !isBen) return false;
+      if (role === "any" && !isDep && !isBen) return false;
+    }
+    if (q.status !== undefined && q.status !== "all" && l.status !== q.status) return false;
+    return true;
+  });
+  return { locks: filtered, total: filtered.length, source: "chain" };
+}
+
+/** Headline counts, computed from chain when the indexer cannot answer. */
+export async function lockStatsResilient(): Promise<LockStats | null> {
+  const indexed = await lockStats();
+  const onChainCount = await arcPublicClient()
+    .readContract({ address: ARC_TOKEN_LOCKER, abi: lockerAbi, functionName: "lockCount" })
+    .catch(() => null);
+
+  const total = onChainCount === null ? null : Number(onChainCount);
+  if (indexed !== null && (total === null || indexed.activeLocks + indexed.claimable === 0 || total <= indexed.activeLocks)) {
+    return indexed;
+  }
+  const all = await locksFromChain();
+  if (all === null) return indexed;
+
+  const week = Date.now() + 7 * 86_400_000;
+  return {
+    activeLocks: all.filter((l) => l.status !== "claimed").length,
+    distinctTokens: new Set(all.map((l) => l.token.toLowerCase())).size,
+    claimable: all.filter((l) => l.status === "claimable").length,
+    unlockingSoon: all.filter((l) => l.status === "locked" && new Date(l.unlockTime).getTime() <= week).length,
+  };
 }

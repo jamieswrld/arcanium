@@ -1,5 +1,5 @@
 import { fail, handle, ok, preflight } from "@/lib/apiV1";
-import { lockById } from "@/lib/locks";
+import { lockByIdOrChain } from "@/lib/locks";
 
 /** GET /api/locks/:id — one lock by its on-chain id. */
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ export async function GET(
     // parsed into a Number that would silently lose precision.
     if (!/^[0-9]{1,78}$/.test(id)) return fail("invalid_parameter", "lock id must be a number.");
 
-    const lock = await lockById(id);
+    const lock = await lockByIdOrChain(id);
     if (lock === null) return fail("not_found", `No lock ${id}.`);
     return ok(lock);
   });

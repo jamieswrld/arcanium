@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { ARC_TOKEN_LOCKER } from "@arch/chain-config";
-import { lockList, lockStats } from "@/lib/locks";
+import { lockListResilient, lockStatsResilient } from "@/lib/locks";
 import { LockTable } from "@/components/LockTable";
 import { MyLocks } from "@/components/MyLocks";
 import { CreateLockPanel } from "@/components/CreateLockPanel";
@@ -103,7 +103,7 @@ export default async function LockedPage({ searchParams }: Props) {
 }
 
 async function Stats() {
-  const stats = await lockStats();
+  const stats = await lockStatsResilient();
   if (stats === null) {
     return (
       <p className="arch-note">
@@ -123,7 +123,7 @@ async function Stats() {
 }
 
 async function AllLocks({ token }: { readonly token?: string | undefined }) {
-  const result = await lockList({ limit: 100, token });
+  const result = await lockListResilient({ limit: 100, token });
   if (result === null) {
     return <p className="arch-note">Lock data is not available right now.</p>;
   }

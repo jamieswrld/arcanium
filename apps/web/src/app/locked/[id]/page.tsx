@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ARC_TOKEN_LOCKER } from "@arch/chain-config";
-import { lockById } from "@/lib/locks";
+import { lockByIdOrChain } from "@/lib/locks";
 import { formatAmount, LockStatusChip } from "@/components/LockTable";
 import { ClaimLockButton } from "@/components/ClaimLockButton";
 import { CopyButton } from "@/components/CopyButton";
@@ -27,7 +27,7 @@ export default async function LockDetailPage({ params }: Props) {
   const { id } = await params;
   if (!/^[0-9]{1,78}$/.test(id)) notFound();
 
-  const lock = await lockById(id);
+  const lock = await lockByIdOrChain(id);
   if (lock === null) notFound();
 
   const chain = getChain("arc");
@@ -89,13 +89,18 @@ export default async function LockDetailPage({ params }: Props) {
             <span className="num">{unlock.toUTCString()}</span>
             <span className="arch-note num">{unlock.toLocaleString()} local</span>
           </Field>
-          <Field label="Created in">
-            <a href={explorerTx(chain, lock.createdTx)} target="_blank" rel="noreferrer" className="mono">
-              {lock.createdTx.slice(0, 18)}…
-            </a>
-            <span className="arch-note num">block {lock.createdBlock}</span>
-          </Field>
-          {lock.claimedTx === null ? null : (
+          {/* Only from logs, so absent for a few seconds on a brand-new lock
+              that the indexer has not read yet. The lock itself is already
+              real — it came from the contract. */}
+          {lock.createdTx === "" ? null : (
+            <Field label="Created in">
+              <a href={explorerTx(chain, lock.createdTx)} target="_blank" rel="noreferrer" className="mono">
+                {lock.createdTx.slice(0, 18)}…
+              </a>
+              <span className="arch-note num">block {lock.createdBlock}</span>
+            </Field>
+          )}
+          {lock.claimedTx === null || lock.claimedTx === "" ? null : (
             <Field label="Claimed in">
               <a href={explorerTx(chain, lock.claimedTx)} target="_blank" rel="noreferrer" className="mono">
                 {lock.claimedTx.slice(0, 18)}…

@@ -1,5 +1,5 @@
 import { fail, handle, ok, parseAddress, parseEnum, parseLimit, parseOffset, preflight } from "@/lib/apiV1";
-import { lockList, lockStats, type LockStatus } from "@/lib/locks";
+import { lockListResilient, lockStatsResilient, type LockStatus } from "@/lib/locks";
 
 /**
  * GET /api/locks
@@ -25,7 +25,7 @@ export async function GET(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.searchParams.get("stats") !== null) {
-      const stats = await lockStats();
+      const stats = await lockStatsResilient();
       if (stats === null) return fail("upstream_unavailable", "Lock data is not available.");
       return ok(stats);
     }
@@ -42,7 +42,7 @@ export async function GET(request: Request): Promise<Response> {
     const status = parseEnum<(typeof STATUSES)[number]>(url.searchParams.get("status"), STATUSES, "all");
     const role = parseEnum<(typeof ROLES)[number]>(url.searchParams.get("role"), ROLES, "any");
 
-    const result = await lockList({
+    const result = await lockListResilient({
       token,
       wallet,
       role,
@@ -54,6 +54,6 @@ export async function GET(request: Request): Promise<Response> {
     // a different and much worse claim than saying we cannot tell.
     if (result === null) return fail("upstream_unavailable", "Lock data is not available.");
 
-    return ok(result.locks, { total: result.total, limit, offset, status, role });
+    return ok(result.locks, { total: result.total, limit, offset, status, role, source: result.source });
   });
 }
