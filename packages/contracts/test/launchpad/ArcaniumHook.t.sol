@@ -174,35 +174,73 @@ contract ArcaniumHookTest is Test {
         assertEq(uint160(address(hook)) & mask, hook.HOOK_FLAGS() & mask, "address does not carry the flags");
     }
 
-    function test_standard_splits_between_creator_and_protocol() public {
+    function test_standard_splits_the_quote_side_between_creator_and_protocol() public {
         PoolKey memory key = _key(ArcaniumHook.Mode.STANDARD);
-        _swap(key, _buyIsZeroForOne(), -1_000e6);
+        // A sell pays its fee in the quote asset, which is the side that gets
+        // split. A buy pays in the token and is burned instead.
+        _swap(key, !_buyIsZeroForOne(), -1_000e18);
 
-        uint256 toCreator = token.balanceOf(creator);
-        uint256 toProtocol = token.balanceOf(treasury);
+        uint256 toCreator = quote.balanceOf(creator);
+        uint256 toProtocol = quote.balanceOf(treasury);
         assertGt(toCreator, 0, "creator got nothing");
         assertGt(toProtocol, 0, "protocol got nothing");
-        // 40/60, the configured split.
         uint256 total = toCreator + toProtocol;
         assertApproxEqAbs(toCreator, (total * 4_000) / 10_000, 2, "split is not 40/60");
 
         // And the rate itself, not just its division. Asserting only the ratio
-        // would pass just as happily on a hook charging a tenth of the tax it
-        // was configured with. The trader's receipt plus the fee is the gross
-        // output the pool paid, and the fee should be TAX_BPS of it.
-        uint256 received = token.balanceOf(trader) - 1_000_000e18;
+        // would pass just as happily on a hook charging a tenth of the fee it
+        // was configured with.
+        uint256 received = quote.balanceOf(trader) - 1e30;
         uint256 gross = received + total;
-        assertApproxEqRel(total, (gross * TAX_BPS) / 10_000, 1e15, "tax rate is not 5%");
+        uint256 rate = hook.BASE_FEE_BPS() + TAX_BPS;
+        assertApproxEqRel(total, (gross * rate) / 10_000, 1e15, "rate is not base + tax");
     }
 
-    function test_arcane_burns_the_token_side_with_no_swap() public {
-        PoolKey memory key = _key(ArcaniumHook.Mode.ARCANE);
+    function test_the_token_side_is_burned_in_every_mode() public {
+        PoolKey memory key = _key(ArcaniumHook.Mode.STANDARD);
         uint256 burn0 = token.balanceOf(BURN);
         _swap(key, _buyIsZeroForOne(), -1_000e6);
 
+        assertGt(token.balanceOf(BURN) - burn0, 0, "the token side was not burned");
+        // Paying a creator in their own token would hand them sell pressure on
+        // their own market, and paying the protocol in it would make revenue
+        // depend on whatever happened to trade. Neither should receive any.
+        assertEq(token.balanceOf(creator), 0, "creator was paid in the launch token");
+        assertEq(token.balanceOf(treasury), 0, "protocol was paid in the launch token");
+    }
+
+    function test_arcane_burns_buys_outright_and_parks_sells() public {
+        PoolKey memory key = _key(ArcaniumHook.Mode.ARCANE);
+        uint256 burn0 = token.balanceOf(BURN);
+
+        // A buy pays in the token: burned in the same transaction, no swap,
+        // nothing to fail. This is the case v3 could not do.
+        _swap(key, _buyIsZeroForOne(), -1_000e6);
         assertGt(token.balanceOf(BURN) - burn0, 0, "nothing burned on a buy");
-        assertEq(token.balanceOf(creator), 0, "creator was paid in a burn mode");
-        assertGt(token.balanceOf(treasury), 0, "protocol got nothing");
+        assertEq(hook.pendingBurnQuote(key.toId()), 0, "a buy should leave nothing parked");
+
+        // A sell pays in USDC, which cannot be burned and cannot be swapped
+        // back mid-swap, so it is parked for sweepQuote.
+        _swap(key, !_buyIsZeroForOne(), -1_000e18);
+        assertGt(hook.pendingBurnQuote(key.toId()), 0, "a sell left nothing to sweep");
+        assertEq(quote.balanceOf(creator), 0, "creator was paid in a burn mode");
+    }
+
+    function test_arcane_sweep_hands_the_parked_quote_to_the_distributor() public {
+        PoolKey memory key = _key(ArcaniumHook.Mode.ARCANE);
+        _swap(key, !_buyIsZeroForOne(), -1_000e18);
+        uint256 parked = hook.pendingBurnQuote(key.toId());
+        assertGt(parked, 0, "nothing parked to sweep");
+
+        // Permissionless: it can only move funds to the address fixed at
+        // launch, so a stranger calling it has nothing to steer.
+        vm.prank(trader);
+        hook.sweepQuote(key);
+
+        assertEq(quote.balanceOf(distributor), parked, "distributor did not receive the parked quote");
+        assertEq(hook.pendingBurnQuote(key.toId()), 0, "still parked after sweeping");
+        vm.expectRevert(ArcaniumHook.NothingPending.selector);
+        hook.sweepQuote(key);
     }
 
     function test_divium_notifies_the_token_on_a_quote_side_fee() public {
@@ -212,9 +250,10 @@ contract ArcaniumHookTest is Test {
 
         assertGt(quote.balanceOf(distributor), 0, "distributor received nothing");
         assertEq(token.notified(), quote.balanceOf(distributor), "notified amount does not match");
+        assertGt(quote.balanceOf(treasury), 0, "protocol share of the quote side is missing");
     }
 
-    function test_untaxed_pool_takes_nothing() public {
+    function test_a_pool_with_no_creator_tax_still_charges_the_base_fee() public {
         (Currency c0, Currency c1) = address(token) < address(quote)
             ? (Currency.wrap(address(token)), Currency.wrap(address(quote)))
             : (Currency.wrap(address(quote)), Currency.wrap(address(token)));
@@ -240,9 +279,11 @@ contract ArcaniumHookTest is Test {
             }),
             ""
         );
+        uint256 burn0 = token.balanceOf(BURN);
         _swap(key, _buyIsZeroForOne(), -1_000e6);
-        assertEq(token.balanceOf(creator), 0, "an untaxed pool still charged");
-        assertEq(token.balanceOf(treasury), 0, "an untaxed pool still charged the protocol");
+        // Zero creator tax does not mean zero fee: the 1% base still applies,
+        // and on a buy it is burned.
+        assertGt(token.balanceOf(BURN) - burn0, 0, "the base fee was not charged");
     }
 
     function test_a_stranger_cannot_open_a_pool_on_this_hook() public {

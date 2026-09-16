@@ -60,7 +60,17 @@ contract ArcaniumHook is IHooks, Ownable2Step {
         Hooks.BEFORE_INITIALIZE_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG;
 
     uint256 public constant BPS_DENOMINATOR = 10_000;
-    /// Matches ArchLaunchTokenV2: 9% tax plus the pool fee stays under 10%.
+    /**
+     * The fee every launch charges, matching the 1% tier v3 launches use.
+     *
+     * v4 pools created by the launchpad set their own LP fee to zero and let
+     * the hook take the whole thing instead. On v3 this 1% accrued to the
+     * position and sat there until the keeper collected it; taken here it is
+     * routed in the same transaction as the trade. Leaving the pool fee on as
+     * well would charge traders twice.
+     */
+    uint256 public constant BASE_FEE_BPS = 100;
+    /// Matches ArchLaunchTokenV2: 9% tax plus the 1% base stays at 10% total.
     uint256 public constant MAX_TAX_BPS = 900;
     uint256 public constant MIN_CREATOR_SHARE_BPS = 100;
     uint256 public constant MAX_CREATOR_SHARE_BPS = 5_000;
@@ -220,7 +230,7 @@ contract ArcaniumHook is IHooks, Ownable2Step {
     ) external override onlyPoolManager returns (bytes4, int128) {
         PoolId id = key.toId();
         PoolConfig memory cfg = _configs[id];
-        if (!cfg.configured || cfg.taxBps == 0) return (IHooks.afterSwap.selector, 0);
+        if (!cfg.configured) return (IHooks.afterSwap.selector, 0);
 
         // The fee is charged in the swap's unspecified currency, which for an
         // exact-input trade is the output side.
@@ -229,15 +239,26 @@ contract ArcaniumHook is IHooks, Ownable2Step {
             specifiedTokenIs0 ? (key.currency1, delta.amount1()) : (key.currency0, delta.amount0());
         if (swapAmount < 0) swapAmount = -swapAmount;
 
-        uint256 feeAmount = (uint256(uint128(swapAmount)) * cfg.taxBps) / BPS_DENOMINATOR;
+        uint256 rate = BASE_FEE_BPS + cfg.taxBps;
+        uint256 feeAmount = (uint256(uint128(swapAmount)) * rate) / BPS_DENOMINATOR;
         if (feeAmount == 0) return (IHooks.afterSwap.selector, 0);
 
-        uint256 creatorAmount = (feeAmount * creatorShareBps) / BPS_DENOMINATOR;
-        uint256 protocolAmount = feeAmount - creatorAmount;
+        uint256 protocolAmount;
+        uint256 creatorAmount;
 
-        if (protocolAmount > 0) poolManager.take(feeCurrency, protocolTreasury, protocolAmount);
-        if (creatorAmount > 0) {
-            _routeCreatorShare(id, cfg, feeCurrency, creatorAmount);
+        if (Currency.unwrap(feeCurrency) == cfg.token) {
+            // Token-denominated fees are burned outright, in every mode. This
+            // is what v3 does with the token side of its pool fees, and it is
+            // the better mechanism anyway: paying a creator in the token they
+            // launched hands them sell pressure on their own market, and
+            // paying the protocol in it makes protocol revenue depend on the
+            // price of whatever happened to trade.
+            poolManager.take(feeCurrency, BURN_ADDRESS, feeAmount);
+        } else {
+            creatorAmount = (feeAmount * creatorShareBps) / BPS_DENOMINATOR;
+            protocolAmount = feeAmount - creatorAmount;
+            if (protocolAmount > 0) poolManager.take(feeCurrency, protocolTreasury, protocolAmount);
+            if (creatorAmount > 0) _routeCreatorShare(id, cfg, feeCurrency, creatorAmount);
         }
 
         emit TaxRouted(id, Currency.unwrap(feeCurrency), protocolAmount, creatorAmount, cfg.mode);
@@ -245,12 +266,14 @@ contract ArcaniumHook is IHooks, Ownable2Step {
     }
 
     /**
-     * @dev Where the creator's share goes, settled inside the swap.
+     * @dev Where the creator's share of a quote-denominated fee goes, settled
+     *      inside the swap. Only ever called with the quote asset — the token
+     *      side is burned before it gets here.
      *
-     *      ARCANE burns outright when the fee arrived in the token, which is
-     *      every buy. When it arrived in USDC — every sell — there is nothing
-     *      to burn yet, so it is parked for sweepQuote. Paying it to the
-     *      creator instead would quietly convert a burn token into a fee token.
+     *      ARCANE is the one case that cannot finish synchronously: buying the
+     *      token back would mean swapping the pool that is mid-swap. So it is
+     *      parked for sweepQuote. Paying it to the creator instead would
+     *      quietly turn a burn token into a fee token.
      */
     function _routeCreatorShare(
         PoolId id,
@@ -258,29 +281,15 @@ contract ArcaniumHook is IHooks, Ownable2Step {
         Currency feeCurrency,
         uint256 amount
     ) private {
-        address currency = Currency.unwrap(feeCurrency);
-
         if (cfg.mode == Mode.ARCANE) {
-            if (currency == cfg.token) {
-                poolManager.take(feeCurrency, BURN_ADDRESS, amount);
-            } else {
-                poolManager.take(feeCurrency, address(this), amount);
-                pendingBurnQuote[id] += amount;
-            }
+            poolManager.take(feeCurrency, address(this), amount);
+            pendingBurnQuote[id] += amount;
             return;
         }
 
-        if (cfg.mode == Mode.DIVIUM) {
-            // Holders are paid in the quote asset. A token-denominated fee is
-            // not that, and inventing a conversion here would mean swapping
-            // inside a swap, so it is burned — which is at least a real
-            // benefit to the holders it was owed to.
-            if (currency == cfg.quote && cfg.distributor != address(0)) {
-                poolManager.take(feeCurrency, cfg.distributor, amount);
-                IDiviumToken(cfg.token).notifyRewardAmount(amount);
-            } else {
-                poolManager.take(feeCurrency, BURN_ADDRESS, amount);
-            }
+        if (cfg.mode == Mode.DIVIUM && cfg.distributor != address(0)) {
+            poolManager.take(feeCurrency, cfg.distributor, amount);
+            IDiviumToken(cfg.token).notifyRewardAmount(amount);
             return;
         }
 
