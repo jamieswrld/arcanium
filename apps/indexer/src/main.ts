@@ -653,6 +653,13 @@ async function indexLaunchesV4(cfg: IndexerConfig, blocks: BlockCache): Promise<
         ]);
 
         const pairToken = ARC_USDC_ADDRESS;
+        // One unindexable launch must not stop every other launch from being
+        // indexed. A constraint violation on a single row used to throw out of
+        // the whole cycle, so the indexer retried the same failing insert
+        // forever and nothing — v3 included — moved. Logged at error level
+        // rather than swallowed: a launch that cannot be recorded is something
+        // somebody has to look at, not something to hide.
+        try {
         await sql`
           INSERT INTO tokens (
             token_address, chain_id, name, symbol, decimals, creator, pair_token,
@@ -675,6 +682,9 @@ async function indexLaunchesV4(cfg: IndexerConfig, blocks: BlockCache): Promise<
           ON CONFLICT (token_address) DO NOTHING
         `;
         log.info({ token, name, symbol, poolId }, "indexed v4 launch");
+        } catch (err) {
+          log.error({ err, token, poolId }, "could not index v4 launch; continuing");
+        }
       }
     }
 
@@ -868,6 +878,7 @@ async function indexSwapsV4(cfg: IndexerConfig, blocks: BlockCache): Promise<voi
   if (pools.length === 0) return;
 
   const byId = new Map(pools.map((p) => [`0x${p.pool_id.toString("hex")}`.toLowerCase(), p]));
+  const ids = pools.map((p) => `0x${p.pool_id.toString("hex")}` as Hex);
 
   const stream = "swaps:v4";
   const head = (await arc.getBlockNumber()) - CONFIRMATIONS;
@@ -885,8 +896,19 @@ async function indexSwapsV4(cfg: IndexerConfig, blocks: BlockCache): Promise<voi
   let skips = 0;
   for (let start = from; start <= tip; start += CHUNK) {
     const end = start + CHUNK - 1n < tip ? start + CHUNK - 1n : tip;
+    // Filtered on the pool id, not just the address. One PoolManager emits
+    // every v4 swap on the chain, and asking for all of them blew straight
+    // past the node's 20,000-result ceiling — the walk failed on every pass
+    // and no v4 trade was ever read. Constraining topic 1 to our own pools
+    // asks the node for the handful that are ours.
     const res = await chunk(() =>
-      arc.getLogs({ address: poolManagerV4, event: poolManagerSwapEvent, fromBlock: start, toBlock: end }),
+      arc.getLogs({
+        address: poolManagerV4,
+        event: poolManagerSwapEvent,
+        args: { id: ids },
+        fromBlock: start,
+        toBlock: end,
+      }),
     );
     if (!res.ok) {
       log.warn({ err: res.err, start: start.toString(), end: end.toString() }, "v4 swap chunk failed");
@@ -897,6 +919,8 @@ async function indexSwapsV4(cfg: IndexerConfig, blocks: BlockCache): Promise<voi
       break;
     }
 
+    // Still checked locally: a node that ignores the topic filter would
+    // otherwise have its extra logs written as though they were ours.
     const mine = res.logs.filter((l) => byId.has((l.args.id ?? "0x").toLowerCase()));
     if (mine.length > 0) {
       await blocks.warm(mine.map((l) => l.blockNumber ?? end));
