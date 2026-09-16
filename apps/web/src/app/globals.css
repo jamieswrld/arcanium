@@ -1528,3 +1528,21 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
 .nav-token:hover { color: var(--accent); background: var(--surface-1); }
 
 @media (max-width: 860px) { .nav-token { display: none; } }
+
+/* Chain picker inside the bridge panels. Styled as part of the chip it sits
+   in rather than as a form control, so the panel still reads as one object. */
+.arch-chain-select {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 2px;
+  max-width: 130px;
+}
+.arch-chain-select:disabled { cursor: not-allowed; opacity: 0.6; }
+.arch-chain-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+/* The list itself escapes the chip, so it needs the app's own surface. */
+.arch-chain-select option { background: var(--surface-1); color: var(--text-primary); }

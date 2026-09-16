@@ -4,20 +4,16 @@ import { useEffect, useMemo, useState } from "react";
 import { useAccount, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
 import { base } from "viem/chains";
 import type { Hex } from "viem";
-import { arcTestnet, erc20Abi, formatQuoteUnits, parseQuoteUnits, ARC_EXPLORER, BASE_EXPLORER } from "@/lib/bridgeClient";
+import { arcTestnet, erc20Abi, formatQuoteUnits, parseQuoteUnits } from "@/lib/bridgeClient";
+import { ARC, BRIDGE_CHAINS, bridgeChainByKey, type BridgeChain } from "@/lib/bridgeChains";
 import {
   addressToBytes32,
-  ARC_DOMAIN,
-  ARC_USDC,
-  BASE_DOMAIN,
-  BASE_USDC,
   BRIDGE_FEE_BPS,
-  BRIDGE_ROUTER_ARC,
-  BRIDGE_ROUTER_BASE,
   bridgeRouterAbi,
   FAST_FINALITY,
   maxFeeFor,
   TOKEN_MESSENGER_V2,
+  tokenMessengerAbi,
   tokenMessengerMinterAbi,
   tokenMinterAbi,
 } from "@/lib/cctp";
@@ -25,13 +21,17 @@ import { UsdcLogo } from "@/components/UsdcLogo";
 import { ConnectButton } from "@/components/ConnectButton";
 import { useToast } from "@/components/ui/Toast";
 
-type Direction = "toArc" | "toBase";
+
 
 type Phase = "idle" | "switching" | "approving" | "burning" | "attesting" | "claiming" | "done" | "error";
 
 interface Pending {
   readonly burnTx: Hex;
-  readonly direction: Direction;
+  /** Registry keys. Older saved transfers only had a binary direction; see
+   *  loadPending, which upgrades them rather than dropping an in-flight
+   *  deposit somebody's money is sitting in. */
+  readonly from: string;
+  readonly to: string;
   readonly amount: string; // 6d units
   readonly at: number;
 }
@@ -43,8 +43,16 @@ function loadPending(): Pending | null {
   try {
     const raw = window.localStorage.getItem(STORE_KEY);
     if (raw === null) return null;
-    const p = JSON.parse(raw) as Pending;
-    return /^0x[0-9a-fA-F]{64}$/.test(p.burnTx) ? p : null;
+    const p = JSON.parse(raw) as Pending & { direction?: string };
+    if (!/^0x[0-9a-fA-F]{64}$/.test(p.burnTx)) return null;
+    // Transfers saved before the bridge became multi-chain carry a binary
+    // direction instead of keys. Dropping those would strand an in-flight
+    // deposit that somebody's money is sitting in, so they are upgraded.
+    if (p.from === undefined || p.to === undefined) {
+      const toArc = p.direction !== "toBase";
+      return { ...p, from: toArc ? "base" : "arc", to: toArc ? "arc" : "base" };
+    }
+    return p;
   } catch {
     return null;
   }
@@ -104,11 +112,13 @@ export function CctpBridge() {
   const { address, isConnected, chainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
-  const basePublic = usePublicClient({ chainId: base.id });
-  const arcPublic = usePublicClient({ chainId: arcTestnet.id });
+  // One client, following the selected source. usePublicClient is a hook so the
+  // chain id has to come from state rather than be chosen per call site.
   const { toast } = useToast();
 
-  const [direction, setDirection] = useState<Direction>("toArc");
+  // Default route: the one almost everyone wants, funding Arc to trade.
+  const [fromKey, setFromKey] = useState<string>("base");
+  const [toKey, setToKey] = useState<string>("arc");
   const [amountText, setAmountText] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [message, setMessage] = useState<string | null>(null);
@@ -121,24 +131,26 @@ export function CctpBridge() {
   // Circle's live fast-lane fee for this route (bps). Determines the maxFee
   // we must allow for fast finality to engage.
   useEffect(() => {
-    const src = direction === "toArc" ? BASE_DOMAIN : ARC_DOMAIN;
-    const dst = direction === "toArc" ? ARC_DOMAIN : BASE_DOMAIN;
+    const srcD = bridgeChainByKey(fromKey)?.domain;
+    const dstD = bridgeChainByKey(toKey)?.domain;
+    if (srcD === undefined || dstD === undefined) return undefined;
     let cancelled = false;
-    fetch(`/api/bridge/fee?src=${src}&dst=${dst}`)
+    fetch(`/api/bridge/fee?src=${srcD}&dst=${dstD}`)
       .then((r) => r.json())
       .then((d: { fastMinimumFee?: number | null }) => {
         if (!cancelled && typeof d.fastMinimumFee === "number") setFastFeeBps(d.fastMinimumFee);
       })
       .catch(() => undefined);
     return () => { cancelled = true; };
-  }, [direction]);
+  }, [fromKey, toKey]);
 
   // Restore an in-flight transfer on mount.
   useEffect(() => {
     const p = loadPending();
     if (p !== null) {
       setPending(p);
-      setDirection(p.direction);
+      setFromKey(p.from);
+      setToKey(p.to);
       setPhase("attesting");
     }
   }, []);
@@ -150,51 +162,67 @@ export function CctpBridge() {
     return () => clearInterval(t);
   }, [phase, pending]);
 
-  const toArc = direction === "toArc";
-  const srcChainId = toArc ? base.id : arcTestnet.id;
-  const srcName = toArc ? "Base" : "Arc";
-  const dstName = toArc ? "Arc" : "Base";
-  const srcUsdc = toArc ? BASE_USDC : ARC_USDC;
-  const srcRouter = toArc ? BRIDGE_ROUTER_BASE : BRIDGE_ROUTER_ARC;
-  const srcExplorer = toArc ? BASE_EXPLORER : ARC_EXPLORER;
-  const dstExplorer = toArc ? ARC_EXPLORER : BASE_EXPLORER;
+  const src: BridgeChain = bridgeChainByKey(fromKey) ?? ARC;
+  const dst: BridgeChain = bridgeChainByKey(toKey) ?? ARC;
+  const srcChainId = src.chainId;
+  const srcName = src.name;
+  const dstName = dst.name;
+  const srcUsdc = src.usdc;
+  const srcExplorer = src.explorer;
+  const dstExplorer = dst.explorer;
+
+  /**
+   * What the deposit is sent to.
+   *
+   * Where Arcanium has a router deployed it is used, and takes the protocol
+   * fee. Everywhere else the burn goes straight to CCTP's TokenMessenger: a
+   * route that works and earns nothing is worth more than a route that does
+   * not exist, and deploying a router to eleven chains to collect a fee on
+   * traffic that does not exist yet would be the wrong order to do things in.
+   */
+  const srcRouter = src.router ?? TOKEN_MESSENGER_V2;
+  const viaRouter = src.router !== undefined;
+
+  // Reads go to the source chain whichever one is selected.
+  const srcPublic = usePublicClient({ chainId: src.chainId });
 
   // Circle's per-transaction burn cap on the source chain. Arc's outbound cap
   // is tiny today, so surface it before the user signs instead of reverting.
   useEffect(() => {
-    const client = toArc ? basePublic : arcPublic;
-    if (client === undefined) return;
+    if (srcPublic === undefined) return undefined;
     let cancelled = false;
     (async () => {
-      const minter = await client.readContract({ address: TOKEN_MESSENGER_V2, abi: tokenMessengerMinterAbi, functionName: "localMinter" });
-      const lim = await client.readContract({ address: minter, abi: tokenMinterAbi, functionName: "burnLimitsPerMessage", args: [toArc ? BASE_USDC : ARC_USDC] });
+      const minter = await srcPublic.readContract({ address: TOKEN_MESSENGER_V2, abi: tokenMessengerMinterAbi, functionName: "localMinter" });
+      const lim = await srcPublic.readContract({ address: minter, abi: tokenMinterAbi, functionName: "burnLimitsPerMessage", args: [src.usdc] });
       if (!cancelled) setBurnLimit(lim);
     })().catch(() => { if (!cancelled) setBurnLimit(null); });
     return () => { cancelled = true; };
-  }, [toArc, basePublic, arcPublic]);
+  }, [srcPublic, src.usdc]);
 
 
-  const baseBal = useReadContract({
-    address: BASE_USDC, abi: erc20Abi, functionName: "balanceOf",
+  // Read per selected chain rather than for a fixed pair, so adding a chain to
+  // the registry needs no change here.
+  const srcBal = useReadContract({
+    address: src.usdc, abi: erc20Abi, functionName: "balanceOf",
     args: address === undefined ? undefined : [address],
-    chainId: base.id,
+    chainId: src.chainId,
     query: { enabled: address !== undefined, refetchInterval: 10_000 },
   });
-  const arcBal = useReadContract({
-    address: ARC_USDC, abi: erc20Abi, functionName: "balanceOf",
+  const dstBal = useReadContract({
+    address: dst.usdc, abi: erc20Abi, functionName: "balanceOf",
     args: address === undefined ? undefined : [address],
-    chainId: arcTestnet.id,
+    chainId: dst.chainId,
     query: { enabled: address !== undefined, refetchInterval: 10_000 },
   });
-  const srcBalance = toArc ? baseBal.data : arcBal.data;
-  const dstBalance = toArc ? arcBal.data : baseBal.data;
+  const srcBalance = srcBal.data;
+  const dstBalance = dstBal.data;
 
   const parsed = useMemo<bigint | null>(() => {
     if (amountText.trim() === "") return null;
     try { return parseQuoteUnits(amountText); } catch { return null; }
   }, [amountText]);
 
-  const platformFee = parsed === null ? 0n : (parsed * BRIDGE_FEE_BPS) / 10_000n;
+  const platformFee = parsed === null || !viaRouter ? 0n : (parsed * BRIDGE_FEE_BPS) / 10_000n;
   const burnAmount = parsed === null ? 0n : parsed - platformFee;
   // Circle's fee is bps of the burn amount; round up and add a small buffer so
   // a tick of drift can't drop us onto the slow lane.
@@ -216,7 +244,8 @@ export function CctpBridge() {
 
   /** Poll Circle, then have the relayer claim on the destination. */
   async function settle(p: Pending): Promise<void> {
-    const srcDomain = p.direction === "toArc" ? BASE_DOMAIN : ARC_DOMAIN;
+    const srcDomain = bridgeChainByKey(p.from)?.domain ?? ARC.domain;
+    const destination = bridgeChainByKey(p.to) ?? ARC;
     setPhase("attesting");
     setMessage(null);
     const deadline = Date.now() + 30 * 60_000; // Base finality can take ~15–20 min
@@ -227,7 +256,7 @@ export function CctpBridge() {
         const relay = await fetch("/api/bridge/relay", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ chain: p.direction === "toArc" ? "arc" : "base", message: res.message, attestation: res.attestation }),
+          body: JSON.stringify({ chain: destination.key, message: res.message, attestation: res.attestation }),
         }).then((r) => r.json());
         if (relay.txHash === undefined) {
           const already = typeof relay.error === "string" && relay.error.includes("Already minted");
@@ -235,7 +264,7 @@ export function CctpBridge() {
             savePending(null);
             setPending(null);
             setPhase("done");
-            setMessage("This transfer was already claimed — your USDC is on " + (p.direction === "toArc" ? "Arc" : "Base") + ".");
+            setMessage(`This transfer was already claimed — your USDC is on ${destination.name}.`);
             return;
           }
           setPhase("error");
@@ -246,9 +275,9 @@ export function CctpBridge() {
         setPending(null);
         setClaimTx(relay.txHash);
         setPhase("done");
-        void baseBal.refetch();
-        void arcBal.refetch();
-        toast({ tone: "success", title: `Bridged to ${p.direction === "toArc" ? "Arc" : "Base"}`, description: "Native USDC delivered.", href: `${p.direction === "toArc" ? ARC_EXPLORER : BASE_EXPLORER}/tx/${relay.txHash}`, hrefLabel: "View claim" });
+        void srcBal.refetch();
+        void dstBal.refetch();
+        toast({ tone: "success", title: `Bridged to ${destination.name}`, description: "Native USDC delivered.", href: `${destination.explorer}/tx/${relay.txHash}`, hrefLabel: "View claim" });
         return;
       }
       if (Date.now() > deadline) {
@@ -272,7 +301,6 @@ export function CctpBridge() {
       setMessage(`Circle caps ${srcName} transfers at ${formatQuoteUnits(burnLimit)} USDC per transaction right now. Send ${formatQuoteUnits(burnLimit)} or less (you can repeat it).`);
       return;
     }
-    const srcPublic = toArc ? basePublic : arcPublic;
     if (srcPublic === undefined) return;
     setMessage(null);
     setClaimTx(null);
@@ -294,19 +322,39 @@ export function CctpBridge() {
       }
 
       setPhase("burning");
-      const burnTx = await writeContractAsync({
-        address: srcRouter,
-        abi: bridgeRouterAbi,
-        functionName: "bridge",
-        args: [parsed, toArc ? ARC_DOMAIN : BASE_DOMAIN, addressToBytes32(address), circleMax, FAST_FINALITY],
-        chainId: srcChainId,
-      });
+      // Two shapes for the same operation: the router wraps depositForBurn
+      // and takes the protocol fee first; without one we call CCTP directly.
+      const burnTx = viaRouter
+        ? await writeContractAsync({
+            address: srcRouter,
+            abi: bridgeRouterAbi,
+            functionName: "bridge",
+            args: [parsed, dst.domain, addressToBytes32(address), circleMax, FAST_FINALITY],
+            chainId: srcChainId,
+          })
+        : await writeContractAsync({
+            address: TOKEN_MESSENGER_V2,
+            abi: tokenMessengerAbi,
+            functionName: "depositForBurn",
+            args: [
+              parsed,
+              dst.domain,
+              addressToBytes32(address),
+              src.usdc,
+              // Empty destinationCaller: anyone may deliver the mint, which
+              // is what lets the relayer claim on the user's behalf.
+              addressToBytes32("0x0000000000000000000000000000000000000000"),
+              circleMax,
+              FAST_FINALITY,
+            ],
+            chainId: srcChainId,
+          });
       const receipt = await srcPublic.waitForTransactionReceipt({ hash: burnTx });
       if (receipt.status !== "success") {
         setPhase("error"); setMessage("Deposit transaction reverted."); return;
       }
 
-      const p: Pending = { burnTx, direction, amount: parsed.toString(), at: Date.now() };
+      const p: Pending = { burnTx, from: fromKey, to: toKey, amount: parsed.toString(), at: Date.now() };
       savePending(p);
       window.dispatchEvent(new Event("arcanium:orders"));
       setPending(p);
@@ -340,12 +388,41 @@ export function CctpBridge() {
     }
   })();
 
-  const panel = (label: string, chainName: string, balance: bigint | undefined, input: boolean): React.ReactNode => (
+  /** Chains selectable on one side. The same chain cannot be both ends. */
+  const options = (side: "from" | "to"): readonly BridgeChain[] => {
+    const other = side === "from" ? toKey : fromKey;
+    return [ARC, ...BRIDGE_CHAINS].filter((c) => c.key !== other);
+  };
+
+  const panel = (
+    label: string,
+    side: "from" | "to",
+    balance: bigint | undefined,
+    input: boolean,
+  ): React.ReactNode => (
     <div className="arch-panel">
       <div className="arch-panel-head">
         <span>{label}</span>
         <span className="arch-chain-chip" style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
-          <UsdcLogo size={16} /> USDC · {chainName}
+          <UsdcLogo size={16} /> USDC
+          <select
+            className="arch-chain-select"
+            value={side === "from" ? fromKey : toKey}
+            disabled={busy}
+            aria-label={`${label} chain`}
+            onChange={(e) => {
+              if (side === "from") setFromKey(e.target.value);
+              else setToKey(e.target.value);
+              setPhase("idle");
+              setMessage(null);
+            }}
+          >
+            {options(side).map((c) => (
+              <option key={c.key} value={c.key}>
+                {c.name}
+              </option>
+            ))}
+          </select>
         </span>
       </div>
       <div className="arch-amount-row">
@@ -373,18 +450,24 @@ export function CctpBridge() {
     <div>
       <style>{"@keyframes spin{to{transform:rotate(360deg)}}"}</style>
 
-      {panel("From", srcName, srcBalance, true)}
+      {panel("From", "from", srcBalance, true)}
       <div className="arch-switch-row">
         <button
           className="arch-switch-button"
           aria-label="Switch direction"
           disabled={busy}
-          onClick={() => { setDirection(toArc ? "toBase" : "toArc"); setPhase("idle"); setMessage(null); }}
+          onClick={() => {
+            const a = fromKey;
+            setFromKey(toKey);
+            setToKey(a);
+            setPhase("idle");
+            setMessage(null);
+          }}
         >
           ⇅
         </button>
       </div>
-      {panel("To", dstName, dstBalance, false)}
+      {panel("To", "to", dstBalance, false)}
 
       <div style={{ padding: "0.8rem 0 0.2rem", fontSize: "0.85rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", padding: "0.15rem 0" }}>
@@ -407,7 +490,7 @@ export function CctpBridge() {
         </div>
       </div>
 
-      {!toArc && burnLimit !== null && burnLimit > 0n && burnLimit <= 10_000_000n ? (
+      {burnLimit !== null && burnLimit > 0n && burnLimit <= 10_000_000n ? (
         <div
           role="note"
           style={{ marginTop: "0.85rem", border: "1px solid color-mix(in oklch, var(--warning) 45%, transparent)", background: "color-mix(in oklch, var(--warning) 10%, transparent)", borderRadius: 12, padding: "0.7rem 0.85rem" }}

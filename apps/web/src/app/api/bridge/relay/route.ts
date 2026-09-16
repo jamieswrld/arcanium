@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createPublicClient, createWalletClient, http, keccak256, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { MESSAGE_TRANSMITTER_V2, messageTransmitterAbi } from "@/lib/cctp";
+import { bridgeChainByKey } from "@/lib/bridgeChains";
 
 /**
  * CCTP mint relayer — the piece that makes arrival gasless. receiveMessage is
@@ -13,13 +14,24 @@ import { MESSAGE_TRANSMITTER_V2, messageTransmitterAbi } from "@/lib/cctp";
 export const dynamic = "force-dynamic";
 
 const RELAYER_KEY = process.env["RELAYER_PRIVATE_KEY"] as Hex | undefined;
-const ARC_RPC = process.env["ARC_RPC_SERVER_URL"] ?? "https://rpc.blockdaemon.mainnet.arc.io";
-const BASE_RPC = process.env["NEXT_PUBLIC_BASE_RPC_URL"] ?? "https://mainnet.base.org";
+const ARC_RPC = process.env["ARC_RPC_SERVER_URL"];
 
-const CHAINS = {
-  arc: { id: 5042, name: "arc", rpc: ARC_RPC, currency: { name: "USDC", symbol: "USDC", decimals: 18 } },
-  base: { id: 8453, name: "base", rpc: BASE_RPC, currency: { name: "ETH", symbol: "ETH", decimals: 18 } },
-} as const;
+/**
+ * Chains this relayer will pay gas on.
+ *
+ * Relaying costs the relayer native gas on the destination, so it can only be
+ * offered where that wallet is actually funded. Arc is the one that matters —
+ * somebody bridging in has no gas there yet and could not claim for
+ * themselves — and Base is kept because it already worked.
+ *
+ * Every other destination is self-claim: the user has gas there, since that is
+ * where they are bridging to. receiveMessage is permissionless and always mints
+ * to the message's own mintRecipient, so a self-claim is exactly as safe and
+ * costs us nothing to not offer.
+ */
+const RELAYED = new Set(
+  (process.env["BRIDGE_RELAY_CHAINS"] ?? "arc,base").split(",").map((s) => s.trim()).filter((s) => s !== ""),
+);
 
 const inFlight = new Set<string>();
 
@@ -30,7 +42,9 @@ export async function POST(request: Request): Promise<NextResponse> {
   const message = body?.message;
   const attestation = body?.attestation;
   if (
-    (chainKey !== "arc" && chainKey !== "base") ||
+    chainKey === undefined ||
+    !RELAYED.has(chainKey) ||
+    bridgeChainByKey(chainKey) === undefined ||
     message === undefined || !/^0x[0-9a-fA-F]+$/.test(message) || message.length > 10_000 ||
     attestation === undefined || !/^0x[0-9a-fA-F]+$/.test(attestation) || attestation.length > 5_000
   ) {
@@ -41,11 +55,20 @@ export async function POST(request: Request): Promise<NextResponse> {
   if (inFlight.has(key)) return NextResponse.json({ error: "relay already in flight" }, { status: 409 });
   inFlight.add(key);
   try {
-    const c = CHAINS[chainKey];
-    const chain = { id: c.id, name: c.name, nativeCurrency: c.currency, rpcUrls: { default: { http: [c.rpc] } } };
+    const c = bridgeChainByKey(chainKey);
+    if (c === undefined) return NextResponse.json({ error: "unsupported chain" }, { status: 400 });
+    // Arc's server RPC is overridable because it is the one we operate; the
+    // rest use the registry's public endpoint.
+    const rpc = c.key === "arc" ? (ARC_RPC ?? c.rpcUrl) : c.rpcUrl;
+    const chain = {
+      id: c.chainId,
+      name: c.name,
+      nativeCurrency: c.chain.nativeCurrency,
+      rpcUrls: { default: { http: [rpc] } },
+    };
     const account = privateKeyToAccount(RELAYER_KEY);
-    const pub = createPublicClient({ chain, transport: http(c.rpc, { timeout: 20_000 }) });
-    const wallet = createWalletClient({ account, chain, transport: http(c.rpc, { timeout: 20_000 }) });
+    const pub = createPublicClient({ chain, transport: http(rpc, { timeout: 20_000 }) });
+    const wallet = createWalletClient({ account, chain, transport: http(rpc, { timeout: 20_000 }) });
 
     // Simulate first: an already-received or invalid message fails cheaply
     // here instead of wasting relayer gas.

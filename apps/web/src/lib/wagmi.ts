@@ -1,8 +1,8 @@
 import { createConfig, fallback, http } from "wagmi";
-import { base } from "viem/chains";
 import { injected } from "wagmi/connectors";
 import { arcTestnet } from "./bridgeClient";
 import { arcTransport } from "./arcRpc";
+import { BRIDGE_CHAINS } from "./bridgeChains";
 import type { ChainKey } from "./chains";
 
 /**
@@ -13,8 +13,15 @@ import type { ChainKey } from "./chains";
  * never a launch or trading venue. EIP-6963 discovery surfaces every installed
  * wallet.
  */
+/**
+ * Every chain the bridge can reach, so the wallet can be switched to any of
+ * them. Arc is first because it is where the product lives; the rest exist
+ * only as bridge sources and destinations.
+ */
+const bridgeChains = BRIDGE_CHAINS.map((c) => c.chain);
+
 export const wagmiConfig = createConfig({
-  chains: [arcTestnet, base],
+  chains: [arcTestnet, ...bridgeChains] as [typeof arcTestnet, ...typeof bridgeChains],
   connectors: [injected({ shimDisconnect: true })],
   multiInjectedProviderDiscovery: true,
   /**
@@ -31,14 +38,23 @@ export const wagmiConfig = createConfig({
    */
   batch: {
     [arcTestnet.id]: { multicall: { wait: 16, batchSize: 512 } },
-    [base.id]: { multicall: true },
+    // Every bridge chain has Multicall3, and the bridge reads a balance and an
+    // allowance per chain, so folding those into one call is worth having
+    // everywhere rather than only on Base.
+    ...Object.fromEntries(BRIDGE_CHAINS.map((c) => [c.chainId, { multicall: true }])),
   },
   transports: {
     [arcTestnet.id]: arcTransport({ browser: true }),
-    [base.id]: fallback([
-      http(process.env["NEXT_PUBLIC_BASE_RPC_URL"] ?? "https://mainnet.base.org", { timeout: 12_000 }),
-      http("https://base.publicnode.com", { timeout: 12_000 }),
-    ]),
+    // One entry per bridge chain, from the registry, so adding a chain there is
+    // the only edit needed. Each falls back to the chain's own default RPC,
+    // because a public endpoint that is rate-limiting should degrade rather
+    // than make the chain unselectable.
+    ...Object.fromEntries(
+      BRIDGE_CHAINS.map((c) => [
+        c.chainId,
+        fallback([http(c.rpcUrl, { timeout: 12_000 }), http(undefined, { timeout: 12_000 })]),
+      ]),
+    ),
   },
 });
 
