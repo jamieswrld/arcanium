@@ -159,17 +159,20 @@ export const ARC_UNISWAP = {
  * than falling back to something.
  */
 export const ARC_ARCANIUM_V4: {
-  readonly hook: Address | undefined;
-  readonly launchpad: Address | undefined;
+  readonly hook: Address;
+  readonly launchpad: Address;
   readonly poolFee: number;
   readonly tickSpacing: number;
 } = {
-  hook: undefined,
-  launchpad: undefined,
+  hook: "0x558d402371153231920C4cA64a1092ad8231A044" as Address,
+  launchpad: "0xA5316d41EfA1473041430fdB19eDFd1165a47878" as Address,
   /** Pools open with no LP fee; the hook takes 1% inside the swap instead. */
   poolFee: 0,
   tickSpacing: 200,
 };
+
+/** Block the v4 launchpad was deployed in, and the floor for its backfill. */
+export const ARC_LAUNCHPAD_V4_BLOCK = 21_223_800n;
 
 export const ARC_UNISWAP_V4 = {
   poolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951" as Address,

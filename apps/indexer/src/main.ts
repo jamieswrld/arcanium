@@ -133,6 +133,10 @@ const ARC_USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
 /** Uniswap v4 on Arc, official since 2026-09-16. */
 const DEFAULT_POOL_MANAGER_V4 = "0x8366a39CC670B4001A1121B8F6A443A643e40951" as Hex;
 
+/** Arcanium's v4 launchpad, and the block it was deployed in. */
+const DEFAULT_LAUNCHPAD_V4 = "0xA5316d41EfA1473041430fdB19eDFd1165a47878" as Hex;
+const DEFAULT_LAUNCHPAD_V4_BLOCK = 21_223_800n;
+
 /** 9,000 USDC, at Arc USDC's 6 decimals. */
 const DEFAULT_GRADUATION_UNITS = 9_000_000_000n;
 
@@ -1496,9 +1500,11 @@ async function main(): Promise<void> {
     distributors: envList("ARCH_FEE_DISTRIBUTORS", DEFAULT_DISTRIBUTORS),
     // Undefined until the v4 launchpad is deployed. Both walks return
     // immediately in that state rather than guessing an address.
-    launchpadV4: optionalAddress("ARC_LAUNCHPAD_V4"),
+    launchpadV4: optionalAddress("ARC_LAUNCHPAD_V4") ?? DEFAULT_LAUNCHPAD_V4,
     poolManagerV4: optionalAddress("ARC_POOL_MANAGER_V4") ?? DEFAULT_POOL_MANAGER_V4,
-    launchpadV4Block: BigInt(process.env["ARC_LAUNCHPAD_V4_BLOCK"] ?? "0"),
+    launchpadV4Block: BigInt(
+      process.env["ARC_LAUNCHPAD_V4_BLOCK"] ?? DEFAULT_LAUNCHPAD_V4_BLOCK.toString(),
+    ),
   };
 
   const applied = await runMigrations(databaseUrl);
