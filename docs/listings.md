@@ -39,9 +39,13 @@ Everything any of these will ask for. All verified on-chain.
 | SwapRouter02 | `0x4C91c54E60B59b1F949Af57064EA70bD73434720` |
 | Quote asset (native USDC) | `0x3600000000000000000000000000000000000000` (6 dec) |
 | Pool fee tier used | 10000 (1%), tickSpacing 200 |
+| Uniswap factory deployed at block | 1,948,019 |
+| Position manager deployed at block | 1,948,053 |
+| SwapRouter02 deployed at block | 11,912,287 |
 | Project | Arcanium — <https://arcanium.trade> |
 | Launchpad factory (current, v4) | `0x8e5732B520a318251a702a680AA7F123fb92AF52` |
-| Earliest launchpad block | 12,775,070 |
+| Launchpad v1 deployed at block | 12,775,070 |
+| Launchpad v4 deployed at block | 12,954,132 |
 
 **Block explorer is an open question.** `arc-mainnet.cloud.blockscout.com` is a
 dead vhost (404 at every path) and `explorer.arc.io` sits behind Circle's
@@ -83,21 +87,34 @@ projects/arcanium/index.js        # adapter
 registries/uniswapV3.js           # register the deployment
 ```
 
-Registry entry:
+**Do not point the entry at the Uniswap factory.** That factory was deployed at
+block 1,948,019 — roughly 10.8M blocks before our first launchpad — so it is
+Arc's shared Uniswap deployment, not ours. Registering it as "Arcanium" would
+attribute every Uniswap pool on Arc to us, which is both wrong and the sort of
+thing that gets a PR rejected.
 
-```js
-'arcanium': {
-  start: '2026-07-01',   // set to the real first-launch date
-  methodology: 'Value locked in the permanently locked Uniswap v3 positions backing each launch',
-  arc: {
-    factory: '0xf0db7b58379503491d857dB50AC9ece64c653918',
-    fromBlock: 12775070,
-  },
-},
+The adapter has to enumerate Arcanium's own launches and sum only their pools.
+The launchpad factories expose `allTokensLength()` / `allTokens(i)`, and
+`launches(token)` returns the pool, so the pool set can be built by direct calls
+with no logs at all. That matters here: Arc's public RPCs prune logs after a few
+days, so a log-based adapter would silently stop seeing early launches.
+
+Walk all four generations, newest first:
+
+```
+0x8e5732B520a318251a702a680AA7F123fb92AF52  (v4, block 12,954,132)
+0xE2aA88806872C2a02A4ab439584d457002983600  (v3)
+0xA024664AD5d30F3c0b18b931DdB6f64A96DE8ED3  (v2)
+0x1d65ab4cDCDdA6f38A9c93a24EF64bE8905e19d5  (v1, block 12,775,070)
 ```
 
-`fromBlock` is the earliest launchpad block; no pool can predate it, so it is a
-safe lower bound.
+`fromBlock: 12775070` is the correct lower bound — no Arcanium pool can predate
+the first launchpad.
+
+One judgement call to make before submitting: an Arcanium pool holds ~1B of its
+own token plus the quote side. Counting the token side values a launch at its
+own market price, which is circular and inflates TVL. Quote-side only is the
+defensible figure, and is what the `methodology` string should say.
 
 - Docs: [How to list a DeFi project](https://docs.llama.fi/list-your-project/submit-a-project)
   and [How to write dimensions adapters](https://docs.llama.fi/list-your-project/other-dashboards)
@@ -108,6 +125,30 @@ safe lower bound.
   that is a separate addition and has to land first.
 - After merge, allow ~24h for the front end to pick it up. No need to chase the
   PR; they are monitored.
+
+### 2b. List Arc's Uniswap deployment, not just Arcanium
+
+Worth separating, because it is the half that actually fixes gmgn.
+
+The factory at `0xf0db7b58…` predates our launchpad by ~10.8M blocks, and its
+`owner()` is `0xbCA30b5429935205037069cF5b8A165F55d05a75` — not our deployer. So
+it is Arc's own Uniswap v3 deployment, which everything on Arc trades through,
+and it appears to be unlisted everywhere. That, not anything about Arcanium, is
+why routers have no route.
+
+Be straight about this in every submission: **Arcanium is a launchpad built on
+Arc's Uniswap v3, not a DEX of its own.** Presenting the factory as ours would
+be both untrue and the fastest way to get a submission rejected — these teams
+check `owner()`.
+
+So there are two distinct asks, and they go to the same places:
+
+1. **Index the DEX** — Arc + its Uniswap v3 fork, so any aggregator can route
+   any Arc pool. Fixes "No Available Router" for every Arcanium token at once,
+   and for everyone else on Arc.
+2. **List Arcanium** — the launchpad, as a protocol with its own TVL.
+
+Ask for the first. The second is far less useful without it.
 
 ### 3. DexScreener
 
