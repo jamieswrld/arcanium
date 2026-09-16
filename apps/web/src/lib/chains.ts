@@ -1,4 +1,11 @@
 import type { Hex } from "viem";
+import {
+  ARC_ALL_FACTORIES,
+  ARC_LIQUIDITY_VAULT,
+  ARC_DISTRIBUTORS,
+  ARC_UNISWAP,
+  ARC_USDC,
+} from "@arch/chain-config";
 
 /**
  * Arc — the chain Arcanium launches on.
@@ -170,7 +177,7 @@ const ARC: LaunchChain = {
   explorer: { name: ARC_EXPLORER_NAME, url: ARC_EXPLORER_URL },
   quote: {
     // Arc's native USDC: a 6-decimal ERC-20 view of the 18-decimal gas token.
-    address: "0x3600000000000000000000000000000000000000",
+    address: ARC_USDC,
     symbol: "USDC",
     decimals: 6,
     label: "native USDC",
@@ -181,22 +188,22 @@ const ARC: LaunchChain = {
   // address (no contract at all on Arc) and swapRouter fell back to Base's
   // router, so trading depended entirely on an env override being present.
   uniswap: {
-    factory: "0xf0db7b58379503491d857dB50AC9ece64c653918",
-    positionManager: "0x39654A85A4C05127f5Fd6ED22CAeC077A0fB1377",
+    factory: ARC_UNISWAP.factory,
+    positionManager: ARC_UNISWAP.positionManager,
     swapRouter: (addr(process.env["NEXT_PUBLIC_UNISWAP_SWAP_ROUTER_ADDRESS"]) ??
-      "0x4C91c54E60B59b1F949Af57064EA70bD73434720") as Hex,
+      ARC_UNISWAP.swapRouter) as Hex,
   },
-  poolFee: 10_000,
+  poolFee: ARC_UNISWAP.poolFee,
+  // Every generation, newest first, from the canonical deployment list. These
+  // literals used to live in nine separate files; the mode distributor drifted
+  // in exactly that way, with a stale manifest naming a contract no launch has
+  // ever used as the current one.
   factories: factoryList(process.env["NEXT_PUBLIC_ARCH_LAUNCHPAD_FACTORY_ADDRESS"], [
-    "0x8e5732B520a318251a702a680AA7F123fb92AF52", // v4 — launch modes
-    "0xE2aA88806872C2a02A4ab439584d457002983600", // v3 — fee recipient
-    "0xA024664AD5d30F3c0b18b931DdB6f64A96DE8ED3", // v2 — SwapRouter02 fix
-    "0x1d65ab4cDCDdA6f38A9c93a24EF64bE8905e19d5", // v1 — original
-  ]),
-  liquidityVault: addr(process.env["NEXT_PUBLIC_ARCH_LIQUIDITY_VAULT_ADDRESS"]),
+    ...ARC_ALL_FACTORIES,
+  ] as Hex[]),
+  liquidityVault: addr(process.env["NEXT_PUBLIC_ARCH_LIQUIDITY_VAULT_ADDRESS"]) ?? ARC_LIQUIDITY_VAULT,
   modeDistributor:
-    addr(process.env["NEXT_PUBLIC_ARCH_MODE_DISTRIBUTOR_ADDRESS"]) ??
-    "0x7c148B6a581E32CcB6ffF7Bd59AF4250d5ec1eBc",
+    addr(process.env["NEXT_PUBLIC_ARCH_MODE_DISTRIBUTOR_ADDRESS"]) ?? ARC_DISTRIBUTORS.current,
   graduationUnits: graduationUnits(6),
   launchGasFloor: 40_000_000_000_000_000n, // ~0.04 native USDC
   live: true,

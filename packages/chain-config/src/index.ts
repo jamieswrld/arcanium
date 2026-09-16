@@ -155,3 +155,6 @@ export function arcNativeToUsdcUnits(nativeWei: bigint): bigint {
 export function usdcUnitsToArcNative(usdcUnits: bigint): bigint {
   return usdcUnits * 10n ** 12n;
 }
+
+/** Deployed Arcanium contracts on Arc. The canonical list — see the file. */
+export * from "./deployments.js";

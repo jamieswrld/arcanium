@@ -192,6 +192,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@arch/chain-config':
+        specifier: workspace:*
+        version: link:../../packages/chain-config
       '@arch/ui':
         specifier: workspace:*
         version: link:../../packages/ui

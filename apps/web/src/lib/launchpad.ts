@@ -1,5 +1,6 @@
 import { createPublicClient, type Hex, type PublicClient } from "viem";
 import { arcChain, arcTransport } from "@/lib/arcRpc";
+import { ARC_GRADUATION_REGISTRY } from "@arch/chain-config";
 
 /**
  * Launchpad chain access + exact bigint price math. No floats ever touch a
@@ -21,7 +22,17 @@ export const FACTORY_GENERATIONS: readonly Hex[] = [
 export const LEGACY_FACTORY_ADDRESS: Hex =
   (process.env["NEXT_PUBLIC_ARCH_LEGACY_FACTORY_ADDRESS"] as Hex | undefined) ??
   "0xE2aA88806872C2a02A4ab439584d457002983600";
-export const GRADUATION_ADDRESS = process.env["NEXT_PUBLIC_ARCH_GRADUATION_REGISTRY_ADDRESS"] as Hex | undefined;
+/**
+ * The graduation registry.
+ *
+ * This had no default, so with the env var unset every chain-path read of
+ * `graduated` skipped the contract and resolved to false — a graduated token
+ * would show as not graduated whenever the indexer was not answering. The
+ * canonical deployment list supplies the address now.
+ */
+export const GRADUATION_ADDRESS: Hex =
+  (process.env["NEXT_PUBLIC_ARCH_GRADUATION_REGISTRY_ADDRESS"] as Hex | undefined) ??
+  ARC_GRADUATION_REGISTRY;
 export const DISTRIBUTOR_ADDRESS = process.env["NEXT_PUBLIC_ARCH_FEE_DISTRIBUTOR_ADDRESS"] as Hex | undefined;
 export const ROUTER_ADDRESS = process.env["NEXT_PUBLIC_UNISWAP_SWAP_ROUTER_ADDRESS"] as Hex | undefined;
 /** Mode distributor (v4): routes creator fees by launch mode. */
@@ -447,9 +458,12 @@ async function fetchTokenFrom(client: PublicClient, factory: Hex, token: Hex): P
     client.readContract({ address: token, abi: erc20MetaAbi, functionName: "symbol" }),
     client.readContract({ address: pool, abi: poolAbi, functionName: "slot0" }),
     client.readContract({ address: pairToken, abi: erc20MetaAbi, functionName: "balanceOf", args: [pool] }),
-    GRADUATION_ADDRESS !== undefined
-      ? client.readContract({ address: GRADUATION_ADDRESS, abi: graduationAbi, functionName: "graduated", args: [token] })
-      : Promise.resolve(false),
+    // Always asked now that the address has a canonical default. A failed read
+    // falls back to false rather than failing the whole token load — an
+    // unreachable registry should not blank a page that has everything else.
+    client
+      .readContract({ address: GRADUATION_ADDRESS, abi: graduationAbi, functionName: "graduated", args: [token] })
+      .catch(() => false),
   ]);
   const tokenIsToken0 = token.toLowerCase() < pairToken.toLowerCase();
   const priceE18 = priceUsdE18(slot0[0], tokenIsToken0);
