@@ -140,6 +140,12 @@ systemctl enable --now arcanium-keeper
 journalctl -u arcanium-keeper -f
 ```
 
+Each sweep also flushes the fee splitter. `distribute` only moves fees as far as
+the splitter; `flush` is what pays them onward, and it is permissionless and has
+to be called too. Sweeping `distribute` alone leaves money piling up one hop
+short of where it is going — 304 USDC had accumulated there before the keeper
+existed.
+
 It warns when the wallet drops below 2 USDC of gas, because dividends and burns
 stop silently when it runs dry.
 

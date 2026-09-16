@@ -72,6 +72,67 @@ const tokenAbi = [
 
 const distributorAbi = [fn("distribute", [{ type: "address" }], [], "nonpayable")] as const;
 
+const splitterAbi = [fn("flush", [{ type: "address" }], [], "nonpayable")] as const;
+
+const erc20Abi = [fn("balanceOf", [{ type: "address" }], [{ type: "uint256" }])] as const;
+
+/** The splitter every distributor pays the protocol share into. */
+const DEFAULT_SPLITTER = "0x1E8334F3009EC6a0fBF77a1Faaa26B1265f560eF";
+/** Arc's native USDC, the asset fees arrive in. */
+const QUOTE = "0x3600000000000000000000000000000000000000";
+
+/**
+ * Push the splitter's balance out to its recipients.
+ *
+ * distribute() only moves fees as far as the splitter; flush() is what pays
+ * them onward, and it is permissionless and has to be called too. Sweeping
+ * distribute alone leaves money piling up one hop short of where it is going —
+ * 304 USDC had accumulated there before this existed.
+ *
+ * Simulated first like everything else: flush reverts on a zero balance, which
+ * is the normal state right after a successful one.
+ */
+async function flushSplitter(
+  arc: PublicClient,
+  wallet: WalletClient,
+  chain: Chain,
+  caller: Hex,
+  splitter: Hex,
+): Promise<void> {
+  // Cast, because the `fn` helper above builds ABIs too loosely for viem to
+  // infer a return type from — the same reason the reads elsewhere here cast.
+  const pending = (await arc
+    .readContract({ address: QUOTE, abi: erc20Abi, functionName: "balanceOf", args: [splitter] })
+    .catch(() => 0n)) as bigint;
+  if (pending === 0n) return;
+
+  try {
+    await arc.simulateContract({
+      address: splitter,
+      abi: splitterAbi,
+      functionName: "flush",
+      args: [QUOTE],
+      account: caller,
+    });
+  } catch {
+    return;
+  }
+
+  const hash = await wallet.writeContract({
+    address: splitter,
+    abi: splitterAbi,
+    functionName: "flush",
+    args: [QUOTE],
+    chain,
+    account: wallet.account ?? null,
+  });
+  const receipt = await arc.waitForTransactionReceipt({ hash, timeout: 120_000 });
+  log.info(
+    { pending: formatUnits(pending, 6), status: receipt.status, hash },
+    "flushed splitter to its recipients",
+  );
+}
+
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 function required(name: string): string {
@@ -151,6 +212,7 @@ async function sweep(
   chain: Chain,
   caller: Hex,
   factories: readonly Hex[],
+  splitter: Hex,
 ): Promise<void> {
   const balance = await arc.getBalance({ address: caller });
   if (balance < LOW_BALANCE) {
@@ -165,6 +227,11 @@ async function sweep(
   const ready = await collectable(arc, tokens, caller);
   if (ready.length === 0) {
     log.info({ launches: tokens.length }, "nothing to distribute");
+    // Still flush: a previous cycle may have distributed into the splitter and
+    // then failed to push it onward, and nothing else ever retries that.
+    await flushSplitter(arc, wallet, chain, caller, splitter).catch((err: unknown) =>
+      log.warn({ err }, "flush failed"),
+    );
     return;
   }
 
@@ -193,6 +260,10 @@ async function sweep(
     }
     await sleep(SEND_GAP_MS);
   }
+  // After distributing, the protocol share sits in the splitter. Push it on.
+  await flushSplitter(arc, wallet, chain, caller, splitter).catch((err: unknown) =>
+    log.warn({ err }, "flush failed"),
+  );
   log.info({ distributed: done, ready: ready.length, launches: tokens.length }, "sweep complete");
 }
 
@@ -222,14 +293,16 @@ async function main(): Promise<void> {
     .map((s) => s.trim())
     .filter((s) => /^0x[0-9a-fA-F]{40}$/.test(s)) as Hex[];
 
+  const splitter = (process.env["ARCH_FEE_SPLITTER_ADDRESS"] ?? DEFAULT_SPLITTER) as Hex;
+
   log.info(
-    { keeper: account.address, factories: factories.length, intervalMs: INTERVAL_MS, rpcs },
+    { keeper: account.address, factories: factories.length, splitter, intervalMs: INTERVAL_MS, rpcs },
     "keeper starting",
   );
 
   for (;;) {
     try {
-      await sweep(arc, wallet, chain, account.address, factories);
+      await sweep(arc, wallet, chain, account.address, factories, splitter);
     } catch (err) {
       // Never exit. A sweep that fails wholesale is almost always the RPC
       // having a moment, and the next cycle will pick up everything missed.
