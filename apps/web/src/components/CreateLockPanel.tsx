@@ -82,6 +82,7 @@ export function CreateLockPanel() {
   const [preset, setPreset] = useState<string>("30d");
   const [customDate, setCustomDate] = useState("");
   const [allowance, setAllowance] = useState<bigint>(0n);
+  const [approved, setApproved] = useState(false);
   const [phase, setPhase] = useState<Phase>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [lockedId, setLockedId] = useState<string | null>(null);
@@ -130,6 +131,12 @@ export function CreateLockPanel() {
     [amount, meta],
   );
 
+  // A new token or a larger amount means the previous approval may no longer
+  // cover it, so the step indicator has to fall back to step one.
+  useEffect(() => {
+    setApproved(false);
+  }, [meta?.address, amount]);
+
   /** The exact second the lock opens. Computed once, shown, then signed. */
   const unlockAt = useMemo(() => {
     if (preset === "custom") {
@@ -155,7 +162,9 @@ export function CreateLockPanel() {
           args: [address, ARC_TOKEN_LOCKER as Hex],
         })
         .catch(() => 0n);
-      if (!cancelled) setAllowance(a);
+      // Monotonic: an allowance only ever grows here, so a stale read must not
+      // undo what a confirmed approval established.
+      if (!cancelled) setAllowance((prev) => (a > prev ? a : prev));
     })();
     return () => {
       cancelled = true;
@@ -183,7 +192,18 @@ export function CreateLockPanel() {
         args: [ARC_TOKEN_LOCKER as Hex, units],
         chainId: chain.id,
       });
-      await pub?.waitForTransactionReceipt({ hash });
+      const receipt = await pub?.waitForTransactionReceipt({ hash });
+      if (receipt?.status !== "success") {
+        setPhase("error");
+        setMessage("The approval transaction reverted.");
+        return;
+      }
+      // Trust the receipt, not a re-read. The allowance refetch goes through a
+      // ranked fallback and can land on a node that has not seen this block
+      // yet, which left the button stuck on "Approve" after a successful
+      // approval — the user had spent gas and nothing appeared to happen.
+      setAllowance(units);
+      setApproved(true);
       setPhase("idle");
     } catch (err) {
       setPhase("error");
@@ -365,27 +385,53 @@ export function CreateLockPanel() {
         <p className="arch-note" style={{ color: "var(--negative)" }}>{message}</p>
       )}
 
-      <div style={{ display: "flex", gap: "var(--s2)", flexWrap: "wrap" }}>
-        {needsApproval ? (
+      {/* Two transactions, shown as two steps. The previous version swapped one
+          button for another, so a successful approval looked like nothing had
+          happened — especially when the allowance re-read lagged a block. */}
+      <ol className="lock-steps">
+        <li className={needsApproval ? "lock-step lock-step-active" : "lock-step lock-step-done"}>
+          <span className="lock-step-n">{needsApproval ? "1" : "✓"}</span>
+          <span>
+            Approve {meta?.symbol ?? "the token"}
+            <span className="arch-note" style={{ display: "block" }}>
+              {needsApproval
+                ? "Lets the locker move exactly this amount, once."
+                : "Approved. The locker can move this amount."}
+            </span>
+          </span>
           <button
             type="button"
-            className="btn btn-primary"
-            disabled={!ready || phase === "approving"}
+            className="btn btn-secondary"
+            disabled={!ready || !needsApproval || phase === "approving"}
             onClick={() => void onApprove()}
           >
-            {phase === "approving" ? "Approving…" : `Approve ${meta?.symbol ?? "token"}`}
+            {phase === "approving" ? "Approving…" : needsApproval ? "Approve" : "Done"}
           </button>
-        ) : (
+        </li>
+        <li className={needsApproval ? "lock-step" : "lock-step lock-step-active"}>
+          <span className="lock-step-n">2</span>
+          <span>
+            Create the lock
+            <span className="arch-note" style={{ display: "block" }}>
+              This is the transaction that actually moves and locks the tokens.
+            </span>
+          </span>
           <button
             type="button"
             className="btn btn-primary"
-            disabled={!ready || phase === "locking"}
+            disabled={!ready || needsApproval || phase === "locking"}
             onClick={() => void onLock()}
           >
             {phase === "locking" ? "Locking…" : "Create lock"}
           </button>
-        )}
-      </div>
+        </li>
+      </ol>
+      {approved && needsApproval ? (
+        <p className="arch-note">
+          Your approval is confirmed but this amount is larger than it covers — approve again for
+          the new amount.
+        </p>
+      ) : null}
     </div>
   );
 }

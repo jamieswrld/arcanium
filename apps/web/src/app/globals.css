@@ -1474,3 +1474,37 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
   text-decoration: none;
 }
 .pf-claim-row:hover { color: var(--accent); }
+
+/* Two-transaction flow, shown as two steps. Swapping one button for another
+   made a successful approval look like nothing had happened. */
+.lock-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); }
+
+.lock-step {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  opacity: 0.55;
+}
+.lock-step-active { opacity: 1; border-color: var(--accent); background: var(--accent-quiet); }
+.lock-step-done { opacity: 1; }
+
+.lock-step-n {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+.lock-step-done .lock-step-n { background: var(--positive-quiet, var(--surface-2)); color: var(--positive); }
+
+@media (max-width: 520px) {
+  .lock-step { grid-template-columns: 24px minmax(0, 1fr); }
+  .lock-step .btn { grid-column: 1 / -1; }
+}
