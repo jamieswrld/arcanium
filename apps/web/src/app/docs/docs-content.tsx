@@ -53,8 +53,8 @@ const CORE_DOCS: Record<string, ReactNode> = {
       </p>
       <p>
         A launch mints a fixed billion-token supply straight into a Uniswap v3 pool. There is no bonding
-        curve, no waiting room, and no team allocation: the full supply is the liquidity, and that liquidity
-        can never be pulled. You pay with the USDC already in your wallet on Arc.
+        curve, no waiting room, and no team allocation: the full supply is the liquidity, and no creator
+        can pull it back out. You pay with the USDC already in your wallet on Arc.
       </p>
       <p>Two things to know up front:</p>
       <ul>
@@ -148,12 +148,13 @@ const CORE_DOCS: Record<string, ReactNode> = {
         </tbody>
       </table>
       <p>Recipients are fixed for the life of the pool, so creator rewards keep accruing in USDC. Anyone can trigger a fee distribution.</p>
-      <h2>Trade tax</h2>
-      <p>A creator may also set a <strong>trade tax</strong> of up to 9% at launch. It is taken on every buy and sell of the token and <strong>burned</strong>, so it reduces supply rather than paying anybody — including the creator. Most tokens set it to zero.</p>
-      <p>Because the tax is applied inside the token&apos;s own transfer, quotes from the pool, the router and outside aggregators all show the pre-tax amount, and a taxed trade delivers slightly less than quoted. Token pages here display the rate above the trade panel whenever it is not zero. Ordinary transfers between wallets are never taxed — only trades against the launch pool.</p>
-      <p>Like the reward mode, the rate is fixed at launch and can never be changed afterwards.</p>
+      <h2>No transfer tax</h2>
+      <p>Arcanium tokens carry <strong>no transfer tax</strong>. Every launch to date has a tax rate of zero, and the launch form and API both refuse a non-zero one.</p>
+      <p>That is a deliberate restriction rather than an omission. A token that taxes its own transfers cannot be sold on Uniswap v3 at all: a sell&apos;s input reaches the pool as a transfer, the pool checks it received the amount it was promised, and a tax makes it come up short — so the trade reverts. A launchpad that offered the option would be a honeypot generator, so this one does not.</p>
       <h2>Locked liquidity</h2>
-      <p>The launch position is held in the Arcanium liquidity vault and can never be withdrawn — the liquidity cannot be pulled out from under the pool. As with any market, the token&apos;s price can still fall.</p>
+      <p>The launch position is held in the Arcanium liquidity vault. It has no withdrawal function, no timelock to wait out and no path by which a creator can reclaim it — a creator cannot pull liquidity out from under their own token, which is the failure this design exists to prevent.</p>
+      <p>Being exact about the one power that does exist: the vault contract retains a migration function, intended for moving a position to a new pool. It is disabled — the migration authority is the zero address, so the function reverts for everyone — but the vault owner is able to set that authority. So &ldquo;nobody can move it&rdquo; is true of creators and true today of us; it is not a property the contract enforces against its own owner. v4 launches remove the question entirely: the position belongs to a contract with no withdrawal code at all.</p>
+      <p>As with any market, the token&apos;s price can still fall regardless.</p>
     </>
   ),
 

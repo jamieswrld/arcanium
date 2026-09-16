@@ -59,8 +59,11 @@ export const BRIDGE_DOCS: Record<string, ReactNode> = {
           Circle, not by Arcanium, and it differs by source chain.
         </li>
         <li>
-          <strong>Claim</strong> — the mint on the destination chain. Arcanium relays this for you,
-          so arriving on a chain where you hold no gas still works.
+          <strong>Claim</strong> — the mint on the destination chain. Arriving <em>on Arc</em> is
+          relayed for you, which is what lets someone who has never held Arc gas bridge in at all.
+          For other destinations you send this one yourself, which costs a little gas on the chain
+          you are arriving at — you are bridging there, so you have it. The bridge says which case
+          applies before you sign anything.
         </li>
       </ol>
 
@@ -149,10 +152,16 @@ export const BRIDGE_DOCS: Record<string, ReactNode> = {
 
       <h2>Arriving with no gas</h2>
       <p>
-        Bridging into Arc does not require you to already hold Arc gas. Arcanium relays the claim,
-        which is what makes Arc reachable for somebody who has never held anything on it. On Arc,
-        USDC <em>is</em> the gas token — see <Mono>Getting USDC on Arc</Mono> — so once the transfer
-        lands you can trade immediately.
+        Bridging <strong>into Arc</strong> does not require you to already hold Arc gas: Arcanium
+        relays that claim, which is what makes Arc reachable for somebody who has never held
+        anything on it. On Arc, USDC <em>is</em> the gas token — see{" "}
+        <Mono>Getting USDC on Arc</Mono> — so once the transfer lands you can trade immediately.
+      </p>
+      <p>
+        Going the other way, you sign the claim yourself. That is not a limitation so much as the
+        ordinary case: you are arriving on a chain you already use and already hold gas on. The mint
+        is permissionless and always pays the recipient written into the message, so claiming it
+        yourself is exactly as safe and cannot be redirected by anyone.
       </p>
     </>
   ),

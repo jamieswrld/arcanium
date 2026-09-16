@@ -21,6 +21,7 @@ import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 
 interface IDiviumToken {
     function notifyRewardAmount(uint256 amount) external;
+    function rewardEligibleSupply() external view returns (uint256);
     function consumeRewards(address account) external returns (uint256);
     function earned(address account) external view returns (uint256);
 }
@@ -110,10 +111,8 @@ contract ArcaniumHook is IHooks, IUnlockCallback, Ownable2Step {
     mapping(PoolId => uint256) public pendingBurnQuote;
     /// Reward asset per launched token, so a payout needs only the token.
     mapping(address => address) public quoteOfToken;
-    /// True while sweepAndBurn is swapping this very pool. Without it the
-    /// buy-back would be taxed by afterSwap and park a fresh remainder,
-    /// leaving a residue that can never be fully swept.
-    bool private _sweeping;
+    /// DIVIUM proceeds taken while no holder was eligible to receive them.
+    mapping(PoolId => uint256) public pendingDivium;
 
     event PoolConfigured(PoolId indexed poolId, address indexed token, uint16 taxBps, Mode mode);
     event TaxRouted(
@@ -247,7 +246,6 @@ contract ArcaniumHook is IHooks, IUnlockCallback, Ownable2Step {
         BalanceDelta delta,
         bytes calldata
     ) external override onlyPoolManager returns (bytes4, int128) {
-        if (_sweeping) return (IHooks.afterSwap.selector, 0);
         PoolId id = key.toId();
         PoolConfig memory cfg = _configs[id];
         if (!cfg.configured) return (IHooks.afterSwap.selector, 0);
@@ -325,7 +323,21 @@ contract ArcaniumHook is IHooks, IUnlockCallback, Ownable2Step {
             // notifyRewardAmount and consumeRewards from a single address, so
             // whoever books the rewards must also be the one that pays them.
             poolManager.take(feeCurrency, address(this), amount);
-            IDiviumToken(cfg.token).notifyRewardAmount(amount);
+
+            // notifyRewardAmount divides by the eligible supply and returns
+            // silently when that is zero — which it is until somebody holds
+            // the token outside the pool. Calling it blindly would take the
+            // quote and book nothing against it, stranding it here with no way
+            // out, because the hook has no rescue function by design. So it is
+            // carried and paid into the first distribution that has an
+            // audience.
+            uint256 carried = pendingDivium[id] + amount;
+            if (IDiviumToken(cfg.token).rewardEligibleSupply() == 0) {
+                pendingDivium[id] = carried;
+            } else {
+                pendingDivium[id] = 0;
+                IDiviumToken(cfg.token).notifyRewardAmount(carried);
+            }
             return;
         }
 
@@ -347,10 +359,9 @@ contract ArcaniumHook is IHooks, IUnlockCallback, Ownable2Step {
         PoolConfig memory cfg = _configs[key.toId()];
         bool quoteIsCurrency0 = Currency.unwrap(key.currency0) == cfg.quote;
 
-        // Without this the buy-back would itself be taxed by afterSwap, which
-        // would park a fresh remainder and leave a residue that can never be
-        // fully burned.
-        _sweeping = true;
+        // No re-entrancy guard is needed around this. v4-core's Hooks library
+        // returns early from afterSwap when msg.sender is the hook itself, so
+        // a swap this contract issues never calls back into its own fee logic.
         BalanceDelta delta = poolManager.swap(
             key,
             SwapParams({
@@ -362,7 +373,6 @@ contract ArcaniumHook is IHooks, IUnlockCallback, Ownable2Step {
             }),
             ""
         );
-        _sweeping = false;
 
         // Pay the quote we owe the pool out of the balance just taken.
         Currency quoteCurrency = Currency.wrap(cfg.quote);

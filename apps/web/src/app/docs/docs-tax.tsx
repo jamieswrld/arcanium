@@ -1,18 +1,17 @@
 import type { ReactNode } from "react";
 
 /**
- * The trade tax.
+ * Why Arcanium tokens carry no transfer tax.
  *
- * This page exists because the tax is the one thing a creator can set that
- * costs other people money. The mechanics are simple; what needs saying
- * plainly is that quotes do not include it, that it is burned rather than
- * earned, and that it can never be changed afterwards. A creator who reads
- * only the launch form should still not be able to misunderstand any of those.
+ * This page previously documented a tax creators could set. That was withdrawn
+ * once it turned out a token carrying one cannot be sold at all — so the page
+ * now documents the restriction rather than the feature.
+ *
+ * It is worth its own page rather than a footnote because it is the single
+ * most useful thing to be able to point a scanner, a terminal or a sceptical
+ * trader at. "No transfer tax" is the claim that distinguishes our tokens from
+ * the honeypots they get mistaken for.
  */
-
-function Mono({ children }: { readonly children: ReactNode }) {
-  return <code className="docs-mono">{children}</code>;
-}
 
 function Callout({ children }: { readonly children: ReactNode }) {
   return <div className="docs-callout">{children}</div>;
@@ -21,53 +20,52 @@ function Callout({ children }: { readonly children: ReactNode }) {
 export const TAX_DOCS: Record<string, ReactNode> = {
   "launchpad/tax": (
     <>
-      <h1>Trade tax</h1>
+      <h1>No transfer tax</h1>
       <p className="docs-lead">
-        A creator can set a tax of up to 9% on every trade of their token. It is taken on both buys
-        and sells, and all of it is burned. Most launches set it to zero.
+        No token launched on Arcanium taxes its own transfers. Not on buys, not on sells, not on
+        sending it to a friend. The launch form and the API both refuse to set one.
       </p>
 
-      <h2>It is burned, not earned</h2>
+      <h2>Why it is refused rather than simply unused</h2>
       <p>
-        The tax does not pay the creator and does not pay Arcanium. Every unit collected goes to the
-        burn address and permanently leaves the supply. If you are setting one, you are choosing
-        deflation, not income — creator income is the reward share, which is a separate thing
-        covered under <Mono>Reward modes</Mono>.
+        A token that taxes its own transfers cannot be sold on Uniswap v3. A sell delivers its input
+        to the pool as an ordinary transfer, and the pool then checks that it received the amount it
+        was promised. A tax skims exactly that transfer, so the pool comes up short and the trade
+        reverts.
+      </p>
+      <p>
+        The buy still works, which is what makes it dangerous: the token looks fine until somebody
+        tries to get out. That is the textbook definition of a honeypot, and a launchpad that
+        offered the setting would be a machine for producing them. So the option is not offered.
       </p>
 
-      <h2>What a trader actually pays</h2>
-      <p>
-        The tax sits on top of the 1% pool fee, so a 5% tax means about 6% per trade in total. The
-        hard ceiling of 9% exists so the total can never exceed 10%.
-      </p>
       <Callout>
-        Quotes do not include it. The tax is charged inside the token&apos;s own transfer, which
-        means the pool, the router and every outside aggregator all report the pre-tax figure and
-        your wallet then receives less than you were shown. This is not specific to Arcanium — it is
-        true of every taxed token everywhere — but it is the thing that surprises people, so
-        Arcanium displays the rate above the trade panel on any token that charges one.
+        This is checkable rather than a promise. Read <code className="docs-mono">taxBps()</code> on
+        any Arcanium token and it returns <code className="docs-mono">0</code>; tokens from the
+        earliest factories do not implement the function at all. Either way there is no code path
+        that takes a cut of a transfer.
       </Callout>
 
-      <h2>Only trades are taxed</h2>
+      <h2>If a scanner says otherwise</h2>
       <p>
-        Sending the token from one wallet to another is untouched, as are airdrops and exchange
-        deposits. Only trades against the launch pool are taxed.
+        Some terminals report Arcanium tokens as &ldquo;unsellable&rdquo; or as likely scams. That
+        is a false positive with a specific cause: a honeypot detector buys and sells inside one
+        simulated transaction, and when it cannot construct the <em>sell</em> route it reports
+        &ldquo;unsellable&rdquo; rather than &ldquo;unsupported&rdquo;. Arc&apos;s Uniswap deployment
+        sits at non-canonical addresses, so a router table keyed to the usual ones finds nothing
+        here — and an unknown venue and a real honeypot produce the same verdict.
+      </p>
+      <p>
+        The sell path works. It can be simulated against live chain state without spending anything,
+        and our token-info API publishes the exact factory, router and fee tier a terminal needs in
+        order to route.
       </p>
 
-      <h2>It is fixed forever</h2>
+      <h2>What Arcanium does charge</h2>
       <p>
-        The rate is set at launch and there is no function to change it afterwards — not for the
-        creator, not for Arcanium. A rate that could be raised after people had bought would not be
-        a term, it would be a promise, and this is deliberately the former.
-      </p>
-
-      <h2>Choosing a rate</h2>
-      <p>
-        Zero is the default and is what nearly every token should use. A tax makes a token more
-        expensive to trade than its competitors and shows as a warning on its page, so it is worth
-        setting only when continuous supply reduction is genuinely the point of the token rather
-        than a detail. Aggregators and terminals generally rank taxed tokens worse, and some
-        refuse to route them at all.
+        A 1% fee on the pool itself, which is the ordinary Uniswap fee tier every launch uses and is
+        paid out of the trade rather than skimmed from the token. Where it goes is covered under
+        <em> Reward modes</em>.
       </p>
     </>
   ),

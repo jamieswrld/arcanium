@@ -279,6 +279,49 @@ contract ArcaniumHookTest is Test {
         assertEq(hook.claimable(address(token), hodler), 0, "the holder was not settled");
     }
 
+    /**
+     * A Divium fee taken while nobody can receive it must not vanish.
+     *
+     * notifyRewardAmount divides by the eligible supply and returns silently
+     * when that is zero, so calling it blindly takes the quote out of the
+     * PoolManager and books nothing against it — stranding it in a contract
+     * that deliberately has no rescue function. Here the seller is the factory
+     * address, which is excluded from rewards, so the eligible supply is zero
+     * at the moment the fee lands.
+     */
+    function test_divium_carries_a_fee_taken_while_nobody_is_eligible() public {
+        (ArcaniumLaunchToken token, PoolKey memory key) = _launch(ArcaniumHook.Mode.DIVIUM, TAX_BPS);
+        assertEq(token.rewardEligibleSupply(), 0, "somebody is eligible already");
+
+        // Sell as the factory, which is excluded, so nothing becomes eligible.
+        token.approve(address(swapRouter), type(uint256).max);
+        swapRouter.swap(
+            key,
+            SwapParams({
+                zeroForOne: !_buyIsZeroForOne(token),
+                amountSpecified: -1_000e18,
+                sqrtPriceLimitX96: !_buyIsZeroForOne(token)
+                    ? TickMath.MIN_SQRT_PRICE + 1
+                    : TickMath.MAX_SQRT_PRICE - 1
+            }),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            ""
+        );
+
+        uint256 carried = hook.pendingDivium(key.toId());
+        assertGt(carried, 0, "the fee was taken but not carried: it is stranded");
+        assertGe(quote.balanceOf(address(hook)), carried, "hook does not hold what it carried");
+
+        // Once somebody holds the token, the carried amount joins the next
+        // distribution rather than being lost.
+        token.transfer(trader, 1_000_000e18);
+        assertGt(token.rewardEligibleSupply(), 0);
+        _fundTrader(token);
+        _swap(key, !_buyIsZeroForOne(token), -1_000e18);
+
+        assertEq(hook.pendingDivium(key.toId()), 0, "carried amount was never released");
+    }
+
     function test_a_pool_with_no_creator_tax_still_charges_the_base_fee() public {
         (ArcaniumLaunchToken token, PoolKey memory key) = _launch(ArcaniumHook.Mode.STANDARD, 0);
         _fundTrader(token);
