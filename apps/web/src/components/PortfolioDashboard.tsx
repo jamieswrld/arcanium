@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { PortfolioLocks } from "@/components/PortfolioLocks";
 import { useAccount, useBalance, usePublicClient, useWriteContract } from "wagmi";
 import { formatUnits, parseAbiItem, type Hex } from "viem";
 import { erc20Abi } from "@/lib/bridgeClient";
@@ -386,6 +387,8 @@ export function PortfolioDashboard({
           </div>
         </section>
       </section>
+
+      <PortfolioLocks />
 
       <section>
         <Eyebrow>Creator center</Eyebrow>

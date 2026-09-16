@@ -34,12 +34,15 @@ const TABS = [
 type TabKey = (typeof TABS)[number]["key"];
 
 interface Props {
-  readonly searchParams: Promise<{ tab?: string }>;
+  readonly searchParams: Promise<{ tab?: string; token?: string }>;
 }
 
 export default async function LockedPage({ searchParams }: Props) {
   const sp = await searchParams;
   const tab: TabKey = TABS.some((t) => t.key === sp.tab) ? (sp.tab as TabKey) : "all";
+  // Linked from a token page. Validated here rather than passed through, so a
+  // malformed address becomes "all locks" instead of a failed query.
+  const token = /^0x[0-9a-fA-F]{40}$/.test(sp.token ?? "") ? sp.token?.toLowerCase() : undefined;
   const chain = getChain("arc");
 
   return (
@@ -81,7 +84,7 @@ export default async function LockedPage({ searchParams }: Props) {
         <CreateLockPanel />
       ) : tab === "all" ? (
         <Suspense fallback={<Sk h={240} />}>
-          <AllLocks />
+          <AllLocks token={token} />
         </Suspense>
       ) : (
         <MyLocks mode={tab === "claimable" ? "claimable" : "mine"} />
@@ -119,8 +122,8 @@ async function Stats() {
   );
 }
 
-async function AllLocks() {
-  const result = await lockList({ limit: 100 });
+async function AllLocks({ token }: { readonly token?: string | undefined }) {
+  const result = await lockList({ limit: 100, token });
   if (result === null) {
     return <p className="arch-note">Lock data is not available right now.</p>;
   }
@@ -128,7 +131,11 @@ async function AllLocks() {
     <div className="panel">
       <LockTable
         locks={result.locks}
-        empty="No locks have been created yet. The first one sets the tone."
+        empty={
+          token === undefined
+            ? "No locks have been created yet. The first one sets the tone."
+            : "No locks hold this token."
+        }
       />
     </div>
   );

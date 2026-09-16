@@ -1427,3 +1427,50 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
   .lock-form { padding: var(--s3); }
   .lock-detail-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ------------------------------------------------------------ launch mode ---
+   Tokens / Stocks. Stocks is deliberately quiet: a label, not a promotion. */
+
+.mode-tabs .arch-pill { display: inline-flex; align-items: center; gap: 6px; }
+
+.mode-soon {
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 1px 6px;
+}
+
+.stocks-soon {
+  padding: var(--s8) var(--s5);
+  display: grid;
+  gap: var(--s2);
+  justify-items: start;
+}
+.stocks-lead { margin: 0; font-size: 1.15rem; color: var(--text-primary); }
+
+/* Locks on the portfolio: a summary, not a second copy of /locked. */
+.pf-locks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: var(--s3) var(--s4);
+}
+.pf-claimable {
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 6px;
+}
+.pf-claim-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s2);
+  padding: 6px 0;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.pf-claim-row:hover { color: var(--accent); }

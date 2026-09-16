@@ -12,6 +12,8 @@ import { TokenAvatar } from "@/components/TokenAvatar";
 import { LivePrice } from "@/components/LivePrice";
 import { CopyButton } from "@/components/CopyButton";
 import { TokenPosition } from "@/components/TokenPosition";
+import { lockedForToken } from "@/lib/locks";
+import { formatAmount } from "@/components/LockTable";
 import { CreatorFees } from "@/components/CreatorFees";
 import { TokenMode } from "@/components/TokenMode";
 import { TokenSocials } from "@/components/TokenSocials";
@@ -228,6 +230,12 @@ export default async function TokenPage({ params }: TokenPageProps) {
               nothing at all for a wallet with no stake in this market. */}
           <TokenPosition token={detail.token} symbol={detail.symbol} priceE18={detail.priceE18} />
 
+          {/* Allocation locks held in this token, if any. Kept visually and
+              verbally apart from "Permanent liquidity" below: that is the
+              launch position, locked forever and owned by nobody; these are
+              user locks with a recipient and an end date. */}
+          <TokenLocks token={detail.token} symbol={detail.symbol} />
+
           <TokenMode token={detail.token} chainKey="arc" />
 
           <CreatorFees
@@ -285,5 +293,23 @@ function NotFound() {
         </Link>
       </div>
     </div>
+  );
+}
+
+/** Locked allocations for this token. Renders nothing when there are none. */
+async function TokenLocks({ token, symbol }: { readonly token: string; readonly symbol: string }) {
+  const locked = await lockedForToken(token);
+  if (locked === null || locked.locks === 0) return null;
+  return (
+    <section className="panel" style={{ padding: "var(--s3) var(--s4)" }}>
+      <div className="arch-stat-label">Locked allocations</div>
+      <div className="num" style={{ fontWeight: 650, marginTop: 2 }}>
+        {formatAmount(locked.amount.toString(), 18)} {symbol}
+      </div>
+      <div className="arch-note">
+        across {locked.locks} lock{locked.locks === 1 ? "" : "s"} ·{" "}
+        <Link href={`/locked?token=${token}`}>View locks</Link>
+      </div>
+    </section>
   );
 }
