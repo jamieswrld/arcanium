@@ -136,6 +136,9 @@ const HIDDEN_DEFAULTS: readonly string[] = [
   // end before anyone else used it. It is a real token with real liquidity and
   // it still trades; it is just not something to put in front of visitors.
   "0xACAfEe0D2A0B89A25DFB88530B43A156a74F32a1",
+  // DUKE — "The Duke of Arc", the first real v4 launch, which surfaced the
+  // pool_address uniqueness bug by being the second v4 token to exist.
+  "0xE586fFcd9f6f992f101d668B891747eA7CDCC4dA",
 ];
 
 const HIDDEN_TOKENS = new Set(
