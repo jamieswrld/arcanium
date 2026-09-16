@@ -1,5 +1,5 @@
 import { fail, handle, ok, parseAddress, preflight } from "@/lib/apiV1";
-import { resolveUsername, xUserIdHash, xPayoutsConfigured } from "@/lib/xIdentity";
+import { resolveUsername, xVaultKey, xPayoutsConfigured } from "@/lib/xIdentity";
 import { arcPublicClient } from "@/lib/launchpad";
 import { ARC_XCREATOR, ARC_USDC } from "@arch/chain-config";
 import { erc20Abi, type Hex } from "viem";
@@ -39,7 +39,7 @@ export async function GET(request: Request): Promise<Response> {
     const profile = await resolveUsername(username);
     if (profile === null) return fail("not_found", `Could not resolve @${username.replace(/^@/, "")}.`);
 
-    const idHash = xUserIdHash(profile.id);
+    const idHash = xVaultKey(profile.username);
     const client = arcPublicClient();
     const vault = (await client
       .readContract({

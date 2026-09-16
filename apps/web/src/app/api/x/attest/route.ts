@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { fail, handle, ok, parseAddress, preflight } from "@/lib/apiV1";
-import { readSession, xUserIdHash, xPayoutsConfigured } from "@/lib/xIdentity";
+import { readSession, xVaultKey, xPayoutsConfigured } from "@/lib/xIdentity";
+import { pinHandle } from "@/lib/xPins";
 import { signClaim } from "@/lib/xAttest";
 import { arcPublicClient } from "@/lib/launchpad";
 import { ARC_XCREATOR } from "@arch/chain-config";
@@ -58,7 +59,23 @@ export async function POST(request: Request): Promise<Response> {
     if (token === null) return fail("invalid_address", "token must be an address.");
     if (recipient === null) return fail("invalid_address", "recipient must be an address.");
 
-    const idHash = xUserIdHash(session.id);
+    // The vault is addressed by the handle the session actually holds, not by
+    // one the caller names — a request cannot point itself at somebody else's
+    // vault by asking nicely.
+    const handle = session.username.toLowerCase();
+    const idHash = xVaultKey(handle);
+
+    // The pin: whoever claims a handle first owns it from then on. A handle
+    // that later changes hands is worth nothing to whoever takes it, because
+    // their numeric id will not match the one recorded here. This is the
+    // protection that replaces keying the vault on the numeric id directly.
+    const pin = await pinHandle(handle, session.id, recipient as Hex);
+    if (!pin.ok) {
+      return fail(
+        "bad_request",
+        `@${session.username} is already claimed by a different X account. Handles can change hands, so the first account to claim one keeps it.`,
+      );
+    }
 
     // Derived on chain from the factory rather than computed here, so the
     // address this signs over is exactly the one the factory would deploy.

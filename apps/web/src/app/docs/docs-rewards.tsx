@@ -82,17 +82,27 @@ export const REWARD_DOCS: Record<string, ReactNode> = {
         somebody first claims.
       </p>
 
-      <h2>Identity is the numeric ID, never the handle</h2>
+      <h2>The handle addresses the vault, the first claim owns it</h2>
       <p>
-        X account names change hands. Someone who launches as <Mono>@alice</Mono> today may be{" "}
-        <Mono>@bob</Mono> next month, and <Mono>@alice</Mono> may belong to a stranger. Keying a fee
-        stream to the visible handle would quietly move the money along with the name.
+        A vault is derived from the handle, lowercased. That is what makes it nameable at launch:
+        the address can be computed from a string somebody types, before the account&apos;s owner
+        has ever visited this site or knows the token exists.
       </p>
       <p>
-        The vault is bound to a hash of X&apos;s stable <strong>numeric</strong> user ID, which
-        never changes. Rename the account and the fees still belong to the same account. The handle
-        is only ever a label shown in the interface.
+        Handles change hands, though, and a fee stream that followed the name would quietly follow
+        it to a stranger. So the first X account to claim a vault is recorded against it, and every
+        later claim must come from that same account. Rename yourself afterwards and the fees still
+        reach you; someone who registers your old handle gets nothing.
       </p>
+      <Callout>
+        <p>
+          <strong>The gap this leaves.</strong> If a handle is abandoned before its owner has ever
+          claimed, whoever registers it next can claim first and keep it. Nothing on our side can
+          tell those two people apart — that is the honest cost of not requiring X&apos;s paid API
+          tier. If a launch has routed fees to your account, claim once, early. After that the
+          handle is yours regardless of what happens to the name.
+        </p>
+      </Callout>
 
       <h2>Claiming</h2>
       <ol>
@@ -137,6 +147,10 @@ export const REWARD_DOCS: Record<string, ReactNode> = {
           without redeploying vaults or moving anyone&apos;s funds.
         </li>
         <li>
+          A handle already claimed by one X account cannot be claimed by another, whatever happens
+          to the name afterwards.
+        </li>
+        <li>
           Arcanium never holds the money. It sits in the vault contract until claimed.
         </li>
       </ul>
@@ -160,7 +174,9 @@ export const REWARD_DOCS: Record<string, ReactNode> = {
         </li>
       </ul>
       <p>
-        <Mono>vaultFor(xUserIdHash)</Mono> returns the address for any identity, deployed or not.
+        <Mono>vaultFor(keccak256(handle))</Mono> returns the address for any handle, deployed or
+        not — lowercased, because X treats <Mono>@Alice</Mono> and <Mono>@alice</Mono> as one
+        account and two vaults would split its fees.
       </p>
     </>
   ),

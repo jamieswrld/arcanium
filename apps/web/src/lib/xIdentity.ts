@@ -22,7 +22,9 @@ import { keccak256, toBytes, type Hex } from "viem";
 
 export interface XProfile {
   /** X's stable numeric user ID, as a decimal string. */
-  readonly id: string;
+  /** X's permanent numeric id, or null when the handle was accepted without
+   *  being looked up (no app-only credential configured). */
+  readonly id: string | null;
   readonly username: string;
   readonly name: string;
   readonly verified: boolean;
@@ -47,15 +49,42 @@ export function xPayoutsConfigured(): boolean {
   return (
     env("X_CLIENT_ID") !== null &&
     env("X_CLIENT_SECRET") !== null &&
-    env("X_BEARER_TOKEN") !== null &&
     env("X_ATTESTATION_SIGNER_KEY") !== null
   );
 }
 
-/** The identity a vault is permanently bound to. */
-export function xUserIdHash(numericId: string): Hex {
-  if (!/^[0-9]{1,25}$/.test(numericId)) throw new Error("x user id must be numeric");
-  return keccak256(toBytes(numericId));
+/** True when handles can also be checked to exist before a launch names one. */
+export function xLookupConfigured(): boolean {
+  return env("X_BEARER_TOKEN") !== null;
+}
+
+/**
+ * The identity a vault is bound to: the handle, lowercased.
+ *
+ * This used to be a hash of X's permanent numeric id, which is the safer
+ * choice on its own terms — handles change hands, numeric ids do not. It was
+ * abandoned because resolving a handle to its id requires X's paid tier, and
+ * an unbuilt feature protects nobody.
+ *
+ * What replaces that protection is a pin. The handle addresses the vault, but
+ * the first account to claim it records its numeric id, and every later claim
+ * must come from that same id — so a handle that changes hands after its owner
+ * has claimed once is worth nothing to whoever takes it. The window that
+ * remains is a handle abandoned before its owner ever claimed, and that is
+ * stated plainly in the docs rather than papered over.
+ *
+ * Lowercased because X treats @Alice and @alice as the same account, and two
+ * vaults for one account would split its fees in half.
+ */
+export function xVaultKey(username: string): Hex {
+  const handle = username.trim().replace(/^@/, "").toLowerCase();
+  if (!/^[a-z0-9_]{1,15}$/.test(handle)) throw new Error("not a valid x handle");
+  return keccak256(toBytes(handle));
+}
+
+/** X's own rule: 1-15 characters, letters, digits and underscore. */
+export function isValidHandle(username: string): boolean {
+  return /^[A-Za-z0-9_]{1,15}$/.test(username.trim().replace(/^@/, ""));
 }
 
 /**
@@ -67,10 +96,16 @@ export function xUserIdHash(numericId: string): Hex {
  */
 export async function resolveUsername(username: string): Promise<XProfile | null> {
   const bearer = env("X_BEARER_TOKEN");
-  if (bearer === null) return null;
   const handle = username.trim().replace(/^@/, "");
-  // X's own rule: 1-15 characters, letters, digits and underscore.
-  if (!/^[A-Za-z0-9_]{1,15}$/.test(handle)) return null;
+  if (!isValidHandle(handle)) return null;
+
+  // Without app-only auth the account cannot be looked up, and a vault keyed
+  // on the handle does not need it to be. The shape is returned with a null id
+  // so the caller can tell "well-formed but unverified" from "resolved" — the
+  // two must not be presented to a creator as the same thing.
+  if (bearer === null) {
+    return { id: null, username: handle, name: handle, verified: false, profileImageUrl: null };
+  }
 
   try {
     const res = await fetch(

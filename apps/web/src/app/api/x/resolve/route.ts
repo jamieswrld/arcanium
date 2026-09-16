@@ -1,5 +1,5 @@
 import { fail, handle, ok, preflight } from "@/lib/apiV1";
-import { resolveUsername, xPayoutsConfigured, xUserIdHash } from "@/lib/xIdentity";
+import { resolveUsername, xPayoutsConfigured, xVaultKey } from "@/lib/xIdentity";
 
 /**
  * GET /api/x/resolve?username=alice
@@ -30,7 +30,7 @@ export async function GET(request: Request): Promise<Response> {
         name: profile.name,
         verified: profile.verified,
         profileImageUrl: profile.profileImageUrl,
-        xUserIdHash: xUserIdHash(profile.id),
+        xUserIdHash: xVaultKey(profile.username),
       },
       {},
       60,
