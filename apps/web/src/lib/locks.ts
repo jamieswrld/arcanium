@@ -399,16 +399,30 @@ export async function lockListResilient(
 ): Promise<{ locks: LockRow[]; total: number; source: "indexer" | "chain" } | null> {
   const indexed = await lockList(q);
   if (indexed !== null) {
-    // The indexer answered — but if it has not seen a lock the chain already
-    // has, it is behind and the chain is the better answer.
-    const onChainCount = await arcPublicClient()
-      .readContract({ address: ARC_TOKEN_LOCKER, abi: lockerAbi, functionName: "lockCount" })
-      .catch(() => null);
-    const behind =
-      onChainCount !== null && q.token === undefined && q.wallet === undefined && q.status === undefined
-        ? Number(onChainCount) > indexed.total
-        : false;
-    if (!behind) return { ...indexed, source: "indexer" };
+    // The indexer answered — but answering is not the same as being current,
+    // and this is the case that actually bit: it returned a successful, stale
+    // result, so a plain null check saw nothing wrong.
+    //
+    // "all" and "any" are the route's defaults, not real filters. Comparing
+    // against `undefined` alone missed every request the API actually makes.
+    const unfiltered =
+      q.token === undefined &&
+      q.wallet === undefined &&
+      (q.status === undefined || q.status === "all") &&
+      (q.role === undefined || q.role === "any");
+
+    if (unfiltered) {
+      const onChainCount = await arcPublicClient()
+        .readContract({ address: ARC_TOKEN_LOCKER, abi: lockerAbi, functionName: "lockCount" })
+        .catch(() => null);
+      if (onChainCount !== null && Number(onChainCount) > indexed.total) {
+        // Fall through to the chain read below.
+      } else {
+        return { ...indexed, source: "indexer" };
+      }
+    } else {
+      return { ...indexed, source: "indexer" };
+    }
   }
 
   const all = await locksFromChain();
@@ -433,15 +447,20 @@ export async function lockListResilient(
 
 /** Headline counts, computed from chain when the indexer cannot answer. */
 export async function lockStatsResilient(): Promise<LockStats | null> {
-  const indexed = await lockStats();
-  const onChainCount = await arcPublicClient()
-    .readContract({ address: ARC_TOKEN_LOCKER, abi: lockerAbi, functionName: "lockCount" })
-    .catch(() => null);
+  const [indexed, onChainCount] = await Promise.all([
+    lockStats(),
+    arcPublicClient()
+      .readContract({ address: ARC_TOKEN_LOCKER, abi: lockerAbi, functionName: "lockCount" })
+      .catch(() => null),
+  ]);
 
-  const total = onChainCount === null ? null : Number(onChainCount);
-  if (indexed !== null && (total === null || indexed.activeLocks + indexed.claimable === 0 || total <= indexed.activeLocks)) {
-    return indexed;
-  }
+  // The indexer's own view of how many locks it knows about, compared against
+  // the chain's count. Anything less means it is behind.
+  const indexedTotal = await lockList({ limit: 1 }).then((r) => r?.total ?? null);
+  const current =
+    onChainCount === null || indexedTotal === null || indexedTotal >= Number(onChainCount);
+  if (indexed !== null && current) return indexed;
+
   const all = await locksFromChain();
   if (all === null) return indexed;
 
