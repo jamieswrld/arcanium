@@ -146,6 +146,9 @@
   --arch-text-muted: var(--text-secondary);
   --arch-positive: var(--positive);
   --arch-negative: var(--negative);
+  /* Referenced by the bridge's in-progress step, which had no fill at all
+     without it — the one step a reader is actually watching. */
+  --brand-gradient: linear-gradient(135deg, var(--accent) 0%, color-mix(in oklch, var(--accent) 55%, var(--text-primary)) 100%);
   --arch-warning: var(--warning);
   --fast: var(--t-fast);
   --slow: var(--t-mid);
@@ -824,6 +827,176 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
   min-width: 0;
 }
 .create-side .spread:last-child { border-bottom: 0 !important; }
+
+/* ------------------------------------------------------------ launch form ---
+   The form was a column of inputs each trailed by a paragraph of grey
+   explanation. Individually reasonable, together a wall of small print that
+   buried the fields and made a three-decision task read like a contract. This
+   is the same form at roughly half the height: numbered steps so the shape of
+   the task is visible at a glance, two fields to a row where they are short,
+   and prose only where it changes what somebody would type.              */
+
+.cf { --cf-gap: var(--s3); }
+
+.cf-lede { margin-top: 5px; font-size: 0.82rem; color: var(--text-secondary); }
+
+.cf-step {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: var(--s5) 0 var(--s3);
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--border);
+}
+.cf-step:first-child { margin-top: 0; }
+.cf-step h2 {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+.cf-step-n {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 0.66rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.cf-step-note {
+  margin-left: auto;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.cf-row { margin-bottom: var(--cf-gap); }
+.cf-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--cf-gap); }
+
+.cf-field { display: grid; gap: 4px; min-width: 0; }
+.cf-field > label,
+.cf-field > .cf-label {
+  font-size: 0.74rem;
+  font-weight: 650;
+  color: var(--text-secondary);
+}
+.cf-field input,
+.cf-field textarea {
+  width: 100%;
+  height: var(--h-md);
+  padding: 0 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface-sunk);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.85rem;
+}
+.cf-field textarea { height: auto; min-height: 58px; padding: 8px 11px; resize: vertical; }
+.cf-field input:focus,
+.cf-field textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-quiet);
+}
+.cf-field input::placeholder,
+.cf-field textarea::placeholder { color: var(--text-muted); }
+
+/* One size smaller than the labels and one step quieter, so a hint reads as an
+   aside rather than competing with the field it belongs to. */
+.cf-hint { font-size: 0.71rem; line-height: 1.45; color: var(--text-muted); }
+
+/* An input with a fixed unit after it: the unit is part of the control, not a
+   sentence underneath it. */
+.cf-suffix { display: flex; align-items: center; gap: var(--s2); }
+.cf-suffix input { max-width: 96px; }
+.cf-suffix > span { font-size: 0.74rem; color: var(--text-muted); white-space: nowrap; }
+
+.cf-toggle { display: inline-flex; padding: 3px; gap: 2px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-sunk); }
+.cf-toggle button {
+  padding: 0 11px;
+  height: calc(var(--h-md) - 8px);
+  border: none;
+  border-radius: calc(var(--r-md) - 3px);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+.cf-toggle button:hover:not(:disabled) { color: var(--text-primary); }
+.cf-toggle button.on { background: var(--surface-1); color: var(--text-primary); box-shadow: var(--shadow-sm); }
+.cf-toggle button:disabled { cursor: not-allowed; opacity: 0.55; }
+
+.cf-logo {
+  display: flex;
+  gap: var(--s3);
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface-sunk);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+}
+.cf-logo:hover:not(:disabled) { border-color: var(--accent-line); background: var(--surface-1); }
+.cf-logo:disabled { cursor: not-allowed; opacity: 0.6; }
+.cf-logo-thumb {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.cf-logo-text { display: grid; gap: 1px; min-width: 0; font-size: 0.82rem; font-weight: 600; }
+.cf-logo-text > span { font-size: 0.71rem; font-weight: 400; color: var(--text-muted); }
+
+/* Optional detail, closed by default. A form this short can afford to hide
+   what most launches leave blank. */
+.cf-more { margin-bottom: var(--cf-gap); }
+.cf-more > summary {
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 7px 0;
+  list-style: none;
+}
+.cf-more > summary::-webkit-details-marker { display: none; }
+.cf-more > summary::before {
+  content: "+";
+  display: inline-block;
+  width: 1em;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+.cf-more[open] > summary::before { content: "−"; }
+.cf-more > summary:hover { color: var(--text-primary); }
+.cf-more[open] > summary { margin-bottom: var(--s2); }
+
+.cf-modes { display: grid; gap: 6px; margin-bottom: var(--cf-gap); }
+.cf-mode-icon { margin-top: 1px; width: 24px; display: grid; place-items: center; flex-shrink: 0; }
+.cf-mode-name { display: block; font-weight: 650; font-size: 0.86rem; }
+.cf-mode-blurb { display: block; font-size: 0.74rem; color: var(--text-muted); line-height: 1.4; }
+
+@media (max-width: 520px) {
+  .cf-two { grid-template-columns: minmax(0, 1fr); }
+  .cf-step-note { margin-left: 0; flex-basis: 100%; text-align: left; }
+}
 
 /* Fee-mode choices: selectable strategies, on the system rather than inline. */
 .mode-card {

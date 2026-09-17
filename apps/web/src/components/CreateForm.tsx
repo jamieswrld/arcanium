@@ -313,77 +313,118 @@ export function CreateForm() {
 
   return (
     <div className="create-grid">
-      <div className="create-form">
-        <p className="eyebrow" style={{ marginBottom: "var(--s3)" }}>Token</p>
-      <div className="arch-form-grid">
-        <div className="arch-form-row">
-          <label htmlFor="cf-name">Token name *</label>
-          <input id="cf-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Archway" disabled={busy} maxLength={48} />
-        </div>
-        <div className="arch-form-row">
-          <label htmlFor="cf-ticker">Ticker *</label>
-          <input id="cf-ticker" value={ticker} onChange={(e) => setTicker(e.target.value)} placeholder="ARCH" disabled={busy} maxLength={10} />
-        </div>
-      </div>
+      <div className="create-form cf">
+        {/* A launch is three decisions taken in order — what the token is, how
+            it opens, who its fees pay. The numbering is not decoration: the
+            order is real, and the third is the only irreversible one. */}
+        <Step n={1} title="Your token" />
 
-      <div className="arch-form-row">
-        <label>Logo image (optional)</label>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/png,image/jpeg,image/gif,image/webp"
-          style={{ display: "none" }}
-          onChange={(e) => void onPickImage(e.target.files?.[0])}
-          disabled={busy}
-        />
-        <button
-          type="button"
-          onClick={() => fileRef.current?.click()}
-          disabled={busy}
-          style={{ display: "flex", gap: "0.75rem", alignItems: "center", width: "100%", textAlign: "left", cursor: busy ? "not-allowed" : "pointer", background: "var(--muted)", border: "1px dashed var(--border)", borderRadius: 12, padding: "0.7rem 0.8rem" }}
-        >
-          <span aria-hidden style={{ width: 52, height: 52, borderRadius: 12, flexShrink: 0, background: imageUrl === "" ? "var(--card)" : `center/cover no-repeat url(${JSON.stringify(imageUrl)})`, border: imageUrl === "" ? "1px solid var(--border)" : "none" }} />
-          <span style={{ minWidth: 0 }}>
-            <span style={{ display: "block", fontWeight: 600, fontSize: "0.9rem" }}>{imageUrl === "" ? "Click to upload a logo" : "Change logo"}</span>
-            <span className="arch-note">PNG, JPG, GIF or WebP — we resize it for you.</span>
-          </span>
-        </button>
-        {imgError !== null ? <span className="arch-note" style={{ color: "var(--arch-negative)" }}>{imgError}</span> : null}
-      </div>
-
-      <div className="arch-form-row">
-        <label htmlFor="cf-desc">Description (optional)</label>
-        <textarea id="cf-desc" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} disabled={busy} maxLength={500} />
-      </div>
-
-      <p className="eyebrow" style={{ margin: "var(--s5) 0 var(--s3)" }}>Links</p>
-      <details>
-        <summary className="arch-note" style={{ cursor: "pointer", marginBottom: "0.5rem" }}>Website, X and Telegram (optional)</summary>
-        <div className="arch-form-row">
-          <label htmlFor="cf-web">Website</label>
-          <input id="cf-web" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://…" disabled={busy} />
+        <div className="cf-row cf-two">
+          <Field id="cf-name" label="Name">
+            <input id="cf-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Archway" disabled={busy} maxLength={48} />
+          </Field>
+          <Field id="cf-ticker" label="Ticker">
+            <input id="cf-ticker" value={ticker} onChange={(e) => setTicker(e.target.value)} placeholder="ARCH" disabled={busy} maxLength={10} />
+          </Field>
         </div>
-        <div className="arch-form-row">
-          <label htmlFor="cf-x">X profile</label>
-          <input id="cf-x" value={twitter} onChange={(e) => setTwitter(e.target.value)} placeholder="https://x.com/…" disabled={busy} />
-        </div>
-        <div className="arch-form-row">
-          <label htmlFor="cf-tg">Telegram</label>
-          <input id="cf-tg" value={telegram} onChange={(e) => setTelegram(e.target.value)} placeholder="https://t.me/…" disabled={busy} />
-        </div>
-      </details>
 
-      <p className="eyebrow" style={{ margin: "var(--s5) 0 var(--s3)" }}>Market</p>
-      <div className="arch-form-row">
-        <label htmlFor="cf-buy">Initial buy (optional, in {quoteSymbol})</label>
-        <input id="cf-buy" value={creatorBuy} onChange={(e) => setCreatorBuy(e.target.value)} placeholder="0.00" inputMode="decimal" disabled={busy} />
-        <span className="arch-note">Executed atomically inside the launch — nobody can trade before you.</span>
-      </div>
+        <div className="cf-row">
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp"
+            style={{ display: "none" }}
+            onChange={(e) => void onPickImage(e.target.files?.[0])}
+            disabled={busy}
+          />
+          <button type="button" className="cf-logo" onClick={() => fileRef.current?.click()} disabled={busy}>
+            <span
+              aria-hidden
+              className="cf-logo-thumb"
+              style={imageUrl === "" ? undefined : { background: `center/cover no-repeat url(${JSON.stringify(imageUrl)})`, border: "none" }}
+            />
+            <span className="cf-logo-text">
+              {imageUrl === "" ? "Add a logo" : "Change logo"}
+              <span>PNG, JPG or WebP. We resize it.</span>
+            </span>
+          </button>
+          {imgError !== null ? <p className="err" style={{ margin: "4px 0 0" }}>{imgError}</p> : null}
+        </div>
 
-      <p className="eyebrow" style={{ margin: "var(--s5) 0 var(--s3)" }}>Creator rewards</p>
-      <div className="arch-form-row">
-        <label>How your trading fees are paid</label>
-        <div style={{ display: "grid", gap: "0.5rem" }}>
+        <details className="cf-more">
+          <summary>Description and links</summary>
+          <Field id="cf-desc" label="Description">
+            <textarea id="cf-desc" rows={2} value={description} onChange={(e) => setDescription(e.target.value)} disabled={busy} maxLength={500} />
+          </Field>
+          <div className="cf-row cf-two">
+            <Field id="cf-web" label="Website">
+              <input id="cf-web" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://…" disabled={busy} />
+            </Field>
+            <Field id="cf-x" label="X">
+              <input id="cf-x" value={twitter} onChange={(e) => setTwitter(e.target.value)} placeholder="https://x.com/…" disabled={busy} />
+            </Field>
+          </div>
+          <Field id="cf-tg" label="Telegram">
+            <input id="cf-tg" value={telegram} onChange={(e) => setTelegram(e.target.value)} placeholder="https://t.me/…" disabled={busy} />
+          </Field>
+        </details>
+
+        <Step n={2} title="How it opens" />
+
+        <div className="cf-row cf-two">
+          <Field id="cf-buy" label={`Your first buy (${quoteSymbol})`} hint="Bought inside the launch, so nobody gets in ahead of you.">
+            <input id="cf-buy" value={creatorBuy} onChange={(e) => setCreatorBuy(e.target.value)} placeholder="0.00" inputMode="decimal" disabled={busy} />
+          </Field>
+
+          {v4Addr === undefined ? null : (
+            <Field
+              label="Pool"
+              hint={
+                protocol === "v4"
+                  ? "Newer. Rewards pay out instantly and you can add a trade tax."
+                  : "Older. Every Arcanium token so far uses it. No trade tax."
+              }
+            >
+              <div className="cf-toggle">
+                {(["v4", "v3"] as const).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    className={protocol === p ? "on" : undefined}
+                    onClick={() => setProtocol(p)}
+                    disabled={busy}
+                    aria-pressed={protocol === p}
+                  >
+                    Uniswap {p}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          )}
+        </div>
+
+        {!useV4 ? null : (
+          <div className="cf-row">
+            <Field
+              id="cf-tax"
+              label="Trade tax"
+              hint={
+                taxBps !== null && taxBps > 0n
+                  ? `Every trade costs ${(Number(taxBps) / 100 + 1).toFixed(2)}% in total. The extra follows your choice below.`
+                  : "Optional. An extra cut on every trade, on top of the 1% pool fee."
+              }
+            >
+              <div className="cf-suffix">
+                <input id="cf-tax" value={taxPct} onChange={(e) => setTaxPct(e.target.value)} placeholder="0" inputMode="decimal" disabled={busy} />
+                <span>% · max 9</span>
+              </div>
+            </Field>
+          </div>
+        )}
+
+        <Step n={3} title="Who the fees pay" note="Fixed at launch — this one cannot be changed later." />
+
+        <div className="cf-modes">
           {LAUNCH_MODES.map((m) => {
             const active = mode === m.id;
             return (
@@ -395,101 +436,35 @@ export function CreateForm() {
                 className={active ? "mode-card mode-card-on" : "mode-card"}
                 aria-pressed={active}
               >
-                <span aria-hidden style={{ marginTop: 1, width: 26, display: "grid", placeItems: "center" }}>
-                  {m.id === 1 ? <DiviumBillsIcon size={24} /> : m.id === 2 ? <ArcaneWandIcon size={24} /> : <StandardWalletIcon size={24} />}
+                <span aria-hidden className="cf-mode-icon">
+                  {m.id === 1 ? <DiviumBillsIcon size={22} /> : m.id === 2 ? <ArcaneWandIcon size={22} /> : <StandardWalletIcon size={22} />}
                 </span>
                 <span style={{ minWidth: 0 }}>
-                  <span style={{ display: "block", fontWeight: 700, fontSize: "0.92rem" }}>
-                    {m.label}{m.id === 0 ? " · default" : ""}
-                  </span>
-                  <span className="arch-note" style={{ display: "block" }}>{m.blurb}</span>
+                  <span className="cf-mode-name">{m.label}</span>
+                  <span className="cf-mode-blurb">{MODE_PLAIN[m.id] ?? m.blurb}</span>
                 </span>
               </button>
             );
           })}
         </div>
-        <span className="arch-note" style={{ marginTop: "0.35rem" }}>
-          Fixed at launch and can never be changed. Traders always pay the same 1% pool fee.
-        </span>
-      </div>
 
-      {v4Addr === undefined ? null : (
-        <div className="arch-form-row">
-          <label>Pool version</label>
-          <div className="arch-pills" style={{ display: "inline-flex" }}>
-            {(["v4", "v3"] as const).map((p) => (
-              <button
-                key={p}
-                type="button"
-                className={protocol === p ? "arch-pill arch-pill-active" : "arch-pill"}
-                style={{ border: "none", cursor: "pointer" }}
-                onClick={() => setProtocol(p)}
-                disabled={busy}
-                aria-pressed={protocol === p}
-              >
-                Uniswap {p}
-              </button>
-            ))}
-          </div>
-          <span className="arch-note">
-            {protocol === "v4"
-              ? "Rewards and burns settle inside each trade rather than waiting for a sweep, a trade tax is available, and the liquidity is held by a contract with no code to withdraw it. One transaction to launch."
-              : "The venue every existing Arcanium token trades on, so aggregators and terminals already route it. No trade tax — a v3 token that charges one cannot be sold."}
-          </span>
-        </div>
-      )}
-
-      {!useV4 ? null : (
-        <div className="arch-form-row">
-          <label htmlFor="cf-tax">Trade tax (optional)</label>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <input
-              id="cf-tax"
-              value={taxPct}
-              onChange={(e) => setTaxPct(e.target.value)}
-              placeholder="0"
-              inputMode="decimal"
-              disabled={busy}
-              style={{ maxWidth: 110 }}
-            />
-            <span className="arch-note" style={{ margin: 0 }}>% per trade, max 9%</span>
-          </div>
-          <span className="arch-note">
-            An extra cut taken on every buy and sell, on top of the 1% base. Where it goes follows
-            the mode you picked above: the token side is always burned, and the rest is split like
-            any other fee. Traders can still sell normally — the fee is taken inside the swap, not
-            skimmed off the transfer.
-            {taxBps !== null && taxBps > 0n ? (
-              <>
-                {" "}
-                At {(Number(taxBps) / 100).toFixed(2)}% a trade costs{" "}
-                {(Number(taxBps) / 100 + 1).toFixed(2)}% all in.
-              </>
-            ) : null}
-          </span>
-        </div>
-      )}
-
-      <details style={{ marginTop: "var(--s2)" }}>
-        <summary className="arch-note" style={{ cursor: "pointer", marginBottom: "var(--s2)" }}>
-          Advanced: where creator rewards go
-        </summary>
-        <CreatorFeeDestination
-          walletAddress={address ?? ""}
-          tokenXHandle={twitter}
-          disabled={busy}
-          onChange={(d) => {
-            setFeeDest(d);
-            if (d?.kind === "wallet") setFeeWallet(d.address);
-          }}
-        />
-        <span className="arch-note" style={{ display: "block", marginTop: "var(--s2)" }}>
-          {mode === 0
-            ? "Trading-fee rewards for this token are paid here, forever, and cannot be changed after launch."
-            : "In this mode fees go to holders or the burn — this only owns the launch record."}
-        </span>
-      </details>
-
+        <details className="cf-more">
+          <summary>Send fees somewhere other than my wallet</summary>
+          <CreatorFeeDestination
+            walletAddress={address ?? ""}
+            tokenXHandle={twitter}
+            disabled={busy}
+            onChange={(d) => {
+              setFeeDest(d);
+              if (d?.kind === "wallet") setFeeWallet(d.address);
+            }}
+          />
+          {mode === 0 ? null : (
+            <p className="cf-hint" style={{ marginTop: "var(--s2)" }}>
+              In this mode the fees go to holders or the burn, so this only records who launched it.
+            </p>
+          )}
+        </details>
       </div>
 
       {/* Persistent economics. Everything that will happen, before signing. */}
@@ -502,28 +477,23 @@ export function CreateForm() {
             <SummaryRow label="Chain" value={chain.name} />
             <SummaryRow label="Pair" value={chain.quote.symbol} />
             <SummaryRow label="Supply" value="1,000,000,000 fixed" />
-            <SummaryRow label="Pool" value={useV4 ? "Uniswap v4 · 1% via hook" : "Uniswap v3 · 1% fee"} />
-            <SummaryRow label="Liquidity" value="Locked permanently" />
-            <SummaryRow
-              label="Creator rewards"
-              value={mode === 1 ? "Divium — paid to holders" : mode === 2 ? "Arcane — buy and burn" : "Paid to your wallet"}
-            />
+            <SummaryRow label="Pool" value={useV4 ? "Uniswap v4 · 1% fee" : "Uniswap v3 · 1% fee"} />
+            <SummaryRow label="Liquidity" value="Locked forever" />
+            <SummaryRow label="Fees pay" value={mode === 1 ? "Holders" : mode === 2 ? "Buy and burn" : "You"} />
             {!useV4 ? null : (
               <SummaryRow
                 label="Trade tax"
-                value={
-                  taxBps === null ? "—" : taxBps === 0n ? "None" : `${(Number(taxBps) / 100).toFixed(2)}%`
-                }
+                value={taxBps === null ? "—" : taxBps === 0n ? "None" : `${(Number(taxBps) / 100).toFixed(2)}%`}
               />
             )}
-            <SummaryRow label="Initial buy" value={buyAmount > 0n ? `${fmtQuote(buyAmount)} ${quoteSymbol}` : "None"} />
+            <SummaryRow label="Your first buy" value={buyAmount > 0n ? `${fmtQuote(buyAmount)} ${quoteSymbol}` : "None"} />
             <SummaryRow
-              label="Launch cost"
+              label="Cost to launch"
               value={
                 launchFee.data === undefined
                   ? "—"
                   : launchFee.data === 0n
-                    ? "Free — gas only"
+                    ? "Gas only"
                     : `${fmtQuote(launchFee.data)} ${quoteSymbol}`
               }
             />
@@ -537,8 +507,8 @@ export function CreateForm() {
             {formError !== null ? <p className="err" style={{ margin: 0 }}>{formError}</p> : null}
 
             {state.step === "needs_gas" ? (
-              <p className="arch-note" style={{ color: "var(--warning)", margin: 0 }}>
-                You need a little Arc gas (native USDC) to launch. Top up, then press Launch again.
+              <p className="err" style={{ margin: 0, color: "var(--warning)" }}>
+                You need a little Arc gas ({quoteSymbol}) first. Top up, then press Launch again.
               </p>
             ) : null}
 
@@ -561,13 +531,64 @@ export function CreateForm() {
 
             {state.step === "error" ? <p className="err" style={{ margin: 0 }}>{state.message}</p> : null}
 
-            <p className="hint" style={{ margin: 0 }}>
-              One transaction creates the token, its Uniswap pool and permanently locked
-              liquidity. Your wallet will show exactly what it is signing.
+            <p className="cf-hint" style={{ margin: 0 }}>
+              One transaction. Your wallet shows exactly what it signs.
             </p>
           </div>
         </section>
       </aside>
+    </div>
+  );
+}
+
+/**
+ * The reward modes, said the way somebody would say them out loud.
+ *
+ * The canonical blurbs in LAUNCH_MODES are written for the docs, where
+ * precision earns its length. Here the reader is mid-decision and comparing
+ * three options, so each has to be short enough to hold all three at once.
+ */
+const MODE_PLAIN: Record<number, string> = {
+  0: "Straight to your wallet, in USDC.",
+  1: "Split between everyone holding the token, in USDC.",
+  2: "Buys your token off the market and burns it.",
+};
+
+/** A numbered step heading. A signpost, so it is sized like one. */
+function Step({ n, title, note }: { readonly n: number; readonly title: string; readonly note?: string }) {
+  return (
+    <div className="cf-step">
+      <span className="cf-step-n" aria-hidden>{n}</span>
+      <h2>{title}</h2>
+      {note === undefined ? null : <span className="cf-step-note">{note}</span>}
+    </div>
+  );
+}
+
+/**
+ * One labelled control.
+ *
+ * `hint` is deliberately the exception rather than the habit. Every field used
+ * to carry a paragraph of grey explanation beneath it, and the sum of them
+ * turned the form into small print that buried the fields it was explaining. A
+ * hint belongs here only when it changes what the reader would type.
+ */
+function Field({
+  id,
+  label,
+  hint,
+  children,
+}: {
+  readonly id?: string;
+  readonly label: string;
+  readonly hint?: string;
+  readonly children: React.ReactNode;
+}) {
+  return (
+    <div className="cf-field">
+      {id === undefined ? <span className="cf-label">{label}</span> : <label htmlFor={id}>{label}</label>}
+      {children}
+      {hint === undefined ? null : <span className="cf-hint">{hint}</span>}
     </div>
   );
 }
