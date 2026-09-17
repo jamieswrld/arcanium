@@ -169,6 +169,7 @@ export async function indexedTokens(): Promise<LaunchpadToken[] | null> {
     return rows
       .filter((r) => !isHidden(hex(r.token_address)))
       .map((r) => ({
+        protocol: (r.protocol === "v4" ? "v4" : "v3") as "v3" | "v4",
         token: hex(r.token_address),
         name: r.name,
         symbol: r.symbol,
@@ -213,6 +214,7 @@ export async function indexedToken(address: string): Promise<LaunchpadToken | nu
     const r = rows[0];
     if (r === undefined) return null;
     return {
+      protocol: (r.protocol === "v4" ? "v4" : "v3") as "v3" | "v4",
       token: hex(r.token_address),
       name: r.name,
       symbol: r.symbol,

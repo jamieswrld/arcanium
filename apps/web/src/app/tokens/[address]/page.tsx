@@ -20,6 +20,7 @@ import { CreatorFees } from "@/components/CreatorFees";
 import { TokenMode } from "@/components/TokenMode";
 import { TokenTax } from "@/components/TokenTax";
 import { FlywheelPanel } from "@/components/FlywheelPanel";
+import { LaunchSettings } from "@/components/LaunchSettings";
 import { TokenSocials } from "@/components/TokenSocials";
 
 export const revalidate = 10;
@@ -280,6 +281,16 @@ export default async function TokenPage({ params }: TokenPageProps) {
           {detail.token.toLowerCase() === "0xebb871bc394e83008120fab3c9ed5773642a29a1" ? (
             <FlywheelPanel />
           ) : null}
+
+          {/* What this market's creator fixed at launch, and who collects its
+              fees. None of it can change, which is why it sits on the page
+              rather than behind a tooltip. */}
+          <LaunchSettings
+            token={detail.token}
+            feeRecipient={detail.creator}
+            mode={detail.mode}
+            protocol={detail.protocol}
+          />
 
           <TokenMode token={detail.token} chainKey="arc" />
 

@@ -1602,3 +1602,23 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
 }
 .chain-picker-option-active { background: color-mix(in oklch, var(--accent) 16%, transparent); }
 .chain-picker-tick { margin-left: auto; opacity: 0.8; font-size: 0.8rem; }
+
+/* Launch terms: a definition list, not a grid of cards. The label/value pair
+   is the unit of meaning here, and boxing each one would add five borders to
+   say what indentation already says. */
+.ls-grid { display: grid; gap: 0; margin: 0; padding: var(--s3) var(--s4) var(--s4); }
+.ls-row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: var(--s3);
+  padding: var(--s3) 0;
+  border-top: 1px solid var(--border);
+  align-items: baseline;
+}
+.ls-row:first-child { border-top: none; padding-top: 0; }
+.ls-row dt { color: var(--text-secondary); font-size: 0.8rem; }
+.ls-row dd { margin: 0; min-width: 0; }
+@media (max-width: 560px) {
+  .ls-row { grid-template-columns: 1fr; gap: 2px; }
+  .ls-row dt { font-size: 0.74rem; }
+}

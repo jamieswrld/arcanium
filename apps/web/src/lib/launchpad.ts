@@ -381,6 +381,8 @@ export interface LaunchpadToken {
   readonly graduated: boolean;
   /** 0 standard · 1 divium · 2 arcane · null when not a mode-aware launch. */
   readonly mode: number | null;
+  /** Which Uniswap this market trades on. v3 unless the indexer says v4. */
+  readonly protocol: "v3" | "v4";
   /**
    * When the token launched, or null when only the chain was asked.
    *
@@ -544,6 +546,7 @@ async function fetchTokenFrom(client: PublicClient, factory: Hex, token: Hex): P
     marketCapUnits: marketCapUsdUnits(priceE18),
     quoteBalance,
     graduated,
+    protocol: "v3" as const,
     mode: null,
     // Chain reads do not carry these: launch time lives in the launch log and
     // a holder count needs the transfer history. Null, not zero — the caller

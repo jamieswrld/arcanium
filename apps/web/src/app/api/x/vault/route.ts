@@ -2,6 +2,7 @@ import { fail, handle, ok, parseAddress, preflight } from "@/lib/apiV1";
 import { resolveUsername, xPayoutsConfigured } from "@/lib/xIdentity";
 import { githubConfigured } from "@/lib/githubIdentity";
 import { identityKey, isPlatform, isValidHandle, normaliseHandle, platformLabel } from "@/lib/socialIdentity";
+import { rememberVault } from "@/lib/socialVaults";
 import { arcPublicClient } from "@/lib/launchpad";
 import { ARC_XCREATOR, ARC_USDC } from "@arch/chain-config";
 import { erc20Abi, type Hex } from "viem";
@@ -85,6 +86,11 @@ export async function GET(request: Request): Promise<Response> {
         .readContract({ address: ARC_USDC, abi: erc20Abi, functionName: "balanceOf", args: [vault] })
         .catch(() => 0n),
     ]);
+
+    // Note the pairing while both halves are in hand. A hash does not run
+    // backwards, so without this a token page can only ever show the fee
+    // recipient as hex.
+    void rememberVault(vault, platform, handleName);
 
     return ok({
       platform,
