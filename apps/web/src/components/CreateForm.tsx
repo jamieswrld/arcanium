@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { CreatorFeeDestination, type FeeDestination } from "@/components/CreatorFeeDestination";
 import { useRouter } from "next/navigation";
 import { useAccount, usePublicClient, useReadContract, useSwitchChain, useWriteContract } from "wagmi";
@@ -309,6 +309,20 @@ export function CreateForm() {
     }
   }
 
+  /**
+   * Stable across renders on purpose.
+   *
+   * CreatorFeeDestination reports its selection from an effect. An inline
+   * arrow here would be a new function on every render, and this handler sets
+   * state — so the child's effect would re-fire on its own output and spin
+   * forever. The child no longer depends on this identity either; both ends
+   * are fixed because either one alone is a trap the next edit can spring.
+   */
+  const onFeeDestChange = useCallback((d: FeeDestination | null) => {
+    setFeeDest(d);
+    if (d?.kind === "wallet") setFeeWallet(d.address);
+  }, []);
+
   const disabled = busy; // validation happens on click with a clear message
 
   return (
@@ -454,10 +468,7 @@ export function CreateForm() {
             walletAddress={address ?? ""}
             tokenXHandle={twitter}
             disabled={busy}
-            onChange={(d) => {
-              setFeeDest(d);
-              if (d?.kind === "wallet") setFeeWallet(d.address);
-            }}
+            onChange={onFeeDestChange}
           />
           {mode === 0 ? null : (
             <p className="cf-hint" style={{ marginTop: "var(--s2)" }}>

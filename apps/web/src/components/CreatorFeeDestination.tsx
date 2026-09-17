@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Hex } from "viem";
 
 /**
@@ -81,15 +81,39 @@ export function CreatorFeeDestination({
     };
   }, []);
 
-  // Report upward. Wallet mode with an empty box means "the wallet I launch
-  // with", which is what the contract already does with the zero address.
+  /**
+   * Report upward.
+   *
+   * The callback is held in a ref and kept out of the dependency array, which
+   * is not a lint dodge — it is the whole fix. This effect calls the parent,
+   * the parent stores the result in state, and the parent re-renders. A parent
+   * that passes an inline arrow (the natural way to write it, and what the
+   * launch form did) hands down a new function identity on that re-render, so
+   * with `onChange` as a dependency the effect fires again, and again: the
+   * value it reports is a freshly built object every time, so React never
+   * bails out on an unchanged state. That is an unbounded loop with a setState
+   * in it, and because this component sits inside a <details> — mounted even
+   * while collapsed — it started on page load and locked the tab up before
+   * anyone touched the form.
+   *
+   * Depending only on the values means the effect fires when the destination
+   * actually changes, which is what it was always meant to express.
+   *
+   * Wallet mode with an empty box means "the wallet I launch with", which is
+   * what the contract already does with the zero address.
+   */
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
   useEffect(() => {
     if (tab === "wallet") {
-      onChange({ kind: "wallet", address: wallet.trim() });
+      onChangeRef.current({ kind: "wallet", address: wallet.trim() });
     } else {
-      onChange(resolved === null ? null : { kind: "x", resolved });
+      onChangeRef.current(resolved === null ? null : { kind: "x", resolved });
     }
-  }, [tab, wallet, resolved, onChange]);
+  }, [tab, wallet, resolved]);
 
   // Re-resolving on a platform switch would be wrong in a quiet way: the vault
   // address differs per platform, so a stale one from the other tab would name
