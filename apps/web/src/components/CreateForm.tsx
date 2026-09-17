@@ -8,6 +8,7 @@ import { decodeEventLog, parseAbiItem, type Hex } from "viem";
 import { formatUnits, parseUnits } from "viem";
 import { erc20Abi } from "@/lib/bridgeClient";
 import { factoryAbi, launchpadV4Abi, launchedV4Event, LAUNCH_MODES } from "@/lib/launchpad";
+import { compressImage } from "@/lib/imageCompress";
 import { getChain } from "@/lib/chains";
 import { ArcaneWandIcon, DiviumBillsIcon, StandardWalletIcon } from "@/components/ModeIcons";
 import { ensureChain } from "@/lib/wagmi";
@@ -24,24 +25,6 @@ type CreateState =
   | { readonly step: "approving" }
   | { readonly step: "launching" }
   | { readonly step: "error"; readonly message: string };
-
-/** Downscale + compress a picked image to a small data URI so it embeds in the
- *  launch cheaply. WebP when supported (keeps transparency, tiny), else PNG. */
-async function compressImage(file: File): Promise<string> {
-  const bitmap = await createImageBitmap(file);
-  const max = 192;
-  const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
-  const w = Math.max(1, Math.round(bitmap.width * scale));
-  const h = Math.max(1, Math.round(bitmap.height * scale));
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext("2d");
-  if (ctx === null) throw new Error("canvas unavailable");
-  ctx.drawImage(bitmap, 0, 0, w, h);
-  const webp = canvas.toDataURL("image/webp", 0.8);
-  return webp.startsWith("data:image/webp") ? webp : canvas.toDataURL("image/png");
-}
 
 /**
  * Live launch form. A token is created on the selected chain, paired with that

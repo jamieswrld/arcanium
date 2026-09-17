@@ -21,6 +21,7 @@ import { TokenMode } from "@/components/TokenMode";
 import { TokenTax } from "@/components/TokenTax";
 import { FlywheelPanel } from "@/components/FlywheelPanel";
 import { LaunchSettings } from "@/components/LaunchSettings";
+import { TokenLogoEditor } from "@/components/TokenLogoEditor";
 import { TokenSocials } from "@/components/TokenSocials";
 
 export const revalidate = 10;
@@ -311,6 +312,14 @@ export default async function TokenPage({ params }: TokenPageProps) {
               does not have. */}
           {detail.token.toLowerCase() === "0xebb871bc394e83008120fab3c9ed5773642a29a1" ? (
             <FlywheelPanel />
+          ) : null}
+
+          {/* Renders nothing unless the visitor is the wallet that launched
+              this token and it still has no picture. The v4 launches made
+              before the form learned to read their own event are in exactly
+              that position. */}
+          {meta.image === null ? (
+            <TokenLogoEditor token={detail.token} name={detail.name} symbol={detail.symbol} />
           ) : null}
 
           {/* What this market's creator fixed at launch, and who collects its
