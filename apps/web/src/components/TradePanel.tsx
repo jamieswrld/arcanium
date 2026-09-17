@@ -27,6 +27,14 @@ interface TradePanelProps {
   readonly symbol: string;
   /** The chain the token was launched on — trades route to its own router. */
   readonly chainKey?: ChainKey;
+  /**
+   * Which Uniswap this market trades on.
+   *
+   * Only the footnote reads it: routing is decided server-side from the same
+   * launch record, so this exists to keep the sentence under the button
+   * truthful rather than to choose a route.
+   */
+  readonly protocol?: "v3" | "v4";
 }
 
 type TradeState =
@@ -98,7 +106,7 @@ function parseToken18(value: string): bigint {
  * the 1% tier — no extra router fees, ever. Slippage is enforced via
  * amountOutMinimum computed from user settings.
  */
-export function TradePanel({ token, pairToken, symbol, chainKey = "arc" }: TradePanelProps) {
+export function TradePanel({ token, pairToken, symbol, chainKey = "arc", protocol = "v3" }: TradePanelProps) {
   // Trades execute on the chain the token launched on, against that chain's
   // own Uniswap router and quote asset (native USDC on Arc).
   const chain = getChain(chainKey);
@@ -373,7 +381,9 @@ export function TradePanel({ token, pairToken, symbol, chainKey = "arc" }: Trade
       <GasRows chainKey={chainKey} />
 
       <p className="arch-note">
-        Trades route through the standard Uniswap v3 pool at its 1% fee tier. Arcanium adds no router fee.
+        {protocol === "v4"
+          ? "Trades route through this token's Uniswap v4 pool at its 1% fee tier. Arcanium adds no router fee."
+          : "Trades route through the standard Uniswap v3 pool at its 1% fee tier. Arcanium adds no router fee."}
       </p>
 
       {!isConnected ? (

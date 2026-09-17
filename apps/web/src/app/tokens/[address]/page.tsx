@@ -226,17 +226,47 @@ export default async function TokenPage({ params }: TokenPageProps) {
               <span className="eyebrow">Permanent liquidity</span>
             </div>
             <div className="panel-body">
+              {/* The two pool versions lock liquidity by different means, and
+                  saying "this Uniswap v3 position" on a v4 market would
+                  describe a position that does not exist — there is no NFT to
+                  hold and no vault holding it. The guarantee is the same
+                  either way; what differs is what a reader can go and check. */}
               <p className="arch-note" style={{ lineHeight: 1.65, margin: 0 }}>
-                The entire 1,000,000,000 supply was placed into this Uniswap v3 position at launch
-                and the position is held by the Arcanium vault forever. Nobody — including Arcanium
-                — can withdraw it. Trading fees accrue to the position and are collected
-                separately; the principal never moves.
+                {detail.protocol === "v4" ? (
+                  <>
+                    The entire 1,000,000,000 supply was placed into this Uniswap v4 pool at launch.
+                    The liquidity belongs to the Arcanium launchpad contract, which has no function
+                    that withdraws it — not for anyone, Arcanium included. Trading fees are taken
+                    inside each swap and never touch the principal.
+                  </>
+                ) : (
+                  <>
+                    The entire 1,000,000,000 supply was placed into this Uniswap v3 position at
+                    launch and the position is held by the Arcanium vault forever. Nobody —
+                    including Arcanium — can withdraw it. Trading fees accrue to the position and
+                    are collected separately; the principal never moves.
+                  </>
+                )}
               </p>
               <p className="arch-note" style={{ marginTop: "var(--s2)", marginBottom: 0 }}>
                 <a href={explorerAddress(chain, detail.pool)} target="_blank" rel="noreferrer" style={{ color: "var(--text-secondary)", textDecoration: "underline" }}>
-                  Pool contract ↗
+                  {detail.protocol === "v4" ? "PoolManager ↗" : "Pool contract ↗"}
                 </a>{" "}
-                · Position #{detail.positionId.toString()}
+                {detail.protocol === "v4" ? (
+                  // A v4 market has no position number — liquidity is not an
+                  // NFT. Printing "Position #0" would invite someone to look
+                  // up a position that was never minted.
+                  detail.poolId !== null ? (
+                    <>
+                      · Pool id{" "}
+                      <span className="mono">
+                        {detail.poolId.slice(0, 10)}…{detail.poolId.slice(-6)}
+                      </span>
+                    </>
+                  ) : null
+                ) : (
+                  <>· Position #{detail.positionId.toString()}</>
+                )}
               </p>
             </div>
           </section>
@@ -260,6 +290,7 @@ export default async function TokenPage({ params }: TokenPageProps) {
                 pairToken={detail.pairToken}
                 symbol={detail.symbol}
                 chainKey="arc"
+                protocol={detail.protocol}
               />
             </div>
           </section>

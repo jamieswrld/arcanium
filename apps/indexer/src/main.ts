@@ -675,7 +675,16 @@ async function indexLaunchesV4(cfg: IndexerConfig, blocks: BlockCache): Promise<
             ${Number(l.args.mode ?? 0)}
           )
           ON CONFLICT (token_address) DO UPDATE SET
-            name = EXCLUDED.name, symbol = EXCLUDED.symbol, mode = EXCLUDED.mode
+            name = EXCLUDED.name, symbol = EXCLUDED.symbol, mode = EXCLUDED.mode,
+            -- The launch log is what settles which Uniswap a token trades on,
+            -- and a row for this token can already exist from an earlier walk.
+            -- Left out of the update, the protocol column would keep its v3
+            -- default forever — and a v3 row's reserve is read as
+            -- balanceOf(pool_address), which for a v4 launch is the shared
+            -- PoolManager: the whole chain's liquidity, credited to one market.
+            protocol = 'v4', pool_id = EXCLUDED.pool_id,
+            pool_address = EXCLUDED.pool_address,
+            token_is_token0 = EXCLUDED.token_is_token0
         `;
         await sql`
           INSERT INTO token_stats (token_address) VALUES (${addr(token)})
@@ -1326,6 +1335,16 @@ async function refreshPools(cfg: IndexerConfig): Promise<void> {
           slot0 === null || liq === null
             ? null
             : v4QuoteReserve(liq as bigint, (slot0 as readonly [bigint, number, number, number])[0], p.token_is_token0);
+      } else if (cfg.poolManagerV4 !== undefined && poolHex.toLowerCase() === cfg.poolManagerV4.toLowerCase()) {
+        // A row pointing at the PoolManager but carrying no pool id cannot be
+        // measured: the PoolManager holds every v4 market on the chain, so its
+        // balance is not this token's reserve by any margin — it is a number
+        // thousands of times too large, and the same figure decides
+        // graduation. Leaving the reserve untouched shows a stale value;
+        // reading it here would show a fabricated one, and would hand the
+        // market a graduation badge it never earned.
+        log.warn({ token: `0x${p.token_address.toString("hex")}` }, "v4 pool row has no pool id; reserve left unread");
+        balance = null;
       } else {
         balance = await arc
           .readContract({ address: quote, abi: balanceAbi, functionName: "balanceOf", args: [poolHex] })

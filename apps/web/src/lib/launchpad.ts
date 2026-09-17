@@ -384,6 +384,15 @@ export interface LaunchpadToken {
   /** Which Uniswap this market trades on. v3 unless the indexer says v4. */
   readonly protocol: "v3" | "v4";
   /**
+   * The v4 pool id, or null.
+   *
+   * A v4 market has no pool contract of its own — every pool lives inside the
+   * one PoolManager and is identified by this hash instead. It is null for v3,
+   * where the pool is an address, and null on the chain-read path, which has
+   * no way to recover it.
+   */
+  readonly poolId: Hex | null;
+  /**
    * When the token launched, or null when only the chain was asked.
    *
    * Age is a risk signal on a launchpad — a market minutes old is a different
@@ -547,6 +556,7 @@ async function fetchTokenFrom(client: PublicClient, factory: Hex, token: Hex): P
     quoteBalance,
     graduated,
     protocol: "v3" as const,
+    poolId: null,
     mode: null,
     // Chain reads do not carry these: launch time lives in the launch log and
     // a holder count needs the transfer history. Null, not zero — the caller

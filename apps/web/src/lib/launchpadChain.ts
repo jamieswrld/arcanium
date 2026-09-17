@@ -105,8 +105,10 @@ async function fetchTokenFrom(
   const priceE18 = priceUsdE18(slot0[0], tokenIsToken0, chain.quote.decimals);
   return {
     // This path enumerates the v3 factories, so anything it finds is v3 by
-    // construction — a v4 launch is simply not discoverable here.
+    // construction — a v4 launch is simply not discoverable here. Which is
+    // also why there is no pool id: v3 pools are addresses.
     protocol: "v3" as const,
+    poolId: null,
     token,
     name,
     symbol,

@@ -170,6 +170,7 @@ export async function indexedTokens(): Promise<LaunchpadToken[] | null> {
       .filter((r) => !isHidden(hex(r.token_address)))
       .map((r) => ({
         protocol: (r.protocol === "v4" ? "v4" : "v3") as "v3" | "v4",
+        poolId: r.pool_id === null || r.pool_id === undefined ? null : hex(r.pool_id),
         token: hex(r.token_address),
         name: r.name,
         symbol: r.symbol,
@@ -215,6 +216,7 @@ export async function indexedToken(address: string): Promise<LaunchpadToken | nu
     if (r === undefined) return null;
     return {
       protocol: (r.protocol === "v4" ? "v4" : "v3") as "v3" | "v4",
+      poolId: r.pool_id === null || r.pool_id === undefined ? null : hex(r.pool_id),
       token: hex(r.token_address),
       name: r.name,
       symbol: r.symbol,

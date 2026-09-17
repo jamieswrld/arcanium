@@ -91,8 +91,17 @@ export async function GET(
         liquidityLock: {
           // Stated as a fact about the protocol, not a promise from this API.
           permanent: true,
-          positionId: token.positionId.toString(),
-          note: "The full supply was placed in one Uniswap v3 position at launch and is held permanently. It cannot be withdrawn by anyone, including Arcanium.",
+          protocol: token.protocol,
+          // A v4 market has no position NFT — liquidity sits in the pool and
+          // the launchpad contract holds it. Reporting positionId "0" there
+          // would send an integrator looking up a position nobody minted, so
+          // it is null, and the pool id it does have is given instead.
+          positionId: token.protocol === "v4" ? null : token.positionId.toString(),
+          poolId: token.poolId,
+          note:
+            token.protocol === "v4"
+              ? "The full supply was placed in one Uniswap v4 pool at launch. The liquidity is held by the Arcanium launchpad contract, which has no function that withdraws it — not for anyone, Arcanium included."
+              : "The full supply was placed in one Uniswap v3 position at launch and is held permanently. It cannot be withdrawn by anyone, including Arcanium.",
         },
       },
       { chainId: chain.id },
