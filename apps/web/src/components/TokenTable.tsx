@@ -30,7 +30,7 @@ export function TokenTable({ tokens, images, chainKey = "arc", showRank = true }
 
   return (
     <div className="arch-scroll-x">
-      <table className="arch-table">
+      <table className="mkt">
         <thead>
           <tr>
             <th scope="col">{showRank ? "# Token" : "Token"}</th>
@@ -47,11 +47,11 @@ export function TokenTable({ tokens, images, chainKey = "arc", showRank = true }
             const pct = t.quoteBalance >= target ? 100 : Number((t.quoteBalance * 100n) / target);
             return (
               <tr key={t.token}>
-                <td>
-                  <Link href={`/tokens/${t.token}`} className="arch-ident" title={`${t.name} (${t.symbol})`}>
+                <td data-cell="ident">
+                  <Link href={`/tokens/${t.token}`} className="ident" title={`${t.name} (${t.symbol})`}>
                     {showRank ? (
                       <span
-                        className="arch-num"
+                        className="num"
                         style={{ color: "var(--text-faint)", width: 18, textAlign: "right", flexShrink: 0 }}
                       >
                         {i + 1}
@@ -59,24 +59,26 @@ export function TokenTable({ tokens, images, chainKey = "arc", showRank = true }
                     ) : null}
                     <TokenAvatar image={images[t.token.toLowerCase()]} symbol={t.symbol} size={32} radius={9} />
                     <span style={{ minWidth: 0 }}>
-                      <span className="arch-ident-name">{t.symbol}</span>
-                      <span className="arch-ident-sub" style={{ display: "block" }}>
+                      <span className="ident-name">{t.symbol}</span>
+                      <span className="ident-sub" style={{ display: "block" }}>
                         {t.name}
                       </span>
                     </span>
                   </Link>
                 </td>
 
-                <td className="arch-num">{formatPriceE18(t.priceE18)}</td>
-                <td className="arch-num-lg">{formatUsdCompact(t.marketCapUnits)}</td>
+                <td data-cell="price" className="num">{formatPriceE18(t.priceE18)}</td>
+                <td data-cell="metric" data-label="Market cap" className="num" style={{ fontWeight: 650 }}>
+                  {formatUsdCompact(t.marketCapUnits)}
+                </td>
 
                 {/* Real quote sitting in the pool — the number that says whether
                     a token can actually absorb a trade. */}
-                <td className="arch-num" style={{ color: "var(--text-muted)" }}>
+                <td data-cell="metric" data-label="Liquidity" className="num" style={{ color: "var(--text-muted)" }}>
                   {formatUsdCompact(scaleToUsdMicro(t.quoteBalance, chain.quote.decimals))}
                 </td>
 
-                <td style={{ minWidth: 128 }}>
+                <td data-cell="metric" data-label="Graduation" style={{ minWidth: 128 }}>
                   {t.graduated ? (
                     <span style={{ color: "var(--positive)", fontWeight: 650, fontSize: "0.78rem" }}>Graduated</span>
                   ) : (
@@ -84,14 +86,14 @@ export function TokenTable({ tokens, images, chainKey = "arc", showRank = true }
                       <span className="arch-progress" style={{ flex: 1, minWidth: 56 }}>
                         <span style={{ width: `${Math.min(pct, 100)}%` }} />
                       </span>
-                      <span className="arch-num" style={{ color: "var(--text-faint)", fontSize: "0.78rem", width: 34 }}>
+                      <span className="num" style={{ color: "var(--text-faint)", fontSize: "0.78rem", width: 34 }}>
                         {pct}%
                       </span>
                     </span>
                   )}
                 </td>
 
-                <td>
+                <td data-cell="metric" data-label="Mode">
                   {t.mode === 1 || t.mode === 2 ? (
                     <span
                       className="arch-network-pill"

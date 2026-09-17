@@ -116,7 +116,7 @@ export function EcoLocks({ rows }: { readonly rows: readonly EcoRow[] }) {
 
   return (
     <div className="panel">
-      <table className="arch-table">
+      <table className="mkt">
         <thead>
           <tr>
             <th scope="col">Token</th>
@@ -129,7 +129,7 @@ export function EcoLocks({ rows }: { readonly rows: readonly EcoRow[] }) {
         <tbody>
           {rows.map((r) => (
             <tr key={r.token}>
-              <td data-label="Token">
+              <td data-cell="ident">
                 {r.native ? (
                   <Link href={`/tokens/${r.token}`} style={{ fontWeight: 650 }}>
                     {r.symbol ?? `${r.token.slice(0, 10)}…`}
@@ -143,21 +143,21 @@ export function EcoLocks({ rows }: { readonly rows: readonly EcoRow[] }) {
                   <div className="arch-note" style={{ fontSize: "0.72rem" }}>{r.name}</div>
                 )}
               </td>
-              <td data-label="Origin">
+              <td data-cell="metric" data-label="Origin">
                 <span className="chip">{r.native ? "Arcanium" : "External"}</span>
               </td>
-              <td data-label="Locked" className="num" style={{ fontWeight: 650 }}>
+              <td data-cell="metric" data-label="Locked" className="num" style={{ fontWeight: 650 }}>
                 {/* Without decimals the raw integer would be off by orders of
                     magnitude, and a wrong number is worse than no number. */}
                 {r.decimals === null ? "—" : formatAmount(r.lockedUnits.toString(), r.decimals)}
               </td>
-              <td data-label="Locks" className="num">
+              <td data-cell="metric" data-label="Locks" className="num">
                 {r.activeLocks}
                 {r.totalLocks !== r.activeLocks ? (
                   <span className="arch-note"> / {r.totalLocks}</span>
                 ) : null}
               </td>
-              <td data-label="Next unlock" className="num">
+              <td data-cell="metric" data-label="Next unlock" className="num">
                 {untilLabel(r.nextUnlock)}
               </td>
             </tr>

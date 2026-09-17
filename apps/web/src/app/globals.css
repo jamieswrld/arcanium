@@ -862,9 +862,17 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
     border-bottom: 1px solid var(--border);
   }
 
+  /* Which role a cell plays is `data-cell`; `data-label` is only the caption.
+     They used to be the same attribute, which meant the layout was keyed on
+     the words in the header — so the identity cell, labelled "Token", matched
+     a rule written for "Market" and fell out of the grid while collecting a
+     stray TOKEN caption, and the two columns whose captions follow the chart
+     window ("24h", "24h volume") lost their layout the moment a reader chose
+     7d. Splitting the two lets a caption be renamed without breaking a card. */
+
   /* Identity spans the top row; price sits opposite it. */
-  .mkt tbody td[data-label="Market"] { grid-column: 1; padding: 0; }
-  .mkt tbody td[data-label="Price"] {
+  .mkt tbody td[data-cell="ident"] { grid-column: 1; padding: 0; }
+  .mkt tbody td[data-cell="price"] {
     grid-column: 2;
     text-align: right;
     padding: 0;
@@ -873,11 +881,7 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
   }
 
   /* Everything else becomes a labelled metric in a wrapping row. */
-  .mkt tbody td[data-label="24h"],
-  .mkt tbody td[data-label="Market cap"],
-  .mkt tbody td[data-label="24h volume"],
-  .mkt tbody td[data-label="Liquidity"],
-  .mkt tbody td[data-label="Graduation"] {
+  .mkt tbody td[data-cell="metric"] {
     grid-column: 1 / -1;
     display: flex;
     align-items: center;
@@ -888,7 +892,7 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
     border-bottom: 0;
     min-width: 0;
   }
-  .mkt tbody td[data-label]::before {
+  .mkt tbody td[data-cell="metric"][data-label]::before {
     content: attr(data-label);
     font-size: 0.655rem;
     font-weight: 650;
@@ -897,8 +901,6 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
     color: var(--text-muted);
     flex-shrink: 0;
   }
-  .mkt tbody td[data-label="Market"]::before,
-  .mkt tbody td[data-label="Price"]::before { content: none; }
 
   .grad { min-width: 0; flex: 1; }
 }
@@ -1348,7 +1350,10 @@ textarea.field { height: auto; min-height: 76px; padding: 9px 11px; resize: vert
    The connected wallet's stake in the token being viewed. Sits in the right
    rail under the trade panel, so it is sized to that column, not the page. */
 
-.pos { padding: var(--s3) var(--s4); }
+/* Not `.pos`: that name is taken, a few hundred lines up, by the class that
+   paints a number green. A panel wearing it inherited that colour for all its
+   text — every figure in "Your position" read as a gain, including the losses. */
+.pos-panel { padding: var(--s3) var(--s4); }
 
 .pos-grid {
   display: grid;

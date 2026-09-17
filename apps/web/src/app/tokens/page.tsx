@@ -94,7 +94,7 @@ export default async function TokensPage({ searchParams }: TokensPageProps) {
           justifyContent: "space-between",
         }}
       >
-        <div className="arch-segment" role="group" aria-label="Sort launches">
+        <div className="seg" role="group" aria-label="Sort launches">
           {SORTS.map((s) => (
             <Link key={s.key} href={href({ sort: s.key })} aria-current={s.key === sort ? "true" : undefined}>
               {s.label}

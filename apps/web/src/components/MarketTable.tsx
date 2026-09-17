@@ -60,7 +60,7 @@ export function MarketTable({ tokens, images, market, window }: MarketTableProps
 
             return (
               <tr key={t.token}>
-                <td data-label="Token">
+                <td data-cell="ident">
                   <Link href={`/tokens/${t.token}`} className="ident" title={`${t.name} (${t.symbol})`}>
                     <span className="num mkt-rank" aria-hidden>
                       {i + 1}
@@ -89,31 +89,31 @@ export function MarketTable({ tokens, images, market, window }: MarketTableProps
                   </Link>
                 </td>
 
-                <td data-label="Price" className="num">
+                <td data-cell="price" className="num">
                   {formatPriceE18(t.priceE18)}
                 </td>
 
-                <td data-label={wl}>
+                <td data-cell="metric" data-label={wl}>
                   <Change pct={m.changePct} />
                 </td>
 
-                <td data-label="Market cap" className="num" style={{ fontWeight: 650 }}>
+                <td data-cell="metric" data-label="Market cap" className="num" style={{ fontWeight: 650 }}>
                   {formatUsdCompact(t.marketCapUnits)}
                 </td>
 
-                <td data-label={`${wl} volume`} className="num" style={{ color: "var(--text-secondary)" }}>
+                <td data-cell="metric" data-label={`${wl} volume`} className="num" style={{ color: "var(--text-secondary)" }}>
                   {m.trades === 0 ? <Dash /> : formatUsdCompact(m.volumeUnits)}
                 </td>
 
-                <td data-label="Liquidity" className="num" style={{ color: "var(--text-secondary)" }}>
+                <td data-cell="metric" data-label="Liquidity" className="num" style={{ color: "var(--text-secondary)" }}>
                   {formatUsdCompact(liq)}
                 </td>
 
-                <td data-label="Holders" className="num" style={{ color: "var(--text-secondary)" }}>
+                <td data-cell="metric" data-label="Holders" className="num" style={{ color: "var(--text-secondary)" }}>
                   {t.holderCount === null ? <Dash /> : t.holderCount.toLocaleString("en-US")}
                 </td>
 
-                <td data-label="Graduation">
+                <td data-cell="metric" data-label="Graduation">
                   {t.graduated ? (
                     <span className="chip chip-pos">Graduated</span>
                   ) : (

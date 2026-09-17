@@ -106,7 +106,7 @@ export function TokenPosition({ token, symbol, priceE18 }: TokenPositionProps) {
     soldTokens > 0n && avgCostE18 !== null ? soldUsd - usdUnitsOf(soldTokens, avgCostE18) : null;
 
   return (
-    <section className="panel pos">
+    <section className="panel pos-panel">
       <div className="spread" style={{ alignItems: "baseline", gap: "var(--s2)" }}>
         <h2 className="eyebrow">Your position</h2>
         {pos !== null && pos.bought.trades + pos.sold.trades > 0 ? (
