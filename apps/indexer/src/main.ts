@@ -1247,10 +1247,62 @@ async function indexHolders(cfg: IndexerConfig, blocks: BlockCache): Promise<voi
  * Pool balances change with every trade but are not in the Swap event, so they
  * are refreshed once per cycle via multicall rather than per swap.
  */
+/**
+ * The quote side of a v4 pool, from the pool's own state.
+ *
+ * A v4 pool holds no balance of its own — every pool on the chain shares one
+ * PoolManager — so reading the manager's token balance reports the whole
+ * chain's liquidity for every market. That is not an approximation, it is a
+ * different number entirely: it made each v4 launch appear to hold millions
+ * and, because the same figure drives the threshold, marked all of them
+ * graduated the moment they existed.
+ *
+ * The real reserve is derived from the pool's active liquidity and price. A
+ * launch position spans a fixed range, so the bounds are constants rather than
+ * tick maths shipped to the indexer.
+ */
+const Q96 = 1n << 96n;
+/** sqrtPriceX96 at the launch position's bounds. See ArcaniumLaunchpad. */
+const SQRT_AT_LAUNCH_TICK_TOKEN0 = 137910661162451386587n;      // tick -403,400
+const SQRT_AT_MAX_TICK = 1456195216270955103206513029158776779468408838535n; // 887,200
+const SQRT_AT_MIN_TICK = 4310618292n;                            // -887,200
+const SQRT_AT_LAUNCH_TICK_TOKEN1 = 45515710551141441293790245194020618640n;  // 403,400
+
+function v4QuoteReserve(liquidity: bigint, sqrtP: bigint, tokenIsToken0: boolean): bigint {
+  if (liquidity === 0n || sqrtP === 0n) return 0n;
+  const clamp = (v: bigint, lo: bigint, hi: bigint): bigint => (v < lo ? lo : v > hi ? hi : v);
+
+  if (tokenIsToken0) {
+    // Quote is currency1: amount1 = L * (sqrtP - sqrtLower) / 2^96
+    const lower = SQRT_AT_LAUNCH_TICK_TOKEN0;
+    const p = clamp(sqrtP, lower, SQRT_AT_MAX_TICK);
+    return (liquidity * (p - lower)) / Q96;
+  }
+  // Quote is currency0: amount0 = L * 2^96 * (sqrtUpper - sqrtP) / (sqrtP * sqrtUpper)
+  const upper = SQRT_AT_LAUNCH_TICK_TOKEN1;
+  const p = clamp(sqrtP, SQRT_AT_MIN_TICK, upper);
+  if (p === 0n) return 0n;
+  return (liquidity * Q96 * (upper - p)) / (p * upper);
+}
+
+const stateViewAbi = [
+  {
+    type: "function", name: "getSlot0", stateMutability: "view",
+    inputs: [{ type: "bytes32" }],
+    outputs: [{ type: "uint160" }, { type: "int24" }, { type: "uint24" }, { type: "uint24" }],
+  },
+  {
+    type: "function", name: "getLiquidity", stateMutability: "view",
+    inputs: [{ type: "bytes32" }], outputs: [{ type: "uint128" }],
+  },
+] as const;
+
+const DEFAULT_STATE_VIEW_V4 = "0xF3334192D15450CdD385c8B70e03f9A6bD9E673b" as Hex;
+
 async function refreshPools(cfg: IndexerConfig): Promise<void> {
   const { arc, sql, chainId } = cfg;
-  const pools = await sql<PoolRow[]>`
-    SELECT token_address, pool_address, token_is_token0, pair_token
+  const pools = await sql<(PoolRow & { protocol: string | null; pool_id: Buffer | null })[]>`
+    SELECT token_address, pool_address, token_is_token0, pair_token, protocol, pool_id
     FROM tokens WHERE chain_id = ${chainId}
   `;
   const balanceAbi = [
@@ -1261,9 +1313,24 @@ async function refreshPools(cfg: IndexerConfig): Promise<void> {
     pools.map(async (p) => {
       const quote = `0x${p.pair_token.toString("hex")}` as Hex;
       const poolHex = `0x${p.pool_address.toString("hex")}` as Hex;
-      const balance = await arc
-        .readContract({ address: quote, abi: balanceAbi, functionName: "balanceOf", args: [poolHex] })
-        .catch(() => null);
+
+      let balance: bigint | null;
+      if (p.protocol === "v4" && p.pool_id !== null) {
+        // Never balanceOf here: pool_address is the shared PoolManager.
+        const poolId = `0x${p.pool_id.toString("hex")}` as Hex;
+        const [slot0, liq] = await Promise.all([
+          arc.readContract({ address: DEFAULT_STATE_VIEW_V4, abi: stateViewAbi, functionName: "getSlot0", args: [poolId] }).catch(() => null),
+          arc.readContract({ address: DEFAULT_STATE_VIEW_V4, abi: stateViewAbi, functionName: "getLiquidity", args: [poolId] }).catch(() => null),
+        ]);
+        balance =
+          slot0 === null || liq === null
+            ? null
+            : v4QuoteReserve(liq as bigint, (slot0 as readonly [bigint, number, number, number])[0], p.token_is_token0);
+      } else {
+        balance = await arc
+          .readContract({ address: quote, abi: balanceAbi, functionName: "balanceOf", args: [poolHex] })
+          .catch(() => null);
+      }
       if (balance === null) return;
       await sql`
         UPDATE token_stats SET quote_balance = ${balance.toString()} WHERE token_address = ${p.token_address}

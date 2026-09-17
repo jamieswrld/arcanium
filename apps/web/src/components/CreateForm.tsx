@@ -7,7 +7,7 @@ import { useAccount, usePublicClient, useReadContract, useSwitchChain, useWriteC
 import { decodeEventLog, parseAbiItem, type Hex } from "viem";
 import { formatUnits, parseUnits } from "viem";
 import { erc20Abi } from "@/lib/bridgeClient";
-import { factoryAbi, launchpadV4Abi, LAUNCH_MODES } from "@/lib/launchpad";
+import { factoryAbi, launchpadV4Abi, launchedV4Event, LAUNCH_MODES } from "@/lib/launchpad";
 import { getChain } from "@/lib/chains";
 import { ArcaneWandIcon, DiviumBillsIcon, StandardWalletIcon } from "@/components/ModeIcons";
 import { ensureChain } from "@/lib/wagmi";
@@ -291,9 +291,21 @@ export function CreateForm() {
           });
       const receipt = await chainPublic.waitForTransactionReceipt({ hash: txHash });
       if (receipt.status !== "success") { setState({ step: "error", message: "Launch transaction reverted" }); return; }
+      // Both event shapes, because they are different events that share a
+      // name: v4's Launched carries a pool id where v3's carries a pool
+      // address. Decoding only the v3 one left every v4 launch with no token
+      // address here, so its metadata — the logo included — was never saved
+      // and the token rendered without a picture.
       let newToken: string | null = null;
       for (const log of receipt.logs) {
-        try { newToken = decodeEventLog({ abi: [launchedEvent], data: log.data, topics: log.topics }).args.token; break; } catch { /* not it */ }
+        try {
+          newToken = decodeEventLog({ abi: [launchedEvent], data: log.data, topics: log.topics }).args.token;
+          break;
+        } catch { /* not the v3 event */ }
+        try {
+          newToken = decodeEventLog({ abi: [launchedV4Event], data: log.data, topics: log.topics }).args.token;
+          break;
+        } catch { /* nor the v4 one */ }
       }
       // Persist the metadata (logo) so it displays immediately on the token
       // pages, without waiting for the indexer to catch up. Fire-and-forget.
